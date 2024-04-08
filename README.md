@@ -19,4 +19,12 @@
 
 - Gameboy development documentation
   https://bgb.bircd.org/pandocs.htm
+
 # gameboy_dmg-01_emulator
+
+## References
+
+#### ROM header information
+
+- https://gist.github.com/drhelius/4317698
+- https://gbdev.gg8.se/wiki/articles/Gameboy_ROM_Header_Info

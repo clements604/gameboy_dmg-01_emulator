@@ -40,3 +40,9 @@ Cargo.toml.orig
 
 # Ignore env file
 .env
+
+# Ignore generated files
+target/
+
+# Roms
+roms/

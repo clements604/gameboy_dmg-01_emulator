@@ -1,7 +1,7 @@
 
 mod CPU;
 mod constants;
-mod video;
+mod display;
 mod rom;
 
 fn main() {
@@ -11,7 +11,10 @@ fn main() {
             .is_test(false)
             .try_init();
 
-    println!("Hello, world!");
     let mut cpu = CPU::CPU::new();
     cpu.load_rom(String::from("roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb"));
+
+    
+
+
 }

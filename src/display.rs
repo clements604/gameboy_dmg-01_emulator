@@ -1,4 +1,7 @@
 
+const SCREEN_WIDTH: usize = 160;
+const SCREEN_HEIGHT: usize = 144;
+
 /*
 *   Get the tile id from the address of the tile in video ram
 */

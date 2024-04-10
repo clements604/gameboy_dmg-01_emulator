@@ -74,6 +74,7 @@ impl CPU {
         rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
 
         // TODO load rom to memory
+        rom.load_rom_to_banks();
         //debug!("ROM loaded into memory");
     }
 

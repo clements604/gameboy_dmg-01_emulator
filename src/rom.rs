@@ -47,6 +47,18 @@ pub struct ROM {
     rom: Vec<u8>,
 }
 
+pub struct ROMBanks {
+    pub data: Vec<Vec<u8>>,
+}
+
+impl ROMBanks {
+    pub fn new() -> ROMBanks {
+        ROMBanks {
+            data: Vec::new(),
+        }
+    }
+}
+
 impl ROM {
     pub fn new(rom: Vec<u8>) -> ROM {
         let title = String::from_utf8(rom[TITLE_START as usize..TITLE_END as usize].to_vec()).unwrap();
@@ -57,7 +69,7 @@ impl ROM {
         let licensee_code = u16::from_str_radix(
             &String::from_utf8_lossy(&rom[LICENSEE_CODE_START as usize..LICENSEE_CODE_END as usize]),
             16,
-        ).expect("Failed to parse license code as hexadecimal");
+        ).unwrap_or(0);
         let global_checksum = u16::from_le_bytes([rom[GLOBAL_CHECKSUM_START as usize], rom[GLOBAL_CHECKSUM_START as usize + 1]]);
         ROM {
             title: title,
@@ -95,11 +107,35 @@ impl ROM {
             Err(std::io::Error::new(std::io::ErrorKind::Other, "Header checksum [FAIL]"))
         }
     }
+
+    pub fn load_rom_to_banks(&self) -> ROMBanks {
+        debug!("Loading ROM into banks");
+        debug!("ROM size: {}", self.rom.len());
+        let mut rom_banks: ROMBanks = ROMBanks::new();
+        let mut rom_offset: usize = 0; // The current offset in the ROM
+
+        while rom_offset < self.rom.len() {
+            debug!("Offset: {}", rom_offset);
+            let end = std::cmp::min(rom_offset + 0x4000, self.rom.len());
+            rom_banks.data.push(self.rom[rom_offset..end].to_vec());
+            rom_offset += 0x4000;
+        }
+
+        debug!("Total banks: {}", rom_banks.data.len());
+        debug!("ROM size: {}", self.rom.len());
+        debug!("Offset: {}", rom_offset);
+        debug!("Size of first bank: {}", rom_banks.data[0].len());
+        debug!("Size of last bank: {}", rom_banks.data[rom_banks.data.len() - 1].len());
+        
+        rom_banks
+    }
+    
 }
 
 impl fmt::Display for ROM {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Title: {}", self.title)?;
+        writeln!(f, "")?;
+        writeln!(f, "Title: [{}]", self.title)?;
         //writeln!(f, "Manufacturer: {}", self.manufacturer_code)?;
         match self.cgb_flag {
             0x80 => {
@@ -158,12 +194,11 @@ impl fmt::Display for ROM {
                 writeln!(f, "Destination code: [{} - Unknown]", self.destination_code)?;
             }
         }
-        writeln!(f, "Old Licensee Code: {}", self.old_licensee_code)?;
         if self.old_licensee_code == 0x33 {
             // Get the licensee code from the header
            match NEW_LICENSEE_MAP.get(&self.licensee_code) {
                Some(licensee) => {
-                writeln!(f, "Licensee Code: {} - {}", self.licensee_code, licensee)?;
+                writeln!(f, "Licensee Code: [{} - {}]", self.licensee_code, licensee)?;
                },
                None => {
                 writeln!(f, "Licensee: [{} - Unknown]", self.licensee_code)?;
@@ -179,15 +214,15 @@ impl fmt::Display for ROM {
                }
            }
        }
-        writeln!(f, "Mask ROM Version: {}", self.mask_rom_version)?;
-        writeln!(f, "Header Checksum: {}", self.header_checksum)?;
+        writeln!(f, "Mask ROM Version: [{}]", self.mask_rom_version)?;
+        writeln!(f, "Header Checksum: [{}]", self.header_checksum)?;
         let calc_header_checksum: u8 = self.calculate_header_checksum();
         if self.header_checksum == calc_header_checksum {
             writeln!(f, "Header checksum [OK]")?;
         } else {
             writeln!(f, "Header checksum [FAIL]")?;
         };
-        writeln!(f, "Global Checksum: {}", self.global_checksum)?;
+        writeln!(f, "Global Checksum: [{}]", self.global_checksum)?;
         Ok(())
     }
 }

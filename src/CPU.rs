@@ -25,8 +25,9 @@ struct Registers {
 pub struct CPU {
 
     registers: Registers,
-    work_ram: [u16; 0xFFFF], //8KiB
-    video_ram: [u16; 8192], //8KiB
+    work_ram: [u8; 0xFFFF],
+    video_ram: [u16; 8192],
+    rom_bank_0: [u8; 0x3FFF], //16KiB
 
 }
 
@@ -53,6 +54,7 @@ impl CPU {
             registers: Registers::new(),
             work_ram: [0; 0xFFFF],
             video_ram: [0; 8192],
+            rom_bank_0: [0; 0x3FFF],
         }
     }
 
@@ -74,7 +76,21 @@ impl CPU {
         rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
 
         // TODO load rom to memory
-        rom.load_rom_to_banks();
+        // Check cartridge type and load the ROM into memory based on the type
+        for byte in 0x00..0x3FFF {
+            self.rom_bank_0[byte] = rom.rom[byte];
+        }
+        debug!("ROM Bank 0 loaded into memory, size: {} bytes", self.rom_bank_0.len());
+        if rom.cartridge_type == 0x00 {
+            // ROM ONLY
+            debug!("ROM ONLY");
+        }
+        else {
+            debug!("ROM with MBC");
+            let rom_banks    = rom.load_rom_to_banks();
+            self.work_ram[0x4000..=0x7FFF].copy_from_slice(&rom_banks.data[0]); // Load the first bank of the ROM into memory
+            debug!("ROM Bank 1 loaded into memory, size: {} bytes", rom_banks.data[0].len());
+        }
         //debug!("ROM loaded into memory");
     }
 

@@ -44,7 +44,7 @@ pub struct ROM {
     pub mask_rom_version: u8,
     pub header_checksum: u8,
     pub global_checksum: u16,
-    rom: Vec<u8>,
+    pub rom: Vec<u8>,
 }
 
 pub struct ROMBanks {
@@ -125,7 +125,9 @@ impl ROM {
         debug!("ROM size: {}", self.rom.len());
         debug!("Offset: {}", rom_offset);
         debug!("Size of first bank: {}", rom_banks.data[0].len());
-        debug!("Size of last bank: {}", rom_banks.data[rom_banks.data.len() - 1].len());
+        if rom_banks.data.len() > 0 {
+            debug!("Size of last bank: {}", rom_banks.data[rom_banks.data.len() - 1].len());
+        }
         
         rom_banks
     }

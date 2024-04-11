@@ -14,7 +14,5 @@ fn main() {
     let mut cpu = CPU::CPU::new();
     //cpu.load_rom(String::from("roms/Tetris.gb"));
     cpu.load_rom(String::from("roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb"));
-    
-
 
 }

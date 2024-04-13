@@ -1,7 +1,8 @@
 
 // Constants for the Gameboy's memory map
-pub const BOOT_ROM_START: u16 = 0x0000;
-pub const BOOT_ROM_END:u16 = 0x00FF;
+pub const BOOT_ROM_START: u16 = 0x0000; // TODO incorrect
+pub const BOOT_ROM_END:u16 = 0x00FF; // TODO incorrect
+
 pub const GAME_ROM_BANK_0_START: u16 = 0x0000;
 pub const GAME_ROM_BANK_0_END: u16 = 0x3FFF;
 pub const GAME_ROM_BANK_N_START: u16 = 0x4000;
@@ -46,3 +47,8 @@ pub const BG_PALETTE_START: u16 = 0xFF68; // TODO first appearance was CGB, so m
 pub const BG_PALETTE_END: u16 = 0xFF6B; // TODO first appearance was CGB, so maybe undeeded.
 pub const WRAM_BANK_SELECT: u16 = 0xFF70; // TODO first appearance was CGB, so maybe undeeded.
 
+// FLAGS
+pub const ZERO_FLAG_BYTE_POSITION: u8 = 7;
+pub const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
+pub const HALF_CARRY_FLAG_BYTE_POSITION: u8 = 5;
+pub const CARRY_FLAG_BYTE_POSITION: u8 = 4;

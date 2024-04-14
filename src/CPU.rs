@@ -400,4 +400,131 @@ impl CPU {
         self.registers.sp += 2;
     }
 
+    /*
+    *   JP nn
+    *   Unconditional jump to the absolute address specified by the 16-bit operand nn.
+    */
+    fn op_jp_nn(&mut self, address: u16) {
+        debug!("op_jp_nn");
+        self.registers.pc = address;
+    }
+
+    /*
+    *   JP HL
+    *   Unconditional jump to the absolute address specified by the 16-bit register HL.
+    */
+    fn op_jp_hl(&mut self) {
+        debug!("op_jp_hl");
+        self.registers.pc = self.registers.get_hl();
+    }
+
+    /*
+    *   JP cc, nn
+    *   Conditional jump to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
+    *   Note that the operand (absolute address) is read even when the condition is false!
+    */
+    // TODO condition likely incorrect
+    fn op_jp_cc_nn(&mut self, condition: bool, address: u16) {
+        debug!("op_jp_cc_nn");
+        if condition {
+            self.registers.pc = address;
+        }
+    }
+    
+    /*
+    *   JR e
+    *   Unconditional jump to the relative address specified by the signed 8-bit operand e.
+    */
+    fn op_jr_e(&mut self, offset: i8) {
+        debug!("op_jr_e");
+        self.registers.pc = (self.registers.pc as i16 + offset as i16) as u16;
+    }
+
+    /*
+    *   JR cc, e
+    *   Conditional jump to the relative address specified by the signed 8-bit operand e, depending on the condition cc.
+    */
+    // TODO condition likely incorrect
+    fn op_jr_cc_e(&mut self, condition: bool, offset: i8) {
+        debug!("op_jr_cc_e");
+        if condition {
+            self.registers.pc = (self.registers.pc as i16 + offset as i16) as u16;
+        }
+    }
+
+    /*
+    *   CALL nn
+    *   Unconditional function call to the absolute address specified by the 16-bit operand nn.
+    */
+    // TODO logic likely incorrect
+    fn op_call_nn(&mut self, address: u16) {
+        debug!("op_call_nn");
+        //self.op_push_rr(self.registers.pc);
+        //self.registers.pc = address;
+        self.registers.pc += 1;
+        let lsb = (self.registers.pc & 0xFF) as u8;
+        self.registers.pc += 1;
+        let msb = (self.registers.pc >> 8) as u8;
+        let nn: u16 = lsb as u16 | (msb as u16) << 8;
+        self.registers.pc = nn;
+    }
+
+    /*
+    *   CALL cc, nn
+    *   Conditional function call to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
+    */
+    // TODO logic likely incorrect
+    fn op_call_cc_nn(&mut self, condition: bool, address: u16) {
+        debug!("op_call_cc_nn");
+        if condition {
+            self.registers.pc += 1;
+            let lsb = (self.registers.pc & 0xFF) as u8;
+            self.registers.pc += 1;
+            let msb = (self.registers.pc >> 8) as u8;
+            let nn: u16 = lsb as u16 | (msb as u16) << 8;
+            self.registers.pc = nn;
+        }
+    }
+
+    /*
+    *   RET
+    *   Unconditional return from a function.
+    */
+    fn op_ret(&mut self) {
+        debug!("op_ret");
+        let lsb = self.work_ram[self.registers.sp as usize];
+        self.registers.sp += 1;
+        let msb = self.work_ram[self.registers.sp as usize];
+        self.registers.sp += 1;
+        self.registers.pc = ((msb as u16) << 8) | lsb as u16;
+    }
+
+    /*
+    *   RET cc
+    *   Conditional return from a function, depending on the condition cc.
+    */
+    // TODO logic likely incorrect
+    fn op_ret_cc(&mut self, condition: bool) {
+        debug!("op_ret_cc");
+        if condition {
+            let lsb = self.work_ram[self.registers.sp as usize];
+            self.registers.sp += 1;
+            let msb = self.work_ram[self.registers.sp as usize];
+            self.registers.sp += 1;
+            self.registers.pc = ((msb as u16) << 8) | lsb as u16;
+        }
+    }
+
+    /*
+    *   RETI
+    *   Unconditional return from a function. Also enables interrupts by setting IME=1.
+    */
+    fn op_reti(&mut self) {
+        debug!("op_reti");
+        self.op_ret();
+        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 1;
+    }
+
+    
+
 }

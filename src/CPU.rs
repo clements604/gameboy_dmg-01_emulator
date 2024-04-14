@@ -260,4 +260,144 @@ impl CPU {
         self.registers.a = self.work_ram[address as usize];
     }
 
+    /*
+    *   LDH (C), A
+    *   Load to the address specified by the 8-bit C register, data from the 8-bit A register. The full 16-bit absolute
+    *   address is obtained by setting the most significant byte to 0xFF and the least significant byte to the value of C,
+    *   so the possible range is 0xFF00-0xFFFF.
+    */
+    fn op_ldh_c_a(&mut self) {
+        debug!("op_ldh_c_a");
+        let address = 0xFF00 | self.registers.c as u16;
+        self.work_ram[address as usize] = self.registers.a;
+    }
+
+    /*
+    *   LDH A, (n)
+    *   Load to the 8-bit A register, data from the address specified by the 8-bit immediate data n. The full 16-bit
+    *   absolute address is obtained by setting the most significant byte to 0xFF and the least significant byte to the
+    *   value of n, so the possible range is 0xFF00-0xFFFF.
+    */
+    fn op_ldh_a_n8(&mut self, value: u8) {
+        debug!("op_ldh_a_n8");
+        let address = 0xFF00 | value as u16;
+        self.registers.a = self.work_ram[address as usize];
+    }
+
+    /*
+    *   LDH (n), A
+    *   Load to the address specified by the 8-bit immediate data n, data from the 8-bit A register. The full 16-bit
+    *   absolute address is obtained by setting the most significant byte to 0xFF and the least significant byte to the
+    *   value of n, so the possible range is 0xFF00-0xFFFF.
+    */
+    fn op_ldh_n8_a(&mut self, value: u8) {
+        debug!("op_ldh_n8_a");
+        let address = 0xFF00 | value as u16;
+        self.work_ram[address as usize] = self.registers.a;
+    }
+
+    /*
+    *   LD A, (HL-)
+    *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit register HL. The value of
+    *   HL is decremented after the memory read.
+    */
+    fn op_ld_a_hl_dec(&mut self) {
+        debug!("op_ld_a_hl_dec");
+        let hlv = self.registers.get_hl();
+        self.registers.a = self.work_ram[hlv as usize];
+        self.registers.set_hl(hlv - 1);
+    }
+
+    /*
+    *   LD (HL-), A
+    *   Load to the absolute address specified by the 16-bit register HL, data from the 8-bit A register. The value of
+    *   HL is decremented after the memory write.
+    */
+    fn op_ld_hl_dec_a(&mut self) {
+        debug!("op_ld_hl_dec_a");
+        let hlv = self.registers.get_hl();
+        self.work_ram[hlv as usize] = self.registers.a;
+        self.registers.set_hl(hlv - 1);
+    }
+
+    /*
+    *   LD A, (HL+)
+    *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit register HL. The value of
+    *   HL is incremented after the memory read.
+    */
+    fn op_ld_a_hl_inc(&mut self) {
+        debug!("op_ld_a_hl_inc");
+        let hlv = self.registers.get_hl();
+        self.registers.a = self.work_ram[hlv as usize];
+        self.registers.set_hl(hlv + 1);
+    }
+
+    /*
+    *   LD (HL+), A
+    *   Load to the absolute address specified by the 16-bit register HL, data from the 8-bit A register. The value of
+    *   HL is incremented after the memory write.
+    */
+    fn op_ld_hl_inc_a(&mut self) {
+        debug!("op_ld_hl_inc_a");
+        let hlv = self.registers.get_hl();
+        self.work_ram[hlv as usize] = self.registers.a;
+        self.registers.set_hl(hlv + 1);
+    }
+
+    /*
+    *   LD rr, nn
+    *   Load to the 16-bit register rr, the immediate 16-bit data nn.
+    */
+    // TODO function pointer here?
+    fn op_ld_rr_nn(&mut self, register: &mut u16, value: u16) {
+        debug!("op_ld_rr_nn");
+        *register = value;
+    }
+
+    /*
+    *   LD (nn), SP
+    *   Load to the absolute address specified by the 16-bit operand nn, data from the 16-bit SP register.
+    */
+    fn op_ld_nn_sp(&mut self, address: u16) {
+        debug!("op_ld_nn_sp");
+        self.work_ram[address as usize] = (self.registers.sp & 0xFF) as u8;
+        self.work_ram[(address + 1) as usize] = (self.registers.sp >> 8) as u8;
+    }
+
+    /*
+    *   LD SP, HL
+    *   Load to the 16-bit SP register, data from the 16-bit HL register.
+    */
+    fn op_ld_sp_hl(&mut self) {
+        debug!("op_ld_sp_hl");
+        self.registers.sp = self.registers.get_hl();
+    }
+
+    /*
+    *   PUSH rr
+    *   Push to the stack memory, data from the 16-bit register rr.
+    */
+    // TODO - work ram in the stack?
+    // TODO function pointer here?
+    fn op_push_rr(&mut self, register: u16) {
+        debug!("op_push_rr");
+        self.registers.sp -= 2;
+        self.work_ram[self.registers.sp as usize] = (register >> 8) as u8;
+        self.work_ram[(self.registers.sp + 1) as usize] = register as u8;
+    }
+
+    /*
+    *   POP rr
+    *   Pops to the 16-bit register rr, data from the stack memory.
+    *   This instruction does not do calculations that affect flags, but POP AF completely replaces the F register
+    *   value, so all flags are changed based on the 8-bit data that is read from memory.
+    */
+    // TODO - work ram in the stack?
+    // TODO function pointer here?
+    fn op_pop_rr(&mut self, register: &mut u16) {
+        debug!("op_pop_rr");
+        *register = (self.work_ram[self.registers.sp as usize] as u16) << 8 | self.work_ram[(self.registers.sp + 1) as usize] as u16;
+        self.registers.sp += 2;
+    }
+
 }

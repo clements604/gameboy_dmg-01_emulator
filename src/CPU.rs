@@ -16,12 +16,28 @@ struct Registers {
     c: u8,
     d: u8,
     e: u8,
-    f: u8, // Flags
+    f: FlagsRegister, // Flags
     h: u8,
     l: u8,
     pc: u16, // Program counter
     sp: u16, // Stack pointer
 }
+
+struct FlagsRegister {
+    zero: bool,
+    subtract: bool,
+    half_carry: bool,
+    carry: bool
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Flag {
+    Z, // Zero flag
+    N, // Subtract flag
+    H, // Half-carry flag
+    C, // Carry flag
+}
+
 pub struct CPU {
     registers: Registers,
     work_ram: [u8; 0xFFFF],
@@ -36,7 +52,7 @@ impl Registers {
             c: 0,
             d: 0,
             e: 0,
-            f: 0,
+            f: FlagsRegister::new(),
             h: 0,
             l: 0,
             pc: 0,
@@ -45,7 +61,8 @@ impl Registers {
     }
 
     fn get_af(&self) -> u16 {
-        (self.a as u16) << 8 | self.f as u16
+        let flags: u16 = self.f.into();
+        (self.a as u16) << 8 | flags
     }
 
     fn get_bc(&self) -> u16 {
@@ -62,7 +79,7 @@ impl Registers {
 
     fn set_af(&mut self, value: u16) {
         self.a = (value >> 8) as u8;
-        self.f = value as u8;
+        self.f = value.into();
     }
 
     fn set_bc(&mut self, value: u16) {
@@ -80,6 +97,88 @@ impl Registers {
         self.l = value as u8;
     }
    
+}
+
+impl FlagsRegister {
+    pub fn new() -> Self {
+        FlagsRegister {
+            zero: false,
+            subtract: false,
+            half_carry: false,
+            carry: false
+        }
+    }
+
+    fn set_flag(&mut self, flag: Flag, value: bool) {
+        match flag {
+            Flag::Z => self.zero = value,
+            Flag::N => self.subtract = value,
+            Flag::H => self.half_carry = value,
+            Flag::C => self.carry = value
+        }
+    }
+
+    fn get_flag(&self, flag: Flag) -> bool {
+        match flag {
+            Flag::Z => self.zero,
+            Flag::N => self.subtract,
+            Flag::H => self.half_carry,
+            Flag::C => self.carry
+        }
+    }
+    
+}
+
+impl std::convert::From<FlagsRegister> for u8  {
+    fn from(flag: FlagsRegister) -> u8 {
+        (if flag.zero       { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION |
+        (if flag.subtract   { 1 } else { 0 }) << SUBTRACT_FLAG_BYTE_POSITION |
+        (if flag.half_carry { 1 } else { 0 }) << HALF_CARRY_FLAG_BYTE_POSITION |
+        (if flag.carry      { 1 } else { 0 }) << CARRY_FLAG_BYTE_POSITION
+    }
+}
+
+impl std::convert::From<FlagsRegister> for u16  {
+    fn from(flag: FlagsRegister) -> u16 {
+        let mut result: u16 = 0;
+        result |= (if flag.zero       { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION;
+        result |= (if flag.subtract   { 1 } else { 0 }) << SUBTRACT_FLAG_BYTE_POSITION;
+        result |= (if flag.half_carry { 1 } else { 0 }) << HALF_CARRY_FLAG_BYTE_POSITION;
+        result |= (if flag.carry      { 1 } else { 0 }) << CARRY_FLAG_BYTE_POSITION;
+        result
+    }
+}
+
+impl std::convert::From<u8> for FlagsRegister {
+    fn from(byte: u8) -> Self {
+        let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let half_carry = ((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let carry = ((byte >> CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
+
+        FlagsRegister {
+            zero,
+            subtract,
+            half_carry,
+            carry
+        }
+    }
+}
+
+impl std::convert::From<u16> for FlagsRegister {
+    fn from(byte: u16) -> Self {
+        let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let half_carry = ((byte >> HALF_CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
+        let carry = ((byte >> CARRY_FLAG_BYTE_POSITION) & 0b1) != 0;
+
+        FlagsRegister {
+            zero,
+            subtract,
+            half_carry,
+            carry
+        }
+    }
 }
 
 impl CPU {
@@ -131,13 +230,6 @@ impl CPU {
     //TODO
     pub fn write_rom(&mut self, address: u16, data: u8) {
         unimplemented!("write_rom");
-    }
-
-    /*
-    * nop - Do nothing
-    */
-    pub fn nop(&mut self) {
-        debug!("NOP");
     }
     
     /*
@@ -525,6 +617,115 @@ impl CPU {
         self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 1;
     }
 
+    /*
+    *   RST n
+    *   Unconditional function call to the absolute fixed address defined by the opcode.
+    */
+    // TODO logic likely incorrect
+    fn op_rst_n(&mut self, address: u16) {
+        debug!("op_rst_n");
+        let return_address = self.registers.pc;
+        self.op_push_rr(return_address);
+        self.registers.pc = address;
+    }
+
+    /*
+    *   HALT
+    *   STOP
+    *   DI
+    *   Disables interrupt handling by setting IME=0 and cancelling any scheduled effects of the EI instruction if any.
+    */
+
+    fn op_halt(&mut self) {
+        debug!("op_halt");
+        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+    }
+    fn op_stop(&mut self) {
+        debug!("op_stop");
+        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+    }
+    fn op_di(&mut self) {
+        debug!("op_di");
+        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+    }
+
+    /*
+    *   EI
+    *   Schedules interrupt handling to be enabled after the next machine cycle.
+    */
+    fn op_ei(&mut self) {
+        debug!("op_ei");
+        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 1;
+    }
+
+    /*
+    *   CCF
+    *   Flips the carry flag, and clears the N and H flags.
+    */
+    fn op_ccf(&mut self) {
+        debug!("op_ccf");
+        // Flip the carry flag (bit 4)
+        self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+        //self.registers.f ^= 0x10;
+        // Clear the subtract (N) and half-carry (H) flags (bits 6 and 5)
+        //self.registers.f &= 0b1001_1111;
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+    }
+
+    /*
+    *   SCF
+    *   Sets the carry flag, and clears the N and H flags.
+    */
+    fn op_scf(&mut self) {
+        debug!("op_scf");
+        // Set the carry flag (bit 4)
+        //self.registers.f |= 0x10;
+        self.registers.f.set_flag(Flag::C, true);
+        // Clear the subtract (N) and half-carry (H) flags (bits 6 and 5)
+        //self.registers.f &= 0b1001_1111;
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+    }
+
+    /*
+    *   NOP
+    *   No-operation. This instruction doesn’t do anything, but can be used to add a delay of one machine cycle and
+    *   increment PC by one.
+    */
+    // TODO - very likely incorrect
+    fn op_daa(&mut self) {
+        debug!("op_daa");
     
+        let mut adjustment = 0;
+        let mut carry_adjustment = 0;
+    
+        if self.registers.f.get_flag(Flag::H) || (self.registers.a & 0xF) > 9 {
+            adjustment |= 0x06;
+        }
+    
+        if self.registers.f.get_flag(Flag::C) || self.registers.a > 0x99 {
+            adjustment |= 0x60;
+            carry_adjustment |= 0x100;
+        }
+    
+        let result = self.registers.a.wrapping_add(adjustment);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, (result & 0x100) != 0);
+    
+        self.registers.a = result + carry_adjustment;
+    }
+    
+    /*
+    *   CPL
+    *   Flips all the bits in the 8-bit A register, and sets the N and H flags.
+    */
+    fn op_cpl(&mut self) {
+        debug!("op_cpl");
+        self.registers.a = !self.registers.a;
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers.f.set_flag(Flag::H, true);
+    }
 
 }

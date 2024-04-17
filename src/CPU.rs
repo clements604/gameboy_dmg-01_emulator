@@ -23,6 +23,7 @@ struct Registers {
     sp: u16, // Stack pointer
 }
 
+#[derive(Debug, Clone, Copy)]
 struct FlagsRegister {
     zero: bool,
     subtract: bool,
@@ -62,7 +63,8 @@ impl Registers {
 
     fn get_af(&self) -> u16 {
         let flags: u16 = self.f.into();
-        (self.a as u16) << 8 | flags
+        let af: u16 = (self.a as u16) << 8 | flags;
+        af
     }
 
     fn get_bc(&self) -> u16 {
@@ -225,11 +227,662 @@ impl CPU {
     }
 
     /*
-    *   Write data to
+    *   CPU cycle - fetch, decode, execute
     */
-    //TODO
-    pub fn write_rom(&mut self, address: u16, data: u8) {
-        unimplemented!("write_rom");
+    pub fn cycle(&mut self) {
+        debug!("##################################################");
+        debug!("Fetch");
+
+        let opcode = self.work_ram[self.registers.pc as usize];
+        debug!("Opcode [{}]", opcode);
+
+        self.registers.pc += 1;
+        debug!("PC [{}]", self.registers.pc);
+        
+        debug!("Decode & Execute");
+
+        match opcode {
+            0x00 => {
+                self.op_nop();
+            },
+            0x01 => {
+                debug!("op_ld_rr_nn 0x01");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                //self.op_ld_rr_nn(&mut self.registers.set_bc, nn);
+                self.registers.set_bc(nn);
+            },
+            0x02 => {
+                debug!("0x02");
+                self.work_ram[self.registers.get_bc() as usize] = self.registers.a;
+            },
+            0x03 => {
+                debug!("0x03");
+                self.registers.set_bc(self.registers.get_bc() + 1);
+            },
+            0x04 => {
+                debug!("0x04");
+                self.registers.b = self.registers.b.wrapping_add(1);
+            },
+            0x05 => {
+                debug!("0x05");
+                self.registers.b = self.registers.b.wrapping_sub(1);
+            },
+            0x06 => {
+                debug!("0x06");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.b = value;
+            },
+            0x07 => {
+                debug!("0x07");
+                //TODO move to own function
+                //self.op_rlc(&mut self.registers.a);
+                let carry = self.registers.a & 0x80 != 0;
+                self.registers.a = (self.registers.a << 1) | (if carry { 1 } else { 0 });
+                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, carry);
+            },
+            0x08 => {
+                debug!("0x08");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.work_ram[nn as usize] = (self.registers.sp & 0xFF) as u8;
+                self.work_ram[(nn + 1) as usize] = (self.registers.sp >> 8) as u8;
+            },
+            0x09 => {
+                debug!("0x09");
+                let hl = self.registers.get_hl();
+                let bc = self.registers.get_bc();
+                self.registers.set_hl(hl + bc);
+            },
+            0x0A => {
+                debug!("0x0A");
+                self.registers.a = self.work_ram[self.registers.get_bc() as usize];
+            },
+            0x0B => {
+                debug!("0x0B");
+                self.registers.set_bc(self.registers.get_bc() - 1);
+            },
+            0x0C => {
+                debug!("0x0C");
+                self.registers.c = self.registers.c.wrapping_add(1);
+            },
+            0x0D => {
+                debug!("0x0D");
+                self.registers.c = self.registers.c.wrapping_sub(1);
+            },
+            0x0E => {
+                debug!("0x0E");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.c = value;
+            },
+            0x0F => {
+                debug!("0x0F");
+                //TODO move to own function
+                //self.op_rrc(&mut self.registers.a);
+                let carry = self.registers.a & 0x01 != 0;
+                self.registers.a = (self.registers.a >> 1) | (if carry { 0x80 } else { 0 });
+                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, carry);
+            },
+            0x10 => {
+                // TODO - Implement STOP
+                debug!("0x10");
+                unimplemented!("STOP not implemented");
+            },
+            0x11 => {
+                debug!("op_ld_rr_nn 0x11");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.registers.set_de(nn);
+            },
+            0x12 => {
+                debug!("0x12");
+                self.work_ram[self.registers.get_de() as usize] = self.registers.a;
+            },
+            0x13 => {
+                debug!("0x13");
+                self.registers.set_de(self.registers.get_de() + 1);
+            },
+            0x14 => {
+                debug!("0x14");
+                self.registers.d = self.registers.d.wrapping_add(1);
+            },
+            0x15 => {
+                debug!("0x15");
+                self.registers.d = self.registers.d.wrapping_sub(1);
+            },
+            0x16 => {
+                debug!("0x16");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.d = value;
+            },
+            0x17 => {
+                debug!("0x17");
+                //TODO move to own function
+                //self.op_rl(&mut self.registers.a);
+                let carry = self.registers.a & 0x80 != 0;
+                self.registers.a = (self.registers.a << 1) | (if self.registers.f.get_flag(Flag::C) { 1 } else { 0 });
+                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, carry);
+            },
+            0x18 => {
+                debug!("0x18");
+                let offset = self.work_ram[self.registers.pc as usize] as i8;
+                self.registers.pc += 1;
+                self.op_jr_e(offset);
+            },
+            0x19 => {
+                debug!("0x19");
+                let hl = self.registers.get_hl();
+                let de = self.registers.get_de();
+                self.registers.set_hl(hl + de);
+            },
+            0x1A => {
+                debug!("0x1A");
+                self.registers.a = self.work_ram[self.registers.get_de() as usize];
+            },
+            0x1B => {
+                debug!("0x1B");
+                self.registers.set_de(self.registers.get_de() - 1);
+            },
+            0x1C => {
+                debug!("0x1C");
+                self.registers.e = self.registers.e.wrapping_add(1);
+            },
+            0x1D => {
+                debug!("0x1D");
+                self.registers.e = self.registers.e.wrapping_sub(1);
+            },
+            0x1E => {
+                debug!("0x1E");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.e = value;
+            },
+            0x1F => {
+                debug!("0x1F");
+                //TODO move to own function
+                //self.op_rr(&mut self.registers.a);
+                let carry = self.registers.a & 0x01 != 0;
+                self.registers.a = (self.registers.a >> 1) | (if self.registers.f.get_flag(Flag::C) { 0x80 } else { 0 });
+                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, carry);
+            },
+            0x20 => {
+                debug!("0x20");
+                let offset = self.work_ram[self.registers.pc as usize] as i8;
+                self.registers.pc += 1;
+                self.op_jr_cc_e(!self.registers.f.get_flag(Flag::Z), offset);
+            },
+            0x21 => {
+                debug!("op_ld_rr_nn 0x21");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.registers.set_hl(nn);
+            },
+            0x22 => {
+                debug!("0x22");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
+                self.registers.set_hl(self.registers.get_hl() + 1);
+            },
+            0x23 => {
+                debug!("0x23");
+                self.registers.set_hl(self.registers.get_hl() + 1);
+            },
+            0x24 => {
+                debug!("0x24");
+                self.registers.h = self.registers.h.wrapping_add(1);
+            },
+            0x25 => {
+                debug!("0x25");
+                self.registers.h = self.registers.h.wrapping_sub(1);
+            },
+            0x26 => {
+                debug!("0x26");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.h = value;
+            },
+            0x27 => {
+                debug!("0x27");
+                //TODO move to own function
+                //self.op_daa();
+                let mut a = self.registers.a;
+                let mut adjust = 0;
+                if self.registers.f.get_flag(Flag::H) || (!self.registers.f.get_flag(Flag::N) && (a & 0x0F) > 9) {
+                    adjust |= 0x06;
+                }
+                if self.registers.f.get_flag(Flag::C) || (!self.registers.f.get_flag(Flag::N) && a > 0x99) {
+                    adjust |= 0x60;
+                    self.registers.f.set_flag(Flag::C, true);
+                }
+                a = a.wrapping_add(adjust);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::Z, a == 0);
+                self.registers.a = a;
+            },
+            0x28 => {
+                debug!("0x28");
+                let offset = self.work_ram[self.registers.pc as usize] as i8;
+                self.registers.pc += 1;
+                self.op_jr_cc_e(self.registers.f.get_flag(Flag::Z), offset);
+            },
+            0x29 => {
+                debug!("0x29");
+                let hl = self.registers.get_hl();
+                let hl = self.registers.get_hl();
+                self.registers.set_hl(hl + hl);
+            },
+            0x2A => {
+                debug!("0x2A");
+                self.registers.a = self.work_ram[self.registers.get_hl() as usize];
+                self.registers.set_hl(self.registers.get_hl() + 1);
+            },
+            0x2B => {
+                debug!("0x2B");
+                self.registers.set_hl(self.registers.get_hl() - 1);
+            },
+            0x2C => {
+                debug!("0x2C");
+                self.registers.l = self.registers.l.wrapping_add(1);
+            },
+            0x2D => {
+                debug!("0x2D");
+                self.registers.l = self.registers.l.wrapping_sub(1);
+            },
+            0x2E => {
+                debug!("0x2E");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.l = value;
+            },
+            0x2F => {
+                debug!("0x2F");
+                //TODO move to own function
+                //self.op_cpl();
+                self.registers.a = !self.registers.a;
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(Flag::H, true);
+            },
+            0x30 => {
+                debug!("0x30");
+                let offset = self.work_ram[self.registers.pc as usize] as i8;
+                self.registers.pc += 1;
+                self.op_jr_cc_e(!self.registers.f.get_flag(Flag::C), offset);
+            },
+            0x31 => {
+                debug!("op_ld_rr_nn 0x31");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.registers.sp = nn;
+            },
+            0x32 => {
+                debug!("0x32");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
+                self.registers.set_hl(self.registers.get_hl() - 1);
+            },
+            0x33 => {
+                debug!("0x33");
+                self.registers.sp = self.registers.sp.wrapping_add(1);
+            },
+            0x34 => {
+                debug!("0x34");
+                let hl = self.registers.get_hl();
+                let value = self.work_ram[hl as usize];
+                self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::C, value == 0xFF);
+                self.work_ram[hl as usize] = value.wrapping_add(1);
+                self.registers.f.set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
+            },
+            0x35 => {
+                debug!("0x35");
+                let hl = self.registers.get_hl();
+                let value = self.work_ram[hl as usize];
+                self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x00);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(Flag::C, value == 0x00);
+                self.work_ram[hl as usize] = value.wrapping_sub(1);
+                self.registers.f.set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
+            },
+            0x36 => {
+                debug!("0x36");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.work_ram[self.registers.get_hl() as usize] = value;
+            },
+            0x37 => {
+                debug!("0x37");
+                //TODO move to own function
+                //self.op_scf();
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, true);
+            },
+            0x38 => {
+                debug!("0x38");
+                let offset = self.work_ram[self.registers.pc as usize] as i8;
+                self.registers.pc += 1;
+                self.op_jr_cc_e(self.registers.f.get_flag(Flag::C), offset);
+            },
+            0x39 => {
+                debug!("0x39");
+                let hl = self.registers.get_hl();
+                let sp = self.registers.sp;
+                self.registers.set_hl(hl + sp);
+            },
+            0x3A => {
+                debug!("0x3A");
+                self.registers.a = self.work_ram[self.registers.get_hl() as usize];
+                self.registers.set_hl(self.registers.get_hl() - 1);
+            },
+            0x3B => {
+                debug!("0x3B");
+                self.registers.sp = self.registers.sp.wrapping_sub(1);
+            },
+            0x3C => {
+                debug!("0x3C");
+                self.registers.a = self.registers.a.wrapping_add(1);
+            },
+            0x3D => {
+                debug!("0x3D");
+                self.registers.a = self.registers.a.wrapping_sub(1);
+            },
+            0x3E => {
+                debug!("0x3E");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.registers.a = value;
+            },
+            0x3F => {
+                debug!("0x3F");
+                //TODO move to own function
+                //self.op_ccf();
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+            },
+            0x40 => {
+                debug!("0x40");
+                //self.op_ld_r8_r8(&self.registers.b, &mut self.registers.b);
+                //TODO fix this by moving to own function
+                self.registers.b = self.registers.b;
+            },
+            0x41 => {
+                debug!("0x41");
+                self.registers.b = self.registers.c;
+            },
+            0x42 => {
+                debug!("0x42");
+                self.registers.b = self.registers.d;
+            },
+            0x43 => {
+                debug!("0x43");
+                self.registers.b = self.registers.e;
+            },
+            0x44 => {
+                debug!("0x44");
+                self.registers.b = self.registers.h;
+            },
+            0x45 => {
+                debug!("0x45");
+                self.registers.b = self.registers.l;
+            },
+            0x46 => {
+                debug!("0x46");
+                self.registers.b = self.registers.get_hl() as u8;
+            },
+            0x47 => {
+                debug!("0x47");
+                self.registers.b = self.registers.a;
+            },
+            0x48 => {
+                debug!("0x48");
+                self.registers.c = self.registers.b;
+            },
+            0x49 => {
+                debug!("0x49");
+                //self.op_ld_r8_r8(&self.registers.c, &mut self.registers.c);
+                //TODO fix this by moving to own function
+                self.registers.c = self.registers.c;
+            },
+            0x4A => {
+                debug!("0x4A");
+                self.registers.c = self.registers.d;
+            },
+            0x4B => {
+                debug!("0x4B");
+                self.registers.c = self.registers.e;
+            },
+            0x4C => {
+                debug!("0x4C");
+                self.registers.c = self.registers.h;
+            },
+            0x4D => {
+                debug!("0x4D");
+                self.registers.c = self.registers.l;
+            },
+            0x4E => {
+                debug!("0x4E");
+                self.registers.c = self.registers.get_hl() as u8;
+            },
+            0x4F => {
+                debug!("0x4F");
+                self.registers.c = self.registers.a;
+            },
+            0x50 => {
+                debug!("0x50");
+                self.registers.d = self.registers.b;
+            },
+            0x51 => {
+                debug!("0x51");
+                self.registers.d = self.registers.c;
+            },
+            0x52 => {
+                debug!("0x52");
+                //self.op_ld_r8_r8(&self.registers.d, &mut self.registers.d);
+                //TODO fix this by moving to own function
+                self.registers.d = self.registers.d;
+            },
+            0x53 => {
+                debug!("0x53");
+                self.registers.d = self.registers.e;
+            },
+            0x54 => {
+                debug!("0x54");
+                self.registers.d = self.registers.h;
+            },
+            0x55 => {
+                debug!("0x55");
+                self.registers.d = self.registers.l;
+            },
+            0x56 => {
+                debug!("0x56");
+                self.registers.d = self.registers.get_hl() as u8;
+            },
+            0x57 => {
+                debug!("0x57");
+                self.registers.d = self.registers.a;
+            },
+            0x58 => {
+                debug!("0x58");
+                self.registers.e = self.registers.b;
+            },
+            0x59 => {
+                debug!("0x59");
+                self.registers.e = self.registers.c;
+            },
+            0x5A => {
+                debug!("0x5A");
+                self.registers.e = self.registers.d;
+            },
+            0x5B => {
+                debug!("0x5B");
+                //self.op_ld_r8_r8(&self.registers.e, &mut self.registers.e);
+                //TODO fix this by moving to own function
+                self.registers.e = self.registers.e;
+            },
+            0x5C => {
+                debug!("0x5C");
+                self.registers.e = self.registers.h;
+            },
+            0x5D => {
+                debug!("0x5D");
+                self.registers.e = self.registers.l;
+            },
+            0x5E => {
+                debug!("0x5E");
+                self.registers.e = self.registers.get_hl() as u8;
+            },
+            0x5F => {
+                debug!("0x5F");
+                self.registers.e = self.registers.a;
+            },
+            0x60 => {
+                debug!("0x60");
+                self.registers.h = self.registers.b;
+            },
+            0x61 => {
+                debug!("0x61");
+                self.registers.h = self.registers.c;
+            },
+            0x62 => {
+                debug!("0x62");
+                self.registers.h = self.registers.d;
+            },
+            0x63 => {
+                debug!("0x63");
+                self.registers.h = self.registers.e;
+            },
+            0x64 => {
+                debug!("0x64");
+                //self.op_ld_r8_r8(&self.registers.h, &mut self.registers.h);
+                //TODO fix this by moving to own function
+                self.registers.h = self.registers.h;
+            },
+            0x65 => {
+                debug!("0x65");
+                self.registers.h = self.registers.l;
+            },
+            0x66 => {
+                debug!("0x66");
+                self.registers.h = self.registers.get_hl() as u8;
+            },
+            0x67 => {
+                debug!("0x67");
+                self.registers.h = self.registers.a;
+            },
+            0x68 => {
+                debug!("0x68");
+                self.registers.l = self.registers.b;
+            },
+            0x69 => {
+                debug!("0x69");
+                self.registers.l = self.registers.c;
+            },
+            0x6A => {
+                debug!("0x6A");
+                self.registers.l = self.registers.d;
+            },
+            0x6B => {
+                debug!("0x6B");
+                self.registers.l = self.registers.e;
+            },
+            0x6C => {
+                debug!("0x6C");
+                self.registers.l = self.registers.h;
+            },
+            0x6D => {
+                debug!("0x6D");
+                //self.op_ld_r8_r8(&self.registers.l, &mut self.registers.l);
+                //TODO fix this by moving to own function
+                self.registers.l = self.registers.l;
+            },
+            0x6E => {
+                debug!("0x6E");
+                self.registers.l = self.registers.get_hl() as u8;
+            },
+            0x6F => {
+                debug!("0x6F");
+                self.registers.l = self.registers.a;
+            },
+            0x70 => {
+                debug!("0x70");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.b;
+            },
+            0x71 => {
+                debug!("0x71");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.c;
+            },
+            0x72 => {
+                debug!("0x72");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.d;
+            },
+            0x73 => {
+                debug!("0x73");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.e;
+            },
+            0x74 => {
+                debug!("0x74");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.h;
+            },
+            0x75 => {
+                debug!("0x75");
+                self.work_ram[self.registers.get_hl() as usize] = self.registers.l;
+            },
+            0x76 => {
+                debug!("0x76");
+                //TODO move to own function
+                //self.op_halt();
+                unimplemented!("HALT not implemented");
+            },
+            0xC3 => {
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_jp_nn(nn);
+            },
+            _ => {
+                panic!("Unsupported opcode: {}", opcode);
+            }
+        }
+    }
+
+    /*
+    *   NOP
+    *   No operation.
+    */
+    fn op_nop(&mut self) {
+        debug!("op_nop");
     }
     
     /*
@@ -688,12 +1341,8 @@ impl CPU {
         self.registers.f.set_flag(Flag::H, false);
     }
 
-    /*
-    *   NOP
-    *   No-operation. This instruction doesn’t do anything, but can be used to add a delay of one machine cycle and
-    *   increment PC by one.
-    */
     // TODO - very likely incorrect
+    // TODO - Put function description comment
     fn op_daa(&mut self) {
         debug!("op_daa");
     
@@ -706,15 +1355,15 @@ impl CPU {
     
         if self.registers.f.get_flag(Flag::C) || self.registers.a > 0x99 {
             adjustment |= 0x60;
-            carry_adjustment |= 0x100;
+            carry_adjustment |= 0x100u16;
         }
     
-        let result = self.registers.a.wrapping_add(adjustment);
+        let result = self.registers.a.wrapping_add(adjustment) as u16;
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::H, false);
         self.registers.f.set_flag(Flag::C, (result & 0x100) != 0);
     
-        self.registers.a = result + carry_adjustment;
+        self.registers.a = (result + carry_adjustment) as u8;
     }
     
     /*
@@ -726,6 +1375,20 @@ impl CPU {
         self.registers.a = !self.registers.a;
         self.registers.f.set_flag(Flag::N, true);
         self.registers.f.set_flag(Flag::H, true);
+    }
+
+    /*
+    *   RCL (Rotate Left Through Carry) 
+    */
+    // TODO add detailed description
+    fn op_rlc(&mut self, register: &mut u8) {
+        debug!("op_rlc");
+        let carry = *register & 0x80 != 0;
+        *register = (*register << 1) | (if carry { 1 } else { 0 });
+        self.registers.f.set_flag(Flag::Z, *register == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, carry);
     }
 
 }

@@ -1,7 +1,6 @@
-
 // Constants for the Gameboy's memory map
 pub const BOOT_ROM_START: u16 = 0x0000; // TODO incorrect
-pub const BOOT_ROM_END:u16 = 0x00FF; // TODO incorrect
+pub const BOOT_ROM_END: u16 = 0x00FF; // TODO incorrect
 
 pub const GAME_ROM_BANK_0_START: u16 = 0x0000;
 pub const GAME_ROM_BANK_0_END: u16 = 0x3FFF;
@@ -24,8 +23,8 @@ pub const UNUSED_END: u16 = 0xFEFF;
 pub const IO_REGISTERS_START: u16 = 0xFF00;
 pub const IO_REGISTERS_END: u16 = 0xFF7F;
 pub const HIGH_RAM_START: u16 = 0xFF80;
-pub const HIGH_RAM_END: u16 = 0xFFFE;
-pub const INTERRUPT_ENABLE_REGISTER: u16 = 0xFFFF;
+//pub const HIGH_RAM_END: u16 = 0xFFFE;
+pub const INTERRUPT_ENABLE_REGISTER: u16 = 0xFFFE; //TODO shouldn't this be 0xFFFF? It throws an error if it is.
 
 // Constants for the Gameboy's I/O ranges
 pub const JOYPAD_INPUT: u16 = 0xFF00;

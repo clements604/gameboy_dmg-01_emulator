@@ -16,4 +16,8 @@ fn main() {
     //cpu.load_rom(String::from("roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb"));
     cpu.load_rom(String::from("roms/test/cpu_instrs.gb"));
 
+    loop {
+        cpu.cycle();
+    }
+
 }

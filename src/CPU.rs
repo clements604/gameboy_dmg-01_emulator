@@ -1822,6 +1822,7 @@ impl CPU {
                 self.op_pop_rr(&mut self.registers.get_bc());
             }
             0xC2 => {
+                debug!("0xC2");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -1830,6 +1831,7 @@ impl CPU {
                 self.op_jp_nn(nn);
             }
             0xC3 => {
+                debug!("0xC3");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -1837,17 +1839,397 @@ impl CPU {
                 let nn: u16 = lsb as u16 | (msb as u16) << 8;
                 self.op_jp_nn(nn);
             }
+            0xC4 => {
+                debug!("0xC4");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_call_nn(nn);
+            }
+            0xC5 => {
+                debug!("0xC5");
+                self.op_push_rr(self.registers.get_bc());
+            }
+            0xC6 => {
+                debug!("0xC6");
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = self.registers.a.wrapping_add(value);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+                self.registers
+                    .f
+                    .set_flag(Flag::C, (self.registers.a as u16) + (value as u16) > 0xFF);
+                self.registers.a = result;
+            }
+            0xC7 => {
+                debug!("0xC7");
+                self.op_rst_address(0x0000);
+            }
+            0xC8 => {
+                debug!("0xC8");
+                if self.registers.f.get_flag(Flag::Z) {
+                    self.op_ret();
+                }
+            }
             0xC9 => {
                 debug!("0xC9");
                 self.op_ret();
+            }
+            0xCA => {
+                debug!("0xCA");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_jp_nn(nn);
+            }
+            0xCB => {
+                debug!("0xCB");
+                unimplemented!("0xCB"); // TODO
+            }
+            0xCC => {
+                debug!("0xCC");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_call_nn(nn);
+            }
+            0xCD => {
+                debug!("0xCD");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_call_nn(nn);
+            }
+            0xCE => {
+                debug!("0xCE");
+                let value = self.work_ram[self.registers.pc as usize];
+                let carry = if self.registers.f.get_flag(Flag::C) {
+                    1
+                } else {
+                    0
+                } as u8;
+                let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
+                );
+                self.registers.f.set_flag(
+                    Flag::C,
+                    (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
+                );
+                self.registers.a = result;
+            }
+            0xCF => {
+                debug!("0xCF");
+                self.op_rst_address(0x08);
+            }
+            0xD0 => {
+                debug!("0xD0");
+                if !self.registers.f.get_flag(Flag::C) {
+                    self.op_ret();
+                }
+            }
+            0xD1 => {
+                debug!("0xD1");
+                self.op_pop_rr(&mut self.registers.get_de());
+            }
+            0xD2 => {
+                debug!("0xD2");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_jp_nn(nn);
+            }
+            0xD3 => {
+                debug!("0xD3");
+                panic!("Unsupported opcode: 0xD3");
+            }
+            0xD4 => {
+                debug!("0xD4");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_call_nn(nn);
+            }
+            0xD5 => {
+                debug!("0xD5");
+                self.op_push_rr(self.registers.get_de());
+            }
+            0xD6 => {
+                debug!("0xD6");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.a = self.registers.a.wrapping_sub(value);
+            }
+            0xD7 => {
+                debug!("0xD7");
+                self.op_rst_address(0x10);
+            }
+            0xD8 => {
+                debug!("0xD8");
+                if self.registers.f.get_flag(Flag::C) {
+                    self.op_ret();
+                }
+            }
+            0xD9 => {
+                debug!("0xD9");
+                self.op_ret();
+                self.op_ei();
+            }
+            0xDA => {
+                debug!("0xDA");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_jp_nn(nn);
+            }
+            0xDB => {
+                debug!("0xDB");
+                panic!("Unsupported opcode: 0xDB");
+            }
+            0xDC => {
+                debug!("0xDC");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_call_nn(nn);
+            }
+            0xDD => {
+                debug!("0xDD");
+                panic!("Unsupported opcode: 0xDD");
+            }
+            0xDE => {
+                debug!("0xDE");
+                let carry = if self.registers.f.get_flag(Flag::C) {
+                    1
+                } else {
+                    0
+                } as u8;
+                let result = self
+                    .registers
+                    .a
+                    .wrapping_sub(self.work_ram[self.registers.pc as usize]);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F)
+                        < (self.work_ram[self.registers.pc as usize] & 0x0F) + carry,
+                ); // Set the half-carry flag if there's a borrow from bit 4
+                self.registers.f.set_flag(
+                    Flag::C,
+                    (self.registers.a as u16)
+                        < (self.work_ram[self.registers.pc as usize] as u16) + (carry as u16),
+                ); // Set the carry flag if there's a borrow out of the most significant bit
+                self.registers.pc += 1;
+                self.registers.a = result;
+            }
+            0xDF => {
+                debug!("0xDF");
+                self.op_rst_address(0x18);
+            }
+            0xE0 => {
+                debug!("0xE0");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.op_ldh_n8_a(value);
+            }
+            0xE1 => {
+                debug!("0xE1");
+                self.op_pop_rr(&mut self.registers.get_hl());
+            }
+            0xE2 => {
+                debug!("0xE2");
+                self.op_ldh_c_a();
+            }
+            0xE3 => {
+                debug!("0xE3");
+                panic!("Unsupported opcode: 0xE3");
+            }
+            0xE4 => {
+                debug!("0xE4");
+                panic!("Unsupported opcode: 0xE4");
+            }
+            0xE5 => {
+                debug!("0xE5");
+                self.op_push_rr(self.registers.get_hl());
+            }
+            0xE6 => {
+                debug!("0xE6");
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = self.registers.a & value;
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, true);
+                self.registers.f.set_flag(Flag::C, false);
+                self.registers.a = result;
+            }
+            0xE7 => {
+                debug!("0xE7");
+                self.op_rst_address(0x20);
+            }
+            0xE8 => {
+                debug!("0xE8");
+                // TODO double check this logic
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
+                let carry = ((self.registers.sp & 0xFF) as i8 + (value as i8)) > 0x7F
+                    || ((self.registers.sp & 0xFF) as i8 + (value as i8)) < -0x80;
+                let half_carry = ((self.registers.sp & 0x0F) as i8 + (value as i8)) > 0x0F
+                    || ((self.registers.sp & 0x0F) as i8 + (value as i8)) < -0x10;
+                self.registers.f.set_flag(Flag::Z, false);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, half_carry);
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.sp = result;
+            }
+            0xE9 => {
+                debug!("0xE9");
+                self.op_jp_hl();
+            }
+            0xEA => {
+                debug!("0xEA");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_ld_nn_a(nn);
+            }
+            0xEB => {
+                debug!("0xEB");
+                panic!("Unsupported opcode: 0xEB");
+            }
+            0xEC => {
+                debug!("0xEC");
+                panic!("Unsupported opcode: 0xEC");
+            }
+            0xED => {
+                debug!("0xED");
+                panic!("Unsupported opcode: 0xED");
+            }
+            0xEE => {
+                debug!("0xEE");
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = self.registers.a ^ value;
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, false);
+                self.registers.f.set_flag(Flag::C, false);
+                self.registers.a = result;
+            }
+            0xEF => {
+                debug!("0xEF");
+                self.op_rst_address(0x28);
+            }
+            0xF0 => {
+                debug!("0xF0");
+                let value = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                self.op_ldh_a_n8(value);
+            }
+            0xF1 => {
+                debug!("0xF1");
+                self.op_pop_rr(&mut self.registers.get_af());
+            }
+            0xF2 => {
+                debug!("0xF2");
+                self.op_ldh_a_c();
             }
             0xF3 => {
                 debug!("0xF3");
                 self.op_di();
             }
-            _ => {
-                panic!("Unsupported opcode: {}", format!("{:02X}", opcode));
+            0xF4 => {
+                debug!("0xF4");
+                panic!("Unsupported opcode: 0xF4");
             }
+            0xF5 => {
+                debug!("0xF5");
+                self.op_push_rr(self.registers.get_af());
+            }
+            0xF6 => {
+                debug!("0xF6");
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = self.registers.a | value;
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, true);
+                self.registers.f.set_flag(Flag::C, false);
+                self.registers.a = result;
+            }
+            0xF7 => {
+                debug!("0xF7");
+                self.op_rst_address(0x30);
+            }
+            0xF8 => {
+                debug!("0xF8");
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
+                self.registers.set_hl(result);
+            }
+            0xF9 => {
+                debug!("0xF9");
+                self.op_ld_sp_hl();
+            }
+            0xFA => {
+                debug!("0xFA");
+                let lsb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let msb = self.work_ram[self.registers.pc as usize];
+                self.registers.pc += 1;
+                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                self.op_ld_a_nn(nn);
+            }
+            0xFB => {
+                debug!("0xFB");
+                self.op_ei();
+            }
+            0xFC => {
+                debug!("0xFC");
+                panic!("Unsupported opcode: 0xFC");
+            }
+            0xFD => {
+                debug!("0xFD");
+                panic!("Unsupported opcode: 0xFD");
+            }
+            0xFE => {
+                debug!("0xFE");
+                let value = self.work_ram[self.registers.pc as usize];
+                let result = self.registers.a.wrapping_sub(value);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
+                self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
+            }
+            0xFF => {
+                debug!("0xFF");
+                self.op_rst_address(0x38);
+            } /*_ => {
+                  panic!("Unsupported opcode: {}", format!("{:02X}", opcode));
+              }*/
         }
     }
 
@@ -2369,5 +2751,14 @@ impl CPU {
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, false);
         self.registers.f.set_flag(Flag::C, carry);
+    }
+
+    /*
+     *   Unconditional function call to the absolute fixed address defined by the opcode.
+     */
+    fn op_rst_address(&mut self, address: u16) {
+        debug!("rst_address {}", address);
+        self.op_push_rr(self.registers.pc);
+        self.registers.pc = address;
     }
 }

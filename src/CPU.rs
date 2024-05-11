@@ -8,8 +8,8 @@ use crate::rom;
 use constants::*;
 use rom::*;
 
-struct Registers {
-    a: u8,
+pub struct Registers {
+    a: u8, // Accumulator register
     b: u8,
     c: u8,
     d: u8,
@@ -17,8 +17,8 @@ struct Registers {
     f: FlagsRegister, // Flags
     h: u8,
     l: u8,
-    pc: u16, // Program counter
-    sp: u16, // Stack pointer
+    pub pc: u16, // Program counter
+    sp: u16,     // Stack pointer
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -38,10 +38,11 @@ pub enum Flag {
 }
 
 pub struct CPU {
-    registers: Registers,
+    pub registers: Registers,
     //work_ram: [u8; 0xFFFF],
     work_ram: [u8; 0xFFFF],
     video_ram: [u16; 8192],
+    interupt: bool,
 }
 
 impl Registers {
@@ -99,6 +100,12 @@ impl Registers {
     }
 }
 
+impl fmt::Display for Registers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Registers: A: {:02X} B: {:02X} C: {:02X} D: {:02X} E: {:02X} F: {} H: {:02X} L: {:02X} PC: {:04X} SP: {:04X}", self.a, self.b, self.c, self.d, self.e, self.f, self.h, self.l, self.pc, self.sp)
+    }
+}
+
 impl FlagsRegister {
     pub fn new() -> Self {
         FlagsRegister {
@@ -125,6 +132,19 @@ impl FlagsRegister {
             Flag::H => self.half_carry,
             Flag::C => self.carry,
         }
+    }
+}
+
+impl fmt::Display for FlagsRegister {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Flags: Z: {} N: {} H: {} C: {}",
+            if self.zero { 1 } else { 0 },
+            if self.subtract { 1 } else { 0 },
+            if self.half_carry { 1 } else { 0 },
+            if self.carry { 1 } else { 0 }
+        )
     }
 }
 
@@ -186,7 +206,32 @@ impl CPU {
             registers: Registers::new(),
             work_ram: [0; 0xFFFF],
             video_ram: [0; 8192],
+            interupt: false,
         }
+    }
+
+    /*
+     *  Load the boot ROM into memory
+     */
+    pub fn load_boot_rom(&mut self, file_path: String) {
+        debug!("Loading boot ROM");
+        let mut file = File::open(file_path).expect("Boot ROM file not found");
+        let mut buffer: Vec<u8> = Vec::new();
+
+        // Read the file into a buffer
+        file.read_to_end(&mut buffer)
+            .expect("Error reading boot rom file");
+        debug!(
+            "Boot ROM file size: {} bytes / {} kilobytes",
+            buffer.len(),
+            buffer.len() / 1024
+        );
+
+        for (i, byte) in buffer.iter().enumerate() {
+            self.work_ram[i] = *byte;
+        }
+
+        debug!("Boot ROM loaded into memory");
     }
 
     /*
@@ -210,10 +255,15 @@ impl CPU {
 
         rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
                                                  // Check cartridge type and load the ROM into memory based on the type
+
         for byte in 0x00..0x3FFF {
-            // TODO incorrect start and finish for ROM, this would include headers...
             self.work_ram[byte] = rom.rom[byte];
         }
+
+        //for (i, byte) in rom.rom.iter().enumerate() {
+        //    self.work_ram[0x0100 + i] = *byte;
+        //}
+
         debug!("ROM Bank 0 loaded into memory");
         if rom.cartridge_type == 0x00 {
             // ROM ONLY
@@ -236,6 +286,12 @@ impl CPU {
     pub fn cycle(&mut self) {
         debug!("##################################################");
         debug!("Fetch");
+
+        if self.work_ram[0xff02] == 0x81 {
+            // TODO Temp for development, delete this
+            debug!("CPU test [{}]", self.work_ram[0xff01] as char);
+            self.work_ram[0xff02] = 0x0;
+        }
 
         let opcode = self.work_ram[self.registers.pc as usize];
         debug!("Opcode [{}]", opcode);
@@ -283,14 +339,15 @@ impl CPU {
             }
             0x07 => {
                 debug!("0x07");
-                //TODO move to own function
-                //self.op_rlc(&mut self.registers.a);
-                let carry = self.registers.a & 0x80 != 0;
-                self.registers.a = (self.registers.a << 1) | (if carry { 1 } else { 0 });
+                // TODO RLC
+                let old_carry = self.registers.f.get_flag(Flag::C);
+                let a = self.registers.a;
+                let new_carry = a & 0x80 != 0;
+                self.registers.a = (a << 1) | (old_carry as u8);
+                self.registers.f.set_flag(Flag::C, new_carry);
                 self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, carry);
             }
             0x08 => {
                 debug!("0x08");
@@ -332,14 +389,15 @@ impl CPU {
             }
             0x0F => {
                 debug!("0x0F");
-                //TODO move to own function
-                //self.op_rrc(&mut self.registers.a);
-                let carry = self.registers.a & 0x01 != 0;
-                self.registers.a = (self.registers.a >> 1) | (if carry { 0x80 } else { 0 });
-                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                let a = self.registers.a;
+                let carry = (self.registers.a & 0x01) != 0;
+                self.registers.a = (a >> 1) | (carry as u8) << 7;
+
+                self.registers.f.set_flag(Flag::C, carry);
+
+                self.registers.f.set_flag(Flag::Z, false);
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, carry);
             }
             0x10 => {
                 // TODO - Implement STOP
@@ -379,7 +437,7 @@ impl CPU {
             }
             0x17 => {
                 debug!("0x17");
-                //TODO move to own function
+
                 //self.op_rl(&mut self.registers.a);
                 let carry = self.registers.a & 0x80 != 0;
                 self.registers.a = (self.registers.a << 1)
@@ -429,7 +487,7 @@ impl CPU {
             }
             0x1F => {
                 debug!("0x1F");
-                //TODO move to own function
+
                 //self.op_rr(&mut self.registers.a);
                 let carry = self.registers.a & 0x01 != 0;
                 self.registers.a = (self.registers.a >> 1)
@@ -483,7 +541,7 @@ impl CPU {
             }
             0x27 => {
                 debug!("0x27");
-                //TODO move to own function
+
                 //self.op_daa();
                 let mut a = self.registers.a;
                 let mut adjust = 0;
@@ -512,7 +570,6 @@ impl CPU {
             0x29 => {
                 debug!("0x29");
                 let hl = self.registers.get_hl();
-                let hl = self.registers.get_hl();
                 self.registers.set_hl(hl + hl);
             }
             0x2A => {
@@ -540,7 +597,7 @@ impl CPU {
             }
             0x2F => {
                 debug!("0x2F");
-                //TODO move to own function
+
                 //self.op_cpl();
                 self.registers.a = !self.registers.a;
                 self.registers.f.set_flag(Flag::N, true);
@@ -553,7 +610,7 @@ impl CPU {
                 self.op_jr_cc_e(!self.registers.f.get_flag(Flag::C), offset);
             }
             0x31 => {
-                debug!("op_ld_rr_nn 0x31");
+                debug!("0x31");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -602,7 +659,7 @@ impl CPU {
             }
             0x37 => {
                 debug!("0x37");
-                //TODO move to own function
+
                 //self.op_scf();
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, false);
@@ -610,9 +667,9 @@ impl CPU {
             }
             0x38 => {
                 debug!("0x38");
-                let offset = self.work_ram[self.registers.pc as usize] as i8;
+                let value = self.work_ram[self.registers.pc as usize] as i8;
                 self.registers.pc += 1;
-                self.op_jr_cc_e(self.registers.f.get_flag(Flag::C), offset);
+                self.op_jr_cc_e(self.registers.f.get_flag(Flag::C), value);
             }
             0x39 => {
                 debug!("0x39");
@@ -645,7 +702,7 @@ impl CPU {
             }
             0x3F => {
                 debug!("0x3F");
-                //TODO move to own function
+
                 //self.op_ccf();
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, false);
@@ -656,7 +713,7 @@ impl CPU {
             0x40 => {
                 debug!("0x40");
                 //self.op_ld_r8_r8(&self.registers.b, &mut self.registers.b);
-                //TODO fix this by moving to own function
+
                 self.registers.b = self.registers.b;
             }
             0x41 => {
@@ -694,7 +751,7 @@ impl CPU {
             0x49 => {
                 debug!("0x49");
                 //self.op_ld_r8_r8(&self.registers.c, &mut self.registers.c);
-                //TODO fix this by moving to own function
+
                 self.registers.c = self.registers.c;
             }
             0x4A => {
@@ -732,7 +789,7 @@ impl CPU {
             0x52 => {
                 debug!("0x52");
                 //self.op_ld_r8_r8(&self.registers.d, &mut self.registers.d);
-                //TODO fix this by moving to own function
+
                 self.registers.d = self.registers.d;
             }
             0x53 => {
@@ -770,7 +827,7 @@ impl CPU {
             0x5B => {
                 debug!("0x5B");
                 //self.op_ld_r8_r8(&self.registers.e, &mut self.registers.e);
-                //TODO fix this by moving to own function
+
                 self.registers.e = self.registers.e;
             }
             0x5C => {
@@ -808,7 +865,7 @@ impl CPU {
             0x64 => {
                 debug!("0x64");
                 //self.op_ld_r8_r8(&self.registers.h, &mut self.registers.h);
-                //TODO fix this by moving to own function
+
                 self.registers.h = self.registers.h;
             }
             0x65 => {
@@ -846,7 +903,7 @@ impl CPU {
             0x6D => {
                 debug!("0x6D");
                 //self.op_ld_r8_r8(&self.registers.l, &mut self.registers.l);
-                //TODO fix this by moving to own function
+
                 self.registers.l = self.registers.l;
             }
             0x6E => {
@@ -883,7 +940,7 @@ impl CPU {
             }
             0x76 => {
                 debug!("0x76");
-                //TODO move to own function
+
                 //self.op_halt();
                 unimplemented!("HALT not implemented");
             }
@@ -925,32 +982,26 @@ impl CPU {
             }
             0x80 => {
                 debug!("0x80");
-                // TODO other examples / documents show is as much more complex
                 self.registers.a = self.registers.a.wrapping_add(self.registers.b);
             }
             0x81 => {
                 debug!("0x81");
-                // TODO other examples / documents show is as much more complex
                 self.registers.a = self.registers.a.wrapping_add(self.registers.c);
             }
             0x82 => {
                 debug!("0x82");
-                // TODO other examples / documents show is as much more complex
                 self.registers.a = self.registers.a.wrapping_add(self.registers.d);
             }
             0x83 => {
                 debug!("0x83");
-                // TODO other examples / documents show is as much more complex
                 self.registers.a = self.registers.a.wrapping_add(self.registers.e);
             }
             0x84 => {
                 debug!("0x84");
-                // TODO other examples / documents show is as much more complex
                 self.registers.a = self.registers.a.wrapping_add(self.registers.h);
             }
             0x85 => {
                 debug!("0x85");
-                // TODO other examples / documents show is as much more complex
                 self.registers.a = self.registers.a.wrapping_add(self.registers.l);
             }
             0x86 => {
@@ -1832,12 +1883,15 @@ impl CPU {
             }
             0xC3 => {
                 debug!("0xC3");
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
-                self.op_jp_nn(nn);
+                if !self.registers.f.get_flag(Flag::Z) {
+                    let lsb = self.work_ram[self.registers.pc as usize];
+                    self.registers.pc += 1;
+                    let msb = self.work_ram[self.registers.pc as usize];
+                    self.registers.pc += 1;
+                    let nn: u16 = (msb as u16) << 8 | lsb as u16;
+                    debug!("Jumping to 0x{:X}", nn);
+                    self.op_jp_nn(nn);
+                }
             }
             0xC4 => {
                 debug!("0xC4");
@@ -1975,7 +2029,16 @@ impl CPU {
             0xD6 => {
                 debug!("0xD6");
                 let value = self.work_ram[self.registers.pc as usize];
-                self.registers.a = self.registers.a.wrapping_sub(value);
+                let (result, overflow) = self.registers.a.overflowing_sub(value);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
+                self.registers.f.set_flag(Flag::C, overflow); // Set the carry flag if there's a borrow out of the most significant bit
+                self.registers.a = result;
+
+                self.registers.pc += 1;
             }
             0xD7 => {
                 debug!("0xD7");
@@ -2041,7 +2104,7 @@ impl CPU {
                     (self.registers.a as u16)
                         < (self.work_ram[self.registers.pc as usize] as u16) + (carry as u16),
                 ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.pc += 1;
+                   //self.registers.pc += 1;
                 self.registers.a = result;
             }
             0xDF => {
@@ -2051,8 +2114,9 @@ impl CPU {
             0xE0 => {
                 debug!("0xE0");
                 let value = self.work_ram[self.registers.pc as usize];
+                let address = 0xFF00 + value as u16;
                 self.registers.pc += 1;
-                self.op_ldh_n8_a(value);
+                self.work_ram[address as usize] = self.registers.a;
             }
             0xE1 => {
                 debug!("0xE1");
@@ -2082,6 +2146,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, true);
                 self.registers.f.set_flag(Flag::C, false);
+                self.registers.pc += 1;
                 self.registers.a = result;
             }
             0xE7 => {
@@ -2090,18 +2155,19 @@ impl CPU {
             }
             0xE8 => {
                 debug!("0xE8");
-                // TODO double check this logic
-                let value = self.work_ram[self.registers.pc as usize];
-                let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
-                let carry = ((self.registers.sp & 0xFF) as i8 + (value as i8)) > 0x7F
-                    || ((self.registers.sp & 0xFF) as i8 + (value as i8)) < -0x80;
-                let half_carry = ((self.registers.sp & 0x0F) as i8 + (value as i8)) > 0x0F
-                    || ((self.registers.sp & 0x0F) as i8 + (value as i8)) < -0x10;
+                let value = self.work_ram[self.registers.pc as usize] as i16;
+                let sp = self.registers.sp as i16;
+                let result = sp.wrapping_add(value);
                 self.registers.f.set_flag(Flag::Z, false);
                 self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, half_carry);
-                self.registers.f.set_flag(Flag::C, carry);
-                self.registers.sp = result;
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (sp & 0x0F) + (value & 0x0F) > 0x0F);
+                self.registers
+                    .f
+                    .set_flag(Flag::C, (sp as i32) + (value as i32) > 0xFF);
+                self.registers.sp = result as u16;
+                self.registers.pc += 1;
             }
             0xE9 => {
                 debug!("0xE9");
@@ -2136,6 +2202,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, false);
                 self.registers.f.set_flag(Flag::C, false);
+                self.registers.pc += 1;
                 self.registers.a = result;
             }
             0xEF => {
@@ -2176,6 +2243,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, true);
                 self.registers.f.set_flag(Flag::C, false);
+                self.registers.pc += 1;
                 self.registers.a = result;
             }
             0xF7 => {
@@ -2186,6 +2254,7 @@ impl CPU {
                 debug!("0xF8");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
+                self.registers.pc += 1;
                 self.registers.set_hl(result);
             }
             0xF9 => {
@@ -2217,6 +2286,7 @@ impl CPU {
                 debug!("0xFE");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = self.registers.a.wrapping_sub(value);
+                self.registers.pc += 1;
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                 self.registers
@@ -2239,6 +2309,9 @@ impl CPU {
      */
     fn op_nop(&mut self) {
         debug!("op_nop");
+        //debug!("{}", self.registers);
+        //debug!("{:?}", self.work_ram);
+        //panic!("op_nop"); // TODO temp for debugging
     }
 
     /*
@@ -2542,7 +2615,7 @@ impl CPU {
      */
     fn op_jr_e(&mut self, offset: i8) {
         debug!("op_jr_e");
-        self.registers.pc = (self.registers.pc as i16 + offset as i16) as u16;
+        self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
     }
 
     /*
@@ -2553,7 +2626,7 @@ impl CPU {
     fn op_jr_cc_e(&mut self, condition: bool, offset: i8) {
         debug!("op_jr_cc_e");
         if condition {
-            self.registers.pc = (self.registers.pc as i16 + offset as i16) as u16;
+            self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
         }
     }
 
@@ -2564,14 +2637,8 @@ impl CPU {
     // TODO logic likely incorrect
     fn op_call_nn(&mut self, address: u16) {
         debug!("op_call_nn");
-        //self.op_push_rr(self.registers.pc);
-        //self.registers.pc = address;
-        self.registers.pc += 1;
-        let lsb = (self.registers.pc & 0xFF) as u8;
-        self.registers.pc += 1;
-        let msb = (self.registers.pc >> 8) as u8;
-        let nn: u16 = lsb as u16 | (msb as u16) << 8;
-        self.registers.pc = nn;
+        self.op_push_rr(self.registers.pc);
+        self.registers.pc = address;
     }
 
     /*
@@ -2584,7 +2651,7 @@ impl CPU {
         if condition {
             self.registers.pc += 1;
             let lsb = (self.registers.pc & 0xFF) as u8;
-            self.registers.pc += 1;
+            //self.registers.pc += 1;
             let msb = (self.registers.pc >> 8) as u8;
             let nn: u16 = lsb as u16 | (msb as u16) << 8;
             self.registers.pc = nn;
@@ -2597,11 +2664,7 @@ impl CPU {
      */
     fn op_ret(&mut self) {
         debug!("op_ret");
-        let lsb = self.work_ram[self.registers.sp as usize];
-        self.registers.sp += 1;
-        let msb = self.work_ram[self.registers.sp as usize];
-        self.registers.sp += 1;
-        self.registers.pc = ((msb as u16) << 8) | lsb as u16;
+        unimplemented!("op_ret");
     }
 
     /*
@@ -2659,7 +2722,7 @@ impl CPU {
     }
     fn op_di(&mut self) {
         debug!("op_di");
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+        self.interupt = false;
     }
 
     /*
@@ -2668,7 +2731,7 @@ impl CPU {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 1;
+        self.interupt = true;
     }
 
     /*
@@ -2760,5 +2823,24 @@ impl CPU {
         debug!("rst_address {}", address);
         self.op_push_rr(self.registers.pc);
         self.registers.pc = address;
+    }
+
+    fn op_push_stack(&mut self, address: u16) {
+        debug!("op_push_rr");
+        let sp = self.registers.sp.wrapping_sub(2);
+        let msb = (address >> 8) as u8;
+        let lsb = (address & 0xFF) as u8;
+        self.work_ram[sp as usize] = msb;
+        self.work_ram[(sp + 1) as usize] = lsb;
+        self.registers.sp = sp;
+    }
+
+    fn op_pop_stack(&mut self) -> u16 {
+        debug!("op_pop_rr");
+        let sp = self.registers.sp;
+        let msb = self.work_ram[sp as usize];
+        let lsb = self.work_ram[(sp + 1) as usize];
+        let value = (msb as u16) << 8 | lsb as u16;
+        value
     }
 }

@@ -1,6 +1,7 @@
-use log::{debug, error};
+use log::{debug, error, info};
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::{self, Read};
 use std::{error, fmt, result};
 
 use crate::constants;
@@ -40,9 +41,10 @@ pub enum Flag {
 pub struct CPU {
     pub registers: Registers,
     //work_ram: [u8; 0xFFFF],
-    work_ram: [u8; 0xFFFF],
+    work_ram: [u8; 0xFFFFF],
     video_ram: [u16; 8192],
     interupt: bool,
+    call_stack: Vec<u16>,
 }
 
 impl Registers {
@@ -56,7 +58,7 @@ impl Registers {
             f: FlagsRegister::new(),
             h: 0,
             l: 0,
-            pc: 0x0100, //0,
+            pc: 0x0100, //0x0,
             sp: 0,
         }
     }
@@ -204,9 +206,10 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             registers: Registers::new(),
-            work_ram: [0; 0xFFFF],
+            work_ram: [0; 0xFFFFF],
             video_ram: [0; 8192],
             interupt: false,
+            call_stack: Vec::new(),
         }
     }
 
@@ -287,6 +290,13 @@ impl CPU {
         debug!("##################################################");
         debug!("Fetch");
 
+        //debug!("PC [{}]", self.registers.pc);
+        debug!("PC [0x{:X}]", self.registers.pc);
+        //debug!("Opcode [{}]", self.work_ram[self.registers.pc as usize]);
+        debug!("Opcode [0x{:X}]", self.work_ram[self.registers.pc as usize]);
+        //self.wait_for_input();
+        self.print_debug();
+
         if self.work_ram[0xff02] == 0x81 {
             // TODO Temp for development, delete this
             debug!("CPU test [{}]", self.work_ram[0xff01] as char);
@@ -321,7 +331,8 @@ impl CPU {
             }
             0x03 => {
                 debug!("0x03");
-                self.registers.set_bc(self.registers.get_bc() + 1);
+                self.registers
+                    .set_bc(self.registers.get_bc().wrapping_add(1));
             }
             0x04 => {
                 debug!("0x04");
@@ -605,9 +616,12 @@ impl CPU {
             }
             0x30 => {
                 debug!("0x30");
-                let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc += 1;
-                self.op_jr_cc_e(!self.registers.f.get_flag(Flag::C), offset);
+                let value = self.work_ram[self.registers.pc as usize] as i8;
+                //self.registers.pc += 1;
+                //self.op_jr_cc_e(!self.registers.f.get_flag(Flag::C), value);
+                if !self.registers.f.get_flag(Flag::C) {
+                    self.registers.pc = self.registers.pc.wrapping_add(value as u16);
+                }
             }
             0x31 => {
                 debug!("0x31");
@@ -688,7 +702,11 @@ impl CPU {
             }
             0x3C => {
                 debug!("0x3C");
-                self.registers.a = self.registers.a.wrapping_add(1);
+                let (result, overflow) = self.registers.a.overflowing_add(1);
+                self.registers.a = result;
+                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::H, overflow);
             }
             0x3D => {
                 debug!("0x3D");
@@ -1919,6 +1937,7 @@ impl CPU {
                     .f
                     .set_flag(Flag::C, (self.registers.a as u16) + (value as u16) > 0xFF);
                 self.registers.a = result;
+                self.registers.pc += 1;
             }
             0xC7 => {
                 debug!("0xC7");
@@ -1959,11 +1978,18 @@ impl CPU {
             0xCD => {
                 debug!("0xCD");
                 let lsb = self.work_ram[self.registers.pc as usize];
+                debug!("lsb: 0x{:X}", lsb);
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
+                debug!("msb: 0x{:X}", msb);
                 self.registers.pc += 1;
                 let nn: u16 = lsb as u16 | (msb as u16) << 8;
-                self.op_call_nn(nn);
+                debug!("nn: 0x{:X}", nn);
+                self.op_push_stack(self.registers.pc);
+                debug!("Pushed 0x{:X} to the stack", self.registers.pc); // TODO may need to be pc + 2
+                self.registers.pc = nn;
+
+                //self.op_call_nn(nn);
             }
             0xCE => {
                 debug!("0xCE");
@@ -2664,7 +2690,8 @@ impl CPU {
      */
     fn op_ret(&mut self) {
         debug!("op_ret");
-        unimplemented!("op_ret");
+        //unimplemented!("op_ret");
+        self.registers.pc = self.op_pop_stack();
     }
 
     /*
@@ -2826,21 +2853,56 @@ impl CPU {
     }
 
     fn op_push_stack(&mut self, address: u16) {
-        debug!("op_push_rr");
-        let sp = self.registers.sp.wrapping_sub(2);
-        let msb = (address >> 8) as u8;
-        let lsb = (address & 0xFF) as u8;
-        self.work_ram[sp as usize] = msb;
-        self.work_ram[(sp + 1) as usize] = lsb;
-        self.registers.sp = sp;
+        debug!("op_push_stack");
+        /*let sp = self.registers.sp;
+        self.work_ram[sp as usize] = ((address >> 8) & 0xFF) as u8; // High byte
+        self.work_ram[(sp - 1) as usize] = (address & 0xFF) as u8; // Low byte
+        self.registers.sp -= 2; // Decrement stack pointer*/
+        self.call_stack.push(address);
+        //TODO with this logic stack pointer isn't required?
     }
 
     fn op_pop_stack(&mut self) -> u16 {
-        debug!("op_pop_rr");
-        let sp = self.registers.sp;
+        debug!("op_pop_stack");
+        /*let sp = self.registers.sp;
         let msb = self.work_ram[sp as usize];
         let lsb = self.work_ram[(sp + 1) as usize];
         let value = (msb as u16) << 8 | lsb as u16;
-        value
+        value*/
+        //TODO with this logic stack pointer isn't required
+        self.call_stack.pop().expect("op_pop_stack stack underflow")
+    }
+
+    fn wait_for_input(&mut self) {
+        // Create a buffer to hold the user input
+        let mut buffer = [0; 1];
+
+        // Create an instance of Stdin
+        let stdin = io::stdin();
+
+        // Lock stdin and get a mutable reference to it
+        let mut handle = stdin.lock();
+
+        loop {
+            // Read a single byte of input
+            match handle.read_exact(&mut buffer) {
+                Ok(_) => {
+                    // If a key was pressed, break out of the loop
+                    break;
+                }
+                Err(_) => {
+                    // Handle any errors (e.g., if reading from stdin fails)
+                    println!("An error occurred while reading input.");
+                    break;
+                }
+            }
+        }
+    }
+
+    fn print_debug(&self) {
+        if self.work_ram[0xFF02] == 0x81 {
+            info!("{}", self.work_ram[0xFF01] as char);
+            panic!("0x81");
+        }
     }
 }

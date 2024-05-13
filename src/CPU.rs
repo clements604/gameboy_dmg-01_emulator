@@ -1888,7 +1888,7 @@ impl CPU {
             }
             0xC1 => {
                 debug!("0xC1");
-                self.op_pop_rr(&mut self.registers.get_bc());
+                self.op_push_stack(self.registers.get_bc());
             }
             0xC2 => {
                 debug!("0xC2");
@@ -1922,7 +1922,7 @@ impl CPU {
             }
             0xC5 => {
                 debug!("0xC5");
-                self.op_push_rr(self.registers.get_bc());
+                self.op_push_stack(self.registers.get_bc());
             }
             0xC6 => {
                 debug!("0xC6");
@@ -2024,7 +2024,9 @@ impl CPU {
             }
             0xD1 => {
                 debug!("0xD1");
-                self.op_pop_rr(&mut self.registers.get_de());
+                //self.op_pop_rr(&mut self.registers.get_de());
+                let value = self.op_pop_stack();
+                self.registers.set_de(value);
             }
             0xD2 => {
                 debug!("0xD2");
@@ -2050,7 +2052,7 @@ impl CPU {
             }
             0xD5 => {
                 debug!("0xD5");
-                self.op_push_rr(self.registers.get_de());
+                self.op_push_stack(self.registers.get_de());
             }
             0xD6 => {
                 debug!("0xD6");
@@ -2146,7 +2148,9 @@ impl CPU {
             }
             0xE1 => {
                 debug!("0xE1");
-                self.op_pop_rr(&mut self.registers.get_hl());
+                //self.op_pop_rr(&mut self.registers.get_hl());
+                let value = self.op_pop_stack();
+                self.registers.set_hl(value);
             }
             0xE2 => {
                 debug!("0xE2");
@@ -2162,7 +2166,8 @@ impl CPU {
             }
             0xE5 => {
                 debug!("0xE5");
-                self.op_push_rr(self.registers.get_hl());
+                //self.op_push_rr(self.registers.get_hl());
+                self.op_push_stack(self.registers.get_hl());
             }
             0xE6 => {
                 debug!("0xE6");
@@ -2243,7 +2248,9 @@ impl CPU {
             }
             0xF1 => {
                 debug!("0xF1");
-                self.op_pop_rr(&mut self.registers.get_af());
+                //self.op_pop_rr(&mut self.registers.get_af());
+                let value = self.op_pop_stack();
+                self.registers.set_af(value);
             }
             0xF2 => {
                 debug!("0xF2");
@@ -2259,7 +2266,7 @@ impl CPU {
             }
             0xF5 => {
                 debug!("0xF5");
-                self.op_push_rr(self.registers.get_af());
+                self.op_push_stack(self.registers.get_af());
             }
             0xF6 => {
                 debug!("0xF6");
@@ -2582,12 +2589,12 @@ impl CPU {
      */
     // TODO - work ram in the stack?
     // TODO function pointer here?
-    fn op_push_rr(&mut self, register: u16) {
+    /*fn op_push_rr(&mut self, register: u16) {
         debug!("op_push_rr");
         self.registers.sp -= 2;
         self.work_ram[self.registers.sp as usize] = (register >> 8) as u8;
         self.work_ram[(self.registers.sp + 1) as usize] = register as u8;
-    }
+    }*/
 
     /*
      *   POP rr
@@ -2597,12 +2604,12 @@ impl CPU {
      */
     // TODO - work ram in the stack?
     // TODO function pointer here?
-    fn op_pop_rr(&mut self, register: &mut u16) {
+    /*fn op_pop_rr(&mut self, register: &mut u16) {
         debug!("op_pop_rr");
         *register = (self.work_ram[self.registers.sp as usize] as u16) << 8
             | self.work_ram[(self.registers.sp + 1) as usize] as u16;
         self.registers.sp += 2;
-    }
+    }*/
 
     /*
      *   JP nn
@@ -2663,7 +2670,7 @@ impl CPU {
     // TODO logic likely incorrect
     fn op_call_nn(&mut self, address: u16) {
         debug!("op_call_nn");
-        self.op_push_rr(self.registers.pc);
+        self.op_push_stack(self.registers.pc);
         self.registers.pc = address;
     }
 
@@ -2728,7 +2735,7 @@ impl CPU {
     fn op_rst_n(&mut self, address: u16) {
         debug!("op_rst_n");
         let return_address = self.registers.pc;
-        self.op_push_rr(return_address);
+        self.op_push_stack(return_address);
         self.registers.pc = address;
     }
 
@@ -2848,7 +2855,7 @@ impl CPU {
      */
     fn op_rst_address(&mut self, address: u16) {
         debug!("rst_address {}", address);
-        self.op_push_rr(self.registers.pc);
+        self.op_push_stack(self.registers.pc);
         self.registers.pc = address;
     }
 

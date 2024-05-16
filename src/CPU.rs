@@ -299,7 +299,7 @@ impl CPU {
 
         if self.work_ram[0xff02] == 0x81 {
             // TODO Temp for development, delete this
-            debug!("CPU test [{}]", self.work_ram[0xff01] as char);
+            info!("CPU test [{}]", self.work_ram[0xff01] as char);
             self.work_ram[0xff02] = 0x0;
         }
 
@@ -413,7 +413,8 @@ impl CPU {
             0x10 => {
                 // TODO - Implement STOP
                 debug!("0x10");
-                unimplemented!("STOP not implemented");
+                error!("STOP not implemented");
+                //unimplemented!("STOP not implemented");
             }
             0x11 => {
                 debug!("op_ld_rr_nn 0x11");
@@ -586,11 +587,13 @@ impl CPU {
             0x2A => {
                 debug!("0x2A");
                 self.registers.a = self.work_ram[self.registers.get_hl() as usize];
-                self.registers.set_hl(self.registers.get_hl() + 1);
+                self.registers
+                    .set_hl(self.registers.get_hl().wrapping_add(1));
             }
             0x2B => {
                 debug!("0x2B");
-                self.registers.set_hl(self.registers.get_hl() - 1);
+                self.registers
+                    .set_hl(self.registers.get_hl().wrapping_sub(1));
             }
             0x2C => {
                 debug!("0x2C");
@@ -2608,8 +2611,533 @@ impl CPU {
                         debug!("0xCB7F");
                         self.op_bit(7, self.registers.a);
                     }
-                    _ => {
-                        panic!("Unsupported extended opcode: 0xCB{:X}", extended_opcode);
+                    0x80 => {
+                        debug!("0xCB80");
+                        self.registers.b &= !(1 << 0);
+                    }
+                    0x81 => {
+                        debug!("0xCB81");
+                        self.registers.c &= !(1 << 0);
+                    }
+                    0x82 => {
+                        debug!("0xCB82");
+                        self.registers.d &= !(1 << 0);
+                    }
+                    0x83 => {
+                        debug!("0xCB83");
+                        self.registers.e &= !(1 << 0);
+                    }
+                    0x84 => {
+                        debug!("0xCB84");
+                        self.registers.h &= !(1 << 0);
+                    }
+                    0x85 => {
+                        debug!("0xCB85");
+                        self.registers.l &= !(1 << 0);
+                    }
+                    0x86 => {
+                        debug!("0xCB86");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 0);
+                    }
+                    0x87 => {
+                        debug!("0xCB87");
+                        self.registers.a &= !(1 << 0);
+                    }
+                    0x88 => {
+                        debug!("0xCB88");
+                        self.registers.b &= !(1 << 1);
+                    }
+                    0x89 => {
+                        debug!("0xCB89");
+                        self.registers.c &= !(1 << 1);
+                    }
+                    0x8A => {
+                        debug!("0xCB8A");
+                        self.registers.d &= !(1 << 1);
+                    }
+                    0x8B => {
+                        debug!("0xCB8B");
+                        self.registers.e &= !(1 << 1);
+                    }
+                    0x8C => {
+                        debug!("0xCB8C");
+                        self.registers.h &= !(1 << 1);
+                    }
+                    0x8D => {
+                        debug!("0xCB8D");
+                        self.registers.l &= !(1 << 1);
+                    }
+                    0x8E => {
+                        debug!("0xCB8E");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 1);
+                    }
+                    0x8F => {
+                        debug!("0xCB8F");
+                        self.registers.a &= !(1 << 1);
+                    }
+                    0x90 => {
+                        debug!("0xCB90");
+                        self.registers.b &= !(1 << 2);
+                    }
+                    0x91 => {
+                        debug!("0xCB91");
+                        self.registers.c &= !(1 << 2);
+                    }
+                    0x92 => {
+                        debug!("0xCB92");
+                        self.registers.d &= !(1 << 2);
+                    }
+                    0x93 => {
+                        debug!("0xCB93");
+                        self.registers.e &= !(1 << 2);
+                    }
+                    0x94 => {
+                        debug!("0xCB94");
+                        self.registers.h &= !(1 << 2);
+                    }
+                    0x95 => {
+                        debug!("0xCB95");
+                        self.registers.l &= !(1 << 2);
+                    }
+                    0x96 => {
+                        debug!("0xCB96");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 2);
+                    }
+                    0x97 => {
+                        debug!("0xCB97");
+                        self.registers.a &= !(1 << 2);
+                    }
+                    0x98 => {
+                        debug!("0xCB98");
+                        self.registers.b &= !(1 << 3);
+                    }
+                    0x99 => {
+                        debug!("0xCB99");
+                        self.registers.c &= !(1 << 3);
+                    }
+                    0x9A => {
+                        debug!("0xCB9A");
+                        self.registers.d &= !(1 << 3);
+                    }
+                    0x9B => {
+                        debug!("0xCB9B");
+                        self.registers.e &= !(1 << 3);
+                    }
+                    0x9C => {
+                        debug!("0xCB9C");
+                        self.registers.h &= !(1 << 3);
+                    }
+                    0x9D => {
+                        debug!("0xCB9D");
+                        self.registers.l &= !(1 << 3);
+                    }
+                    0x9E => {
+                        debug!("0xCB9E");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 3);
+                    }
+                    0x9F => {
+                        debug!("0xCB9F");
+                        self.registers.a &= !(1 << 3);
+                    }
+                    0xA0 => {
+                        debug!("0xCBA0");
+                        self.registers.b &= !(1 << 4);
+                    }
+                    0xA1 => {
+                        debug!("0xCBA1");
+                        self.registers.c &= !(1 << 4);
+                    }
+                    0xA2 => {
+                        debug!("0xCBA2");
+                        self.registers.d &= !(1 << 4);
+                    }
+                    0xA3 => {
+                        debug!("0xCBA3");
+                        self.registers.e &= !(1 << 4);
+                    }
+                    0xA4 => {
+                        debug!("0xCBA4");
+                        self.registers.h &= !(1 << 4);
+                    }
+                    0xA5 => {
+                        debug!("0xCBA5");
+                        self.registers.l &= !(1 << 4);
+                    }
+                    0xA6 => {
+                        debug!("0xCBA6");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 4);
+                    }
+                    0xA7 => {
+                        debug!("0xCBA7");
+                        self.registers.a &= !(1 << 4);
+                    }
+                    0xA8 => {
+                        debug!("0xCBA8");
+                        self.registers.b &= !(1 << 5);
+                    }
+                    0xA9 => {
+                        debug!("0xCBA9");
+                        self.registers.c &= !(1 << 5);
+                    }
+                    0xAA => {
+                        debug!("0xCBAA");
+                        self.registers.d &= !(1 << 5);
+                    }
+                    0xAB => {
+                        debug!("0xCBAB");
+                        self.registers.e &= !(1 << 5);
+                    }
+                    0xAC => {
+                        debug!("0xCBAC");
+                        self.registers.h &= !(1 << 5);
+                    }
+                    0xAD => {
+                        debug!("0xCBAD");
+                        self.registers.l &= !(1 << 5);
+                    }
+                    0xAE => {
+                        debug!("0xCBAE");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 5);
+                    }
+                    0xAF => {
+                        debug!("0xCBAF");
+                        self.registers.a &= !(1 << 5);
+                    }
+                    0xB0 => {
+                        debug!("0xCBB0");
+                        self.registers.b &= !(1 << 6);
+                    }
+                    0xB1 => {
+                        debug!("0xCBB1");
+                        self.registers.c &= !(1 << 6);
+                    }
+                    0xB2 => {
+                        debug!("0xCBB2");
+                        self.registers.d &= !(1 << 6);
+                    }
+                    0xB3 => {
+                        debug!("0xCBB3");
+                        self.registers.e &= !(1 << 6);
+                    }
+                    0xB4 => {
+                        debug!("0xCBB4");
+                        self.registers.h &= !(1 << 6);
+                    }
+                    0xB5 => {
+                        debug!("0xCBB5");
+                        self.registers.l &= !(1 << 6);
+                    }
+                    0xB6 => {
+                        debug!("0xCBB6");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 6);
+                    }
+                    0xB7 => {
+                        debug!("0xCBB7");
+                        self.registers.a &= !(1 << 6);
+                    }
+                    0xB8 => {
+                        debug!("0xCBB8");
+                        self.registers.b &= !(1 << 7);
+                    }
+                    0xB9 => {
+                        debug!("0xCBB9");
+                        self.registers.c &= !(1 << 7);
+                    }
+                    0xBA => {
+                        debug!("0xCBBA");
+                        self.registers.d &= !(1 << 7);
+                    }
+                    0xBB => {
+                        debug!("0xCBBB");
+                        self.registers.e &= !(1 << 7);
+                    }
+                    0xBC => {
+                        debug!("0xCBBC");
+                        self.registers.h &= !(1 << 7);
+                    }
+                    0xBD => {
+                        debug!("0xCBBD");
+                        self.registers.l &= !(1 << 7);
+                    }
+                    0xBE => {
+                        debug!("0xCBBE");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 7);
+                    }
+                    0xBF => {
+                        debug!("0xCBBF");
+                        self.registers.a &= !(1 << 7);
+                    }
+                    0xC0 => {
+                        debug!("0xCBC0");
+                        self.registers.b |= 1 << 0;
+                    }
+                    0xC1 => {
+                        debug!("0xCBC1");
+                        self.registers.c |= 1 << 0;
+                    }
+                    0xC2 => {
+                        debug!("0xCBC2");
+                        self.registers.d |= 1 << 0;
+                    }
+                    0xC3 => {
+                        debug!("0xCBC3");
+                        self.registers.e |= 1 << 0;
+                    }
+                    0xC4 => {
+                        debug!("0xCBC4");
+                        self.registers.h |= 1 << 0;
+                    }
+                    0xC5 => {
+                        debug!("0xCBC5");
+                        self.registers.l |= 1 << 0;
+                    }
+                    0xC6 => {
+                        debug!("0xCBC6");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 0;
+                    }
+                    0xC7 => {
+                        debug!("0xCBC7");
+                        self.registers.a |= 1 << 0;
+                    }
+                    0xC8 => {
+                        debug!("0xCBC8");
+                        self.registers.b |= 1 << 1;
+                    }
+                    0xC9 => {
+                        debug!("0xCBC9");
+                        self.registers.c |= 1 << 1;
+                    }
+                    0xCA => {
+                        debug!("0xCBCA");
+                        self.registers.d |= 1 << 1;
+                    }
+                    0xCB => {
+                        debug!("0xCBCB");
+                        self.registers.e |= 1 << 1;
+                    }
+                    0xCC => {
+                        debug!("0xCBCC");
+                        self.registers.h |= 1 << 1;
+                    }
+                    0xCD => {
+                        debug!("0xCBCD");
+                        self.registers.l |= 1 << 1;
+                    }
+                    0xCE => {
+                        debug!("0xCBCE");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 1;
+                    }
+                    0xCF => {
+                        debug!("0xCBCF");
+                        self.registers.a |= 1 << 1;
+                    }
+                    0xD0 => {
+                        debug!("0xCBD0");
+                        self.registers.b |= 1 << 2;
+                    }
+                    0xD1 => {
+                        debug!("0xCBD1");
+                        self.registers.c |= 1 << 2;
+                    }
+                    0xD2 => {
+                        debug!("0xCBD2");
+                        self.registers.d |= 1 << 2;
+                    }
+                    0xD3 => {
+                        debug!("0xCBD3");
+                        self.registers.e |= 1 << 2;
+                    }
+                    0xD4 => {
+                        debug!("0xCBD4");
+                        self.registers.h |= 1 << 2;
+                    }
+                    0xD5 => {
+                        debug!("0xCBD5");
+                        self.registers.l |= 1 << 2;
+                    }
+                    0xD6 => {
+                        debug!("0xCBD6");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 2;
+                    }
+                    0xD7 => {
+                        debug!("0xCBD7");
+                        self.registers.a |= 1 << 2;
+                    }
+                    0xD8 => {
+                        debug!("0xCBD8");
+                        self.registers.b |= 1 << 3;
+                    }
+                    0xD9 => {
+                        debug!("0xCBD9");
+                        self.registers.c |= 1 << 3;
+                    }
+                    0xDA => {
+                        debug!("0xCBDA");
+                        self.registers.d |= 1 << 3;
+                    }
+                    0xDB => {
+                        debug!("0xCBDB");
+                        self.registers.e |= 1 << 3;
+                    }
+                    0xDC => {
+                        debug!("0xCBDC");
+                        self.registers.h |= 1 << 3;
+                    }
+                    0xDD => {
+                        debug!("0xCBDD");
+                        self.registers.l |= 1 << 3;
+                    }
+                    0xDE => {
+                        debug!("0xCBDE");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 3;
+                    }
+                    0xDF => {
+                        debug!("0xCBDF");
+                        self.registers.a |= 1 << 3;
+                    }
+                    0xE0 => {
+                        debug!("0xCBE0");
+                        self.registers.b |= 1 << 4;
+                    }
+                    0xE1 => {
+                        debug!("0xCBE1");
+                        self.registers.c |= 1 << 4;
+                    }
+                    0xE2 => {
+                        debug!("0xCBE2");
+                        self.registers.d |= 1 << 4;
+                    }
+                    0xE3 => {
+                        debug!("0xCBE3");
+                        self.registers.e |= 1 << 4;
+                    }
+                    0xE4 => {
+                        debug!("0xCBE4");
+                        self.registers.h |= 1 << 4;
+                    }
+                    0xE5 => {
+                        debug!("0xCBE5");
+                        self.registers.l |= 1 << 4;
+                    }
+                    0xE6 => {
+                        debug!("0xCBE6");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 4;
+                    }
+                    0xE7 => {
+                        debug!("0xCBE7");
+                        self.registers.a |= 1 << 4;
+                    }
+                    0xE8 => {
+                        debug!("0xCBE8");
+                        self.registers.b |= 1 << 5;
+                    }
+                    0xE9 => {
+                        debug!("0xCBE9");
+                        self.registers.c |= 1 << 5;
+                    }
+                    0xEA => {
+                        debug!("0xCBEA");
+                        self.registers.d |= 1 << 5;
+                    }
+                    0xEB => {
+                        debug!("0xCBEB");
+                        self.registers.e |= 1 << 5;
+                    }
+                    0xEC => {
+                        debug!("0xCBEC");
+                        self.registers.h |= 1 << 5;
+                    }
+                    0xED => {
+                        debug!("0xCBED");
+                        self.registers.l |= 1 << 5;
+                    }
+                    0xEE => {
+                        debug!("0xCBEE");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 5;
+                    }
+                    0xEF => {
+                        debug!("0xCBEF");
+                        self.registers.a |= 1 << 5;
+                    }
+                    0xF0 => {
+                        debug!("0xCBF0");
+                        self.registers.b |= 1 << 6;
+                    }
+                    0xF1 => {
+                        debug!("0xCBF1");
+                        self.registers.c |= 1 << 6;
+                    }
+                    0xF2 => {
+                        debug!("0xCBF2");
+                        self.registers.d |= 1 << 6;
+                    }
+                    0xF3 => {
+                        debug!("0xCBF3");
+                        self.registers.e |= 1 << 6;
+                    }
+                    0xF4 => {
+                        debug!("0xCBF4");
+                        self.registers.h |= 1 << 6;
+                    }
+                    0xF5 => {
+                        debug!("0xCBF5");
+                        self.registers.l |= 1 << 6;
+                    }
+                    0xF6 => {
+                        debug!("0xCBF6");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 6;
+                    }
+                    0xF7 => {
+                        debug!("0xCBF7");
+                        self.registers.a |= 1 << 6;
+                    }
+                    0xF8 => {
+                        debug!("0xCBF8");
+                        self.registers.b |= 1 << 7;
+                    }
+                    0xF9 => {
+                        debug!("0xCBF9");
+                        self.registers.c |= 1 << 7;
+                    }
+                    0xFA => {
+                        debug!("0xCBFA");
+                        self.registers.d |= 1 << 7;
+                    }
+                    0xFB => {
+                        debug!("0xCBFB");
+                        self.registers.e |= 1 << 7;
+                    }
+                    0xFC => {
+                        debug!("0xCBFC");
+                        self.registers.h |= 1 << 7;
+                    }
+                    0xFD => {
+                        debug!("0xCBFD");
+                        self.registers.l |= 1 << 7;
+                    }
+                    0xFE => {
+                        debug!("0xCBFE");
+                        let value = self.work_ram[self.registers.get_hl() as usize];
+                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 7;
+                    }
+                    0xFF => {
+                        debug!("0xCBFF");
+                        self.registers.a |= 1 << 7;
                     }
                 }
             }

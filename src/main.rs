@@ -16,9 +16,11 @@ fn main() {
     //cpu.load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
 
     //cpu.load_rom(String::from("roms/Tetris.gb"));
-    //cpu.load_rom(String::from("roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb"));
+    cpu.load_rom(String::from(
+        "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
+    ));
 
-    cpu.load_rom(String::from("roms/test/cpu_instrs.gb"));
+    //cpu.load_rom(String::from("roms/test/cpu_instrs.gb"));
     //cpu.load_rom(String::from("roms/test/cpu/07-jr,jp,call,ret,rst.gb"));
 
     let mut cycle_count = 0;

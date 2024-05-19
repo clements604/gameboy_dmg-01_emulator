@@ -49,3 +49,6 @@ roms/
 
 # Scratchpad files
 scratchpad/
+
+# Logging
+*.log

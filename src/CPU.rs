@@ -697,256 +697,180 @@ impl CPU {
                 self.registers.c = self.registers.a;
             }
             0x50 => {
-                debug!("0x50");
                 self.registers.d = self.registers.b;
             }
             0x51 => {
-                debug!("0x51");
                 self.registers.d = self.registers.c;
             }
             0x52 => {
-                debug!("0x52");
-                //self.op_ld_r8_r8(&self.registers.d, &mut self.registers.d);
-
                 self.registers.d = self.registers.d;
             }
             0x53 => {
-                debug!("0x53");
                 self.registers.d = self.registers.e;
             }
             0x54 => {
-                debug!("0x54");
                 self.registers.d = self.registers.h;
             }
             0x55 => {
-                debug!("0x55");
                 self.registers.d = self.registers.l;
             }
             0x56 => {
-                debug!("0x56");
                 self.registers.d = self.registers.get_hl() as u8;
             }
             0x57 => {
-                debug!("0x57");
                 self.registers.d = self.registers.a;
             }
             0x58 => {
-                debug!("0x58");
                 self.registers.e = self.registers.b;
             }
             0x59 => {
-                debug!("0x59");
                 self.registers.e = self.registers.c;
             }
             0x5A => {
-                debug!("0x5A");
                 self.registers.e = self.registers.d;
             }
             0x5B => {
-                debug!("0x5B");
-                //self.op_ld_r8_r8(&self.registers.e, &mut self.registers.e);
-
                 self.registers.e = self.registers.e;
             }
             0x5C => {
-                debug!("0x5C");
                 self.registers.e = self.registers.h;
             }
             0x5D => {
-                debug!("0x5D");
                 self.registers.e = self.registers.l;
             }
             0x5E => {
-                debug!("0x5E");
                 self.registers.e = self.registers.get_hl() as u8;
             }
             0x5F => {
-                debug!("0x5F");
                 self.registers.e = self.registers.a;
             }
             0x60 => {
-                debug!("0x60");
                 self.registers.h = self.registers.b;
             }
             0x61 => {
-                debug!("0x61");
                 self.registers.h = self.registers.c;
             }
             0x62 => {
-                debug!("0x62");
                 self.registers.h = self.registers.d;
             }
             0x63 => {
-                debug!("0x63");
                 self.registers.h = self.registers.e;
             }
             0x64 => {
-                debug!("0x64");
-                //self.op_ld_r8_r8(&self.registers.h, &mut self.registers.h);
-
                 self.registers.h = self.registers.h;
             }
             0x65 => {
-                debug!("0x65");
                 self.registers.h = self.registers.l;
             }
             0x66 => {
-                debug!("0x66");
                 self.registers.h = self.registers.get_hl() as u8;
             }
             0x67 => {
-                debug!("0x67");
                 self.registers.h = self.registers.a;
             }
             0x68 => {
-                debug!("0x68");
                 self.registers.l = self.registers.b;
             }
             0x69 => {
-                debug!("0x69");
                 self.registers.l = self.registers.c;
             }
             0x6A => {
-                debug!("0x6A");
                 self.registers.l = self.registers.d;
             }
             0x6B => {
-                debug!("0x6B");
                 self.registers.l = self.registers.e;
             }
             0x6C => {
-                debug!("0x6C");
                 self.registers.l = self.registers.h;
             }
             0x6D => {
-                debug!("0x6D");
-                //self.op_ld_r8_r8(&self.registers.l, &mut self.registers.l);
-
                 self.registers.l = self.registers.l;
             }
             0x6E => {
-                debug!("0x6E");
                 self.registers.l = self.registers.get_hl() as u8;
             }
             0x6F => {
-                debug!("0x6F");
                 self.registers.l = self.registers.a;
             }
             0x70 => {
-                debug!("0x70");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.b;
             }
             0x71 => {
-                debug!("0x71");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.c;
             }
             0x72 => {
-                debug!("0x72");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.d;
             }
             0x73 => {
-                debug!("0x73");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.e;
             }
             0x74 => {
-                debug!("0x74");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.h;
             }
             0x75 => {
-                debug!("0x75");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.l;
             }
             0x76 => {
-                debug!("0x76");
-
-                //self.op_halt();
                 unimplemented!("HALT not implemented");
             }
             0x77 => {
-                debug!("0x77");
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
             }
             0x78 => {
-                debug!("0x78");
                 self.registers.a = self.registers.b;
             }
             0x79 => {
-                debug!("0x79");
                 self.registers.a = self.registers.c;
             }
             0x7A => {
-                debug!("0x7A");
                 self.registers.a = self.registers.d;
             }
             0x7B => {
-                debug!("0x7B");
                 self.registers.a = self.registers.e;
             }
             0x7C => {
-                debug!("0x7C");
                 self.registers.a = self.registers.h;
             }
             0x7D => {
-                debug!("0x7D");
                 self.registers.a = self.registers.l;
             }
             0x7E => {
-                debug!("0x7E");
                 self.registers.a = self.registers.get_hl() as u8;
             }
             0x7F => {
-                debug!("0x7F");
                 self.registers.a = self.registers.a;
             }
             0x80 => {
-                debug!("0x80");
                 self.registers.a = self.registers.a.wrapping_add(self.registers.b);
             }
             0x81 => {
-                debug!("0x81");
                 self.registers.a = self.registers.a.wrapping_add(self.registers.c);
             }
             0x82 => {
-                debug!("0x82");
                 self.registers.a = self.registers.a.wrapping_add(self.registers.d);
             }
             0x83 => {
-                debug!("0x83");
                 self.registers.a = self.registers.a.wrapping_add(self.registers.e);
             }
             0x84 => {
-                debug!("0x84");
                 self.registers.a = self.registers.a.wrapping_add(self.registers.h);
             }
             0x85 => {
-                debug!("0x85");
                 self.registers.a = self.registers.a.wrapping_add(self.registers.l);
             }
             0x86 => {
-                debug!("0x86");
-                // TODO other examples / documents show is as much more complex
-                let value = self.work_ram[self.registers.get_hl() as usize];
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
+                let hl = self.registers.get_hl();
+                let value = self.work_ram[hl as usize];
+                let (result, carry) = self.registers.a.overflowing_add(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+                self.registers.f.set_flag(Flag::C, carry);
                 self.registers.a = result;
             }
             0x87 => {
-                debug!("0x87");
-                // TODO Test this and migrate to a generic function
                 let result = self.registers.a.wrapping_add(self.registers.a);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
@@ -960,7 +884,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x88 => {
-                debug!("0x88");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -968,7 +891,7 @@ impl CPU {
                 } as u8;
                 let result = self
                     .registers
-                    .b
+                    .a
                     .wrapping_add(self.registers.b)
                     .wrapping_add(carry);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -984,7 +907,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x89 => {
-                debug!("0x89");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -992,7 +914,7 @@ impl CPU {
                 } as u8;
                 let result = self
                     .registers
-                    .b
+                    .a
                     .wrapping_add(self.registers.c)
                     .wrapping_add(carry);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1008,7 +930,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8A => {
-                debug!("0x8A");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1016,7 +937,7 @@ impl CPU {
                 } as u8;
                 let result = self
                     .registers
-                    .b
+                    .a
                     .wrapping_add(self.registers.d)
                     .wrapping_add(carry);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1032,7 +953,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8B => {
-                debug!("0x8B");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1040,7 +960,7 @@ impl CPU {
                 } as u8;
                 let result = self
                     .registers
-                    .b
+                    .a
                     .wrapping_add(self.registers.e)
                     .wrapping_add(carry);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1056,7 +976,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8C => {
-                debug!("0x8C");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1064,7 +983,7 @@ impl CPU {
                 } as u8;
                 let result = self
                     .registers
-                    .b
+                    .a
                     .wrapping_add(self.registers.h)
                     .wrapping_add(carry);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1080,7 +999,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8D => {
-                debug!("0x8D");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1088,7 +1006,7 @@ impl CPU {
                 } as u8;
                 let result = self
                     .registers
-                    .b
+                    .a
                     .wrapping_add(self.registers.l)
                     .wrapping_add(carry);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1104,7 +1022,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8E => {
-                debug!("0x8E");
                 let value = self.work_ram[self.registers.get_hl() as usize];
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
@@ -1125,7 +1042,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8F => {
-                debug!("0x8F");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1148,31 +1064,24 @@ impl CPU {
                 self.registers.a = result;
             }
             0x90 => {
-                debug!("0x90");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.b);
             }
             0x91 => {
-                debug!("0x91");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.c);
             }
             0x92 => {
-                debug!("0x92");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.d);
             }
             0x93 => {
-                debug!("0x93");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.e);
             }
             0x94 => {
-                debug!("0x94");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.h);
             }
             0x95 => {
-                debug!("0x95");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.l);
             }
             0x96 => {
-                debug!("0x96");
                 let value = self.work_ram[self.registers.get_hl() as usize];
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
@@ -1192,11 +1101,9 @@ impl CPU {
                 self.registers.a = result;
             }
             0x97 => {
-                debug!("0x97");
                 self.registers.a = self.registers.a.wrapping_sub(self.registers.a);
             }
             0x98 => {
-                debug!("0x98");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1220,7 +1127,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x99 => {
-                debug!("0x99");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1244,7 +1150,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9A => {
-                debug!("0x9A");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1268,7 +1173,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9B => {
-                debug!("0x9B");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1292,7 +1196,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9C => {
-                debug!("0x9C");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1316,7 +1219,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9D => {
-                debug!("0x9D");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1340,7 +1242,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9E => {
-                debug!("0x9E");
                 let value = self.work_ram[self.registers.get_hl() as usize];
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
@@ -1360,7 +1261,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9F => {
-                debug!("0x9F");
                 let result = self.registers.a.wrapping_sub(self.registers.a);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag

@@ -13,7 +13,7 @@ fn main() {
         .try_init();
 
     let mut cpu = CPU::CPU::new();
-    //cpu.load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
+    cpu.load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
 
     //cpu.load_rom(String::from("roms/Tetris.gb"));
     cpu.load_rom(String::from(

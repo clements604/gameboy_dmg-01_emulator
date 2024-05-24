@@ -1269,7 +1269,6 @@ impl CPU {
                 self.registers.a = result;
             }
             0xA0 => {
-                debug!("0xA0");
                 self.registers.a = self.registers.a & self.registers.b;
 
                 if self.registers.a == 0 {
@@ -1282,7 +1281,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA1 => {
-                debug!("0xA1");
                 self.registers.a = self.registers.a & self.registers.c;
 
                 if self.registers.a == 0 {
@@ -1295,7 +1293,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA2 => {
-                debug!("0xA2");
                 self.registers.a = self.registers.a & self.registers.d;
 
                 if self.registers.a == 0 {
@@ -1308,7 +1305,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA3 => {
-                debug!("0xA3");
                 self.registers.a = self.registers.a & self.registers.e;
 
                 if self.registers.a == 0 {
@@ -1321,7 +1317,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA4 => {
-                debug!("0xA4");
                 self.registers.a = self.registers.a & self.registers.h;
 
                 if self.registers.a == 0 {
@@ -1334,7 +1329,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA5 => {
-                debug!("0xA5");
                 self.registers.a = self.registers.a & self.registers.l;
 
                 if self.registers.a == 0 {
@@ -1347,7 +1341,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA6 => {
-                debug!("0xA6");
                 self.registers.a =
                     self.registers.a & self.work_ram[self.registers.get_hl() as usize];
 
@@ -1361,7 +1354,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA7 => {
-                debug!("0xA7");
                 self.registers.a = self.registers.a & self.registers.a;
 
                 if self.registers.a == 0 {
@@ -1374,7 +1366,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA8 => {
-                debug!("0xA8");
                 self.registers.a = self.registers.a ^ self.registers.b;
 
                 if self.registers.a == 0 {
@@ -1387,7 +1378,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xA9 => {
-                debug!("0xA9");
                 self.registers.a = self.registers.a ^ self.registers.c;
 
                 if self.registers.a == 0 {
@@ -1400,7 +1390,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xAA => {
-                debug!("0xAA");
                 self.registers.a = self.registers.a ^ self.registers.d;
 
                 if self.registers.a == 0 {
@@ -1413,7 +1402,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xAB => {
-                debug!("0xAB");
                 self.registers.a = self.registers.a ^ self.registers.e;
 
                 if self.registers.a == 0 {
@@ -1426,7 +1414,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xAC => {
-                debug!("0xAC");
                 self.registers.a = self.registers.a ^ self.registers.h;
 
                 if self.registers.a == 0 {
@@ -1439,7 +1426,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xAD => {
-                debug!("0xAD");
                 self.registers.a = self.registers.a ^ self.registers.l;
 
                 if self.registers.a == 0 {
@@ -1452,7 +1438,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xAE => {
-                debug!("0xAE");
                 self.registers.a =
                     self.registers.a ^ self.work_ram[self.registers.get_hl() as usize];
 
@@ -1466,7 +1451,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xAF => {
-                debug!("0xAF");
                 self.registers.a = self.registers.a ^ self.registers.a;
 
                 if self.registers.a == 0 {
@@ -1479,7 +1463,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB0 => {
-                debug!("0xB0");
                 self.registers.a = self.registers.a | self.registers.b;
 
                 if self.registers.a == 0 {
@@ -1492,7 +1475,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB1 => {
-                debug!("0xB1");
                 self.registers.a = self.registers.a | self.registers.c;
 
                 if self.registers.a == 0 {
@@ -1505,7 +1487,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB2 => {
-                debug!("0xB2");
                 self.registers.a = self.registers.a | self.registers.d;
 
                 if self.registers.a == 0 {
@@ -1518,7 +1499,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB3 => {
-                debug!("0xB3");
                 self.registers.a = self.registers.a | self.registers.e;
 
                 if self.registers.a == 0 {
@@ -1531,7 +1511,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB4 => {
-                debug!("0xB4");
                 self.registers.a = self.registers.a | self.registers.h;
 
                 if self.registers.a == 0 {
@@ -1544,7 +1523,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB5 => {
-                debug!("0xB5");
                 self.registers.a = self.registers.a | self.registers.l;
 
                 if self.registers.a == 0 {
@@ -1557,7 +1535,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB6 => {
-                debug!("0xB6");
                 self.registers.a =
                     self.registers.a | self.work_ram[self.registers.get_hl() as usize];
 
@@ -1571,7 +1548,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB7 => {
-                debug!("0xB7");
                 self.registers.a = self.registers.a | self.registers.a;
 
                 if self.registers.a == 0 {
@@ -1584,7 +1560,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false);
             }
             0xB8 => {
-                debug!("0xB8");
                 let result = self.registers.a.wrapping_sub(self.registers.b);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1597,7 +1572,6 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.b); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xB9 => {
-                debug!("0xB9");
                 let result = self.registers.a.wrapping_sub(self.registers.c);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1610,7 +1584,6 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.c); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBA => {
-                debug!("0xBA");
                 let result = self.registers.a.wrapping_sub(self.registers.d);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1623,7 +1596,6 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.d); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBB => {
-                debug!("0xBB");
                 let result = self.registers.a.wrapping_sub(self.registers.e);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1636,7 +1608,6 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.e); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBC => {
-                debug!("0xBC");
                 let result = self.registers.a.wrapping_sub(self.registers.h);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1649,7 +1620,6 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.h); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBD => {
-                debug!("0xBD");
                 let result = self.registers.a.wrapping_sub(self.registers.l);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1662,7 +1632,6 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.l); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBE => {
-                debug!("0xBE");
                 let value = self.work_ram[self.registers.get_hl() as usize];
                 let result = self.registers.a.wrapping_sub(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1673,7 +1642,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBF => {
-                debug!("0xBF");
                 let result = self.registers.a.wrapping_sub(self.registers.a);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1681,17 +1649,14 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
             }
             0xC0 => {
-                debug!("0xC0");
                 if !self.registers.f.get_flag(Flag::Z) {
                     self.op_ret();
                 }
             }
             0xC1 => {
-                debug!("0xC1");
                 self.op_push_stack(self.registers.get_bc());
             }
             0xC2 => {
-                debug!("0xC2");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -1700,7 +1665,6 @@ impl CPU {
                 self.op_jp_nn(nn);
             }
             0xC3 => {
-                debug!("0xC3");
                 if !self.registers.f.get_flag(Flag::Z) {
                     let lsb = self.work_ram[self.registers.pc as usize];
                     self.registers.pc += 1;
@@ -1712,7 +1676,6 @@ impl CPU {
                 }
             }
             0xC4 => {
-                debug!("0xC4");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -1721,11 +1684,9 @@ impl CPU {
                 self.op_call_nn(nn);
             }
             0xC5 => {
-                debug!("0xC5");
                 self.op_push_stack(self.registers.get_bc());
             }
             0xC6 => {
-                debug!("0xC6");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = self.registers.a.wrapping_add(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -1740,21 +1701,17 @@ impl CPU {
                 self.registers.pc += 1;
             }
             0xC7 => {
-                debug!("0xC7");
                 self.op_rst_address(0x0000);
             }
             0xC8 => {
-                debug!("0xC8");
                 if self.registers.f.get_flag(Flag::Z) {
                     self.op_ret();
                 }
             }
             0xC9 => {
-                debug!("0xC9");
                 self.op_ret();
             }
             0xCA => {
-                debug!("0xCA");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -1763,1183 +1720,926 @@ impl CPU {
                 self.op_jp_nn(nn);
             }
             0xCB => {
-                debug!("0xCB");
                 // Get the next byte and use it as the extended opcode
                 let extended_opcode = self.work_ram[self.registers.pc as usize];
+                debug!("0xCB{:X}", extended_opcode);
                 self.registers.pc += 1;
                 match extended_opcode {
                     0x00 => {
-                        debug!("0xCB00");
                         let mut value = self.registers.b;
                         self.op_rlc(&mut value);
                         self.registers.b = value;
                     }
                     0x01 => {
-                        debug!("0xCB01");
                         let mut value = self.registers.c;
                         self.op_rlc(&mut value);
                         self.registers.c = value;
                     }
                     0x02 => {
-                        debug!("0xCB02");
                         let mut value = self.registers.d;
                         self.op_rlc(&mut value);
                         self.registers.d = value;
                     }
                     0x03 => {
-                        debug!("0xCB03");
                         let mut value = self.registers.e;
                         self.op_rlc(&mut value);
                         self.registers.e = value;
                     }
                     0x04 => {
-                        debug!("0xCB04");
                         let mut value = self.registers.h;
                         self.op_rlc(&mut value);
                         self.registers.h = value;
                     }
                     0x05 => {
-                        debug!("0xCB05");
                         let mut value = self.registers.l;
                         self.op_rlc(&mut value);
                         self.registers.l = value;
                     }
                     0x06 => {
-                        debug!("0xCB06");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_rlc(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x07 => {
-                        debug!("0xCB07");
                         let mut value = self.registers.a;
                         self.op_rlc(&mut value);
                         self.registers.a = value;
                     }
                     0x08 => {
-                        debug!("0xCB08");
                         let mut value = self.registers.b;
                         self.op_rrc(&mut value);
                         self.registers.b = value;
                     }
                     0x09 => {
-                        debug!("0xCB09");
                         let mut value = self.registers.c;
                         self.op_rrc(&mut value);
                         self.registers.c = value;
                     }
                     0x0A => {
-                        debug!("0xCB0A");
                         let mut value = self.registers.d;
                         self.op_rrc(&mut value);
                         self.registers.d = value;
                     }
                     0x0B => {
-                        debug!("0xCB0B");
                         let mut value = self.registers.e;
                         self.op_rrc(&mut value);
                         self.registers.e = value;
                     }
                     0x0C => {
-                        debug!("0xCB0C");
                         let mut value = self.registers.h;
                         self.op_rrc(&mut value);
                         self.registers.h = value;
                     }
                     0x0D => {
-                        debug!("0xCB0D");
                         let mut value = self.registers.l;
                         self.op_rrc(&mut value);
                         self.registers.l = value;
                     }
                     0x0E => {
-                        debug!("0xCB0E");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_rrc(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x0F => {
-                        debug!("0xCB0F");
                         let mut value = self.registers.a;
                         self.op_rrc(&mut value);
                         self.registers.a = value;
                     }
                     0x10 => {
-                        debug!("0xCB10");
                         let mut value = self.registers.b;
                         self.op_rl(&mut value);
                         self.registers.b = value;
                     }
                     0x11 => {
-                        debug!("0xCB11");
                         let mut value = self.registers.c;
                         self.op_rl(&mut value);
                         self.registers.c = value;
                     }
                     0x12 => {
-                        debug!("0xCB12");
                         let mut value = self.registers.d;
                         self.op_rl(&mut value);
                         self.registers.d = value;
                     }
                     0x13 => {
-                        debug!("0xCB13");
                         let mut value = self.registers.e;
                         self.op_rl(&mut value);
                         self.registers.e = value;
                     }
                     0x14 => {
-                        debug!("0xCB14");
                         let mut value = self.registers.h;
                         self.op_rl(&mut value);
                         self.registers.h = value;
                     }
                     0x15 => {
-                        debug!("0xCB15");
                         let mut value = self.registers.l;
                         self.op_rl(&mut value);
                         self.registers.l = value;
                     }
                     0x16 => {
-                        debug!("0xCB16");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_rl(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x17 => {
-                        debug!("0xCB17");
                         let mut value = self.registers.a;
                         self.op_rl(&mut value);
                         self.registers.a = value;
                     }
                     0x18 => {
-                        debug!("0xCB18");
                         let mut value = self.registers.b;
                         self.op_rr(&mut value);
                         self.registers.b = value;
                     }
                     0x19 => {
-                        debug!("0xCB19");
                         let mut value = self.registers.c;
                         self.op_rr(&mut value);
                         self.registers.c = value;
                     }
                     0x1A => {
-                        debug!("0xCB1A");
                         let mut value = self.registers.d;
                         self.op_rr(&mut value);
                         self.registers.d = value;
                     }
                     0x1B => {
-                        debug!("0xCB1B");
                         let mut value = self.registers.e;
                         self.op_rr(&mut value);
                         self.registers.e = value;
                     }
                     0x1C => {
-                        debug!("0xCB1C");
                         let mut value = self.registers.h;
                         self.op_rr(&mut value);
                         self.registers.h = value;
                     }
                     0x1D => {
-                        debug!("0xCB1D");
                         let mut value = self.registers.l;
                         self.op_rr(&mut value);
                         self.registers.l = value;
                     }
                     0x1E => {
-                        debug!("0xCB1E");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_rr(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x1F => {
-                        debug!("0xCB1F");
                         let mut value = self.registers.a;
                         self.op_rr(&mut value);
                         self.registers.a = value;
                     }
                     0x20 => {
-                        debug!("0xCB20");
                         let mut value = self.registers.b;
                         self.op_sla(&mut value);
                         self.registers.b = value;
                     }
                     0x21 => {
-                        debug!("0xCB21");
                         let mut value = self.registers.c;
                         self.op_sla(&mut value);
                         self.registers.c = value;
                     }
                     0x22 => {
-                        debug!("0xCB22");
                         let mut value = self.registers.d;
                         self.op_sla(&mut value);
                         self.registers.d = value;
                     }
                     0x23 => {
-                        debug!("0xCB23");
                         let mut value = self.registers.e;
                         self.op_sla(&mut value);
                         self.registers.e = value;
                     }
                     0x24 => {
-                        debug!("0xCB24");
                         let mut value = self.registers.h;
                         self.op_sla(&mut value);
                         self.registers.h = value;
                     }
                     0x25 => {
-                        debug!("0xCB25");
                         let mut value = self.registers.l;
                         self.op_sla(&mut value);
                         self.registers.l = value;
                     }
                     0x26 => {
-                        debug!("0xCB26");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_sla(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x27 => {
-                        debug!("0xCB27");
                         let mut value = self.registers.a;
                         self.op_sla(&mut value);
                         self.registers.a = value;
                     }
                     0x28 => {
-                        debug!("0xCB28");
                         let mut value = self.registers.b;
                         self.op_sra(&mut value);
                         self.registers.b = value;
                     }
                     0x29 => {
-                        debug!("0xCB29");
                         let mut value = self.registers.c;
                         self.op_sra(&mut value);
                         self.registers.c = value;
                     }
                     0x2A => {
-                        debug!("0xCB2A");
                         let mut value = self.registers.d;
                         self.op_sra(&mut value);
                         self.registers.d = value;
                     }
                     0x2B => {
-                        debug!("0xCB2B");
                         let mut value = self.registers.e;
                         self.op_sra(&mut value);
                         self.registers.e = value;
                     }
                     0x2C => {
-                        debug!("0xCB2C");
                         let mut value = self.registers.h;
                         self.op_sra(&mut value);
                         self.registers.h = value;
                     }
                     0x2D => {
-                        debug!("0xCB2D");
                         let mut value = self.registers.l;
                         self.op_sra(&mut value);
                         self.registers.l = value;
                     }
                     0x2E => {
-                        debug!("0xCB2E");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_sra(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x2F => {
-                        debug!("0xCB2F");
                         let mut value = self.registers.a;
                         self.op_sra(&mut value);
                         self.registers.a = value;
                     }
                     0x30 => {
-                        debug!("0xCB30");
                         let mut value = self.registers.b;
                         self.op_swap(&mut value);
                         self.registers.b = value;
                     }
                     0x31 => {
-                        debug!("0xCB31");
                         let mut value = self.registers.c;
                         self.op_swap(&mut value);
                         self.registers.c = value;
                     }
                     0x32 => {
-                        debug!("0xCB32");
                         let mut value = self.registers.d;
                         self.op_swap(&mut value);
                         self.registers.d = value;
                     }
                     0x33 => {
-                        debug!("0xCB33");
                         let mut value = self.registers.e;
                         self.op_swap(&mut value);
                         self.registers.e = value;
                     }
                     0x34 => {
-                        debug!("0xCB34");
                         let mut value = self.registers.h;
                         self.op_swap(&mut value);
                         self.registers.h = value;
                     }
                     0x35 => {
-                        debug!("0xCB35");
                         let mut value = self.registers.l;
                         self.op_swap(&mut value);
                         self.registers.l = value;
                     }
                     0x36 => {
-                        debug!("0xCB36");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_swap(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x37 => {
-                        debug!("0xCB37");
                         let mut value = self.registers.a;
                         self.op_swap(&mut value);
                         self.registers.a = value;
                     }
                     0x38 => {
-                        debug!("0xCB38");
                         let mut value = self.registers.b;
                         self.op_srl(&mut value);
                         self.registers.b = value;
                     }
                     0x39 => {
-                        debug!("0xCB39");
                         let mut value = self.registers.c;
                         self.op_srl(&mut value);
                         self.registers.c = value;
                     }
                     0x3A => {
-                        debug!("0xCB3A");
                         let mut value = self.registers.d;
                         self.op_srl(&mut value);
                         self.registers.d = value;
                     }
                     0x3B => {
-                        debug!("0xCB3B");
                         let mut value = self.registers.e;
                         self.op_srl(&mut value);
                         self.registers.e = value;
                     }
                     0x3C => {
-                        debug!("0xCB3C");
                         let mut value = self.registers.h;
                         self.op_srl(&mut value);
                         self.registers.h = value;
                     }
                     0x3D => {
-                        debug!("0xCB3D");
                         let mut value = self.registers.l;
                         self.op_srl(&mut value);
                         self.registers.l = value;
                     }
                     0x3E => {
-                        debug!("0xCB3E");
                         let mut value = self.work_ram[self.registers.get_hl() as usize];
                         self.op_srl(&mut value);
                         self.work_ram[self.registers.get_hl() as usize] = value;
                     }
                     0x3F => {
-                        debug!("0xCB3F");
                         let mut value = self.registers.a;
                         self.op_srl(&mut value);
                         self.registers.a = value;
                     }
                     0x40 => {
-                        debug!("0xCB40");
                         self.op_bit(0, self.registers.b);
                     }
                     0x41 => {
-                        debug!("0xCB41");
                         self.op_bit(0, self.registers.c);
                     }
                     0x42 => {
-                        debug!("0xCB42");
                         self.op_bit(0, self.registers.d);
                     }
                     0x43 => {
-                        debug!("0xCB43");
                         self.op_bit(0, self.registers.e);
                     }
                     0x44 => {
-                        debug!("0xCB44");
                         self.op_bit(0, self.registers.h);
                     }
                     0x45 => {
-                        debug!("0xCB45");
                         self.op_bit(0, self.registers.l);
                     }
                     0x46 => {
-                        debug!("0xCB46");
                         self.op_bit(0, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x47 => {
-                        debug!("0xCB47");
                         self.op_bit(0, self.registers.a);
                     }
                     0x48 => {
-                        debug!("0xCB48");
                         self.op_bit(1, self.registers.b);
                     }
                     0x49 => {
-                        debug!("0xCB49");
                         self.op_bit(1, self.registers.c);
                     }
                     0x4A => {
-                        debug!("0xCB4A");
                         self.op_bit(1, self.registers.d);
                     }
                     0x4B => {
-                        debug!("0xCB4B");
                         self.op_bit(1, self.registers.e);
                     }
                     0x4C => {
-                        debug!("0xCB4C");
                         self.op_bit(1, self.registers.h);
                     }
                     0x4D => {
-                        debug!("0xCB4D");
                         self.op_bit(1, self.registers.l);
                     }
                     0x4E => {
-                        debug!("0xCB4E");
                         self.op_bit(1, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x4F => {
-                        debug!("0xCB4F");
                         self.op_bit(1, self.registers.a);
                     }
                     0x50 => {
-                        debug!("0xCB50");
                         self.op_bit(2, self.registers.b);
                     }
                     0x51 => {
-                        debug!("0xCB51");
                         self.op_bit(2, self.registers.c);
                     }
                     0x52 => {
-                        debug!("0xCB52");
                         self.op_bit(2, self.registers.d);
                     }
                     0x53 => {
-                        debug!("0xCB53");
                         self.op_bit(2, self.registers.e);
                     }
                     0x54 => {
-                        debug!("0xCB54");
                         self.op_bit(2, self.registers.h);
                     }
                     0x55 => {
-                        debug!("0xCB55");
                         self.op_bit(2, self.registers.l);
                     }
                     0x56 => {
-                        debug!("0xCB56");
                         self.op_bit(2, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x57 => {
-                        debug!("0xCB57");
                         self.op_bit(2, self.registers.a);
                     }
                     0x58 => {
-                        debug!("0xCB58");
                         self.op_bit(3, self.registers.b);
                     }
                     0x59 => {
-                        debug!("0xCB59");
                         self.op_bit(3, self.registers.c);
                     }
                     0x5A => {
-                        debug!("0xCB5A");
                         self.op_bit(3, self.registers.d);
                     }
                     0x5B => {
-                        debug!("0xCB5B");
                         self.op_bit(3, self.registers.e);
                     }
                     0x5C => {
-                        debug!("0xCB5C");
                         self.op_bit(3, self.registers.h);
                     }
                     0x5D => {
-                        debug!("0xCB5D");
                         self.op_bit(3, self.registers.l);
                     }
                     0x5E => {
-                        debug!("0xCB5E");
                         self.op_bit(3, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x5F => {
-                        debug!("0xCB5F");
                         self.op_bit(3, self.registers.a);
                     }
                     0x60 => {
-                        debug!("0xCB60");
                         self.op_bit(4, self.registers.b);
                     }
                     0x61 => {
-                        debug!("0xCB61");
                         self.op_bit(4, self.registers.c);
                     }
                     0x62 => {
-                        debug!("0xCB62");
                         self.op_bit(4, self.registers.d);
                     }
                     0x63 => {
-                        debug!("0xCB63");
                         self.op_bit(4, self.registers.e);
                     }
                     0x64 => {
-                        debug!("0xCB64");
                         self.op_bit(4, self.registers.h);
                     }
                     0x65 => {
-                        debug!("0xCB65");
                         self.op_bit(4, self.registers.l);
                     }
                     0x66 => {
-                        debug!("0xCB66");
                         self.op_bit(4, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x67 => {
-                        debug!("0xCB67");
                         self.op_bit(4, self.registers.a);
                     }
                     0x68 => {
-                        debug!("0xCB68");
                         self.op_bit(5, self.registers.b);
                     }
                     0x69 => {
-                        debug!("0xCB69");
                         self.op_bit(5, self.registers.c);
                     }
                     0x6A => {
-                        debug!("0xCB6A");
                         self.op_bit(5, self.registers.d);
                     }
                     0x6B => {
-                        debug!("0xCB6B");
                         self.op_bit(5, self.registers.e);
                     }
                     0x6C => {
-                        debug!("0xCB6C");
                         self.op_bit(5, self.registers.h);
                     }
                     0x6D => {
-                        debug!("0xCB6D");
                         self.op_bit(5, self.registers.l);
                     }
                     0x6E => {
-                        debug!("0xCB6E");
                         self.op_bit(5, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x6F => {
-                        debug!("0xCB6F");
                         self.op_bit(5, self.registers.a);
                     }
                     0x70 => {
-                        debug!("0xCB70");
                         self.op_bit(6, self.registers.b);
                     }
                     0x71 => {
-                        debug!("0xCB71");
                         self.op_bit(6, self.registers.c);
                     }
                     0x72 => {
-                        debug!("0xCB72");
                         self.op_bit(6, self.registers.d);
                     }
                     0x73 => {
-                        debug!("0xCB73");
                         self.op_bit(6, self.registers.e);
                     }
                     0x74 => {
-                        debug!("0xCB74");
                         self.op_bit(6, self.registers.h);
                     }
                     0x75 => {
-                        debug!("0xCB75");
                         self.op_bit(6, self.registers.l);
                     }
                     0x76 => {
-                        debug!("0xCB76");
                         self.op_bit(6, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x77 => {
-                        debug!("0xCB77");
                         self.op_bit(6, self.registers.a);
                     }
                     0x78 => {
-                        debug!("0xCB78");
                         self.op_bit(7, self.registers.b);
                     }
                     0x79 => {
-                        debug!("0xCB79");
                         self.op_bit(7, self.registers.c);
                     }
                     0x7A => {
-                        debug!("0xCB7A");
                         self.op_bit(7, self.registers.d);
                     }
                     0x7B => {
-                        debug!("0xCB7B");
                         self.op_bit(7, self.registers.e);
                     }
                     0x7C => {
-                        debug!("0xCB7C");
                         self.op_bit(7, self.registers.h);
                     }
                     0x7D => {
-                        debug!("0xCB7D");
                         self.op_bit(7, self.registers.l);
                     }
                     0x7E => {
-                        debug!("0xCB7E");
                         self.op_bit(7, self.work_ram[self.registers.get_hl() as usize]);
                     }
                     0x7F => {
-                        debug!("0xCB7F");
                         self.op_bit(7, self.registers.a);
                     }
                     0x80 => {
-                        debug!("0xCB80");
                         self.registers.b &= !(1 << 0);
                     }
                     0x81 => {
-                        debug!("0xCB81");
                         self.registers.c &= !(1 << 0);
                     }
                     0x82 => {
-                        debug!("0xCB82");
                         self.registers.d &= !(1 << 0);
                     }
                     0x83 => {
-                        debug!("0xCB83");
                         self.registers.e &= !(1 << 0);
                     }
                     0x84 => {
-                        debug!("0xCB84");
                         self.registers.h &= !(1 << 0);
                     }
                     0x85 => {
-                        debug!("0xCB85");
                         self.registers.l &= !(1 << 0);
                     }
                     0x86 => {
-                        debug!("0xCB86");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 0);
                     }
                     0x87 => {
-                        debug!("0xCB87");
                         self.registers.a &= !(1 << 0);
                     }
                     0x88 => {
-                        debug!("0xCB88");
                         self.registers.b &= !(1 << 1);
                     }
                     0x89 => {
-                        debug!("0xCB89");
                         self.registers.c &= !(1 << 1);
                     }
                     0x8A => {
-                        debug!("0xCB8A");
                         self.registers.d &= !(1 << 1);
                     }
                     0x8B => {
-                        debug!("0xCB8B");
                         self.registers.e &= !(1 << 1);
                     }
                     0x8C => {
-                        debug!("0xCB8C");
                         self.registers.h &= !(1 << 1);
                     }
                     0x8D => {
-                        debug!("0xCB8D");
                         self.registers.l &= !(1 << 1);
                     }
                     0x8E => {
-                        debug!("0xCB8E");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 1);
                     }
                     0x8F => {
-                        debug!("0xCB8F");
                         self.registers.a &= !(1 << 1);
                     }
                     0x90 => {
-                        debug!("0xCB90");
                         self.registers.b &= !(1 << 2);
                     }
                     0x91 => {
-                        debug!("0xCB91");
                         self.registers.c &= !(1 << 2);
                     }
                     0x92 => {
-                        debug!("0xCB92");
                         self.registers.d &= !(1 << 2);
                     }
                     0x93 => {
-                        debug!("0xCB93");
                         self.registers.e &= !(1 << 2);
                     }
                     0x94 => {
-                        debug!("0xCB94");
                         self.registers.h &= !(1 << 2);
                     }
                     0x95 => {
-                        debug!("0xCB95");
                         self.registers.l &= !(1 << 2);
                     }
                     0x96 => {
-                        debug!("0xCB96");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 2);
                     }
                     0x97 => {
-                        debug!("0xCB97");
                         self.registers.a &= !(1 << 2);
                     }
                     0x98 => {
-                        debug!("0xCB98");
                         self.registers.b &= !(1 << 3);
                     }
                     0x99 => {
-                        debug!("0xCB99");
                         self.registers.c &= !(1 << 3);
                     }
                     0x9A => {
-                        debug!("0xCB9A");
                         self.registers.d &= !(1 << 3);
                     }
                     0x9B => {
-                        debug!("0xCB9B");
                         self.registers.e &= !(1 << 3);
                     }
                     0x9C => {
-                        debug!("0xCB9C");
                         self.registers.h &= !(1 << 3);
                     }
                     0x9D => {
-                        debug!("0xCB9D");
                         self.registers.l &= !(1 << 3);
                     }
                     0x9E => {
-                        debug!("0xCB9E");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 3);
                     }
                     0x9F => {
-                        debug!("0xCB9F");
                         self.registers.a &= !(1 << 3);
                     }
                     0xA0 => {
-                        debug!("0xCBA0");
                         self.registers.b &= !(1 << 4);
                     }
                     0xA1 => {
-                        debug!("0xCBA1");
                         self.registers.c &= !(1 << 4);
                     }
                     0xA2 => {
-                        debug!("0xCBA2");
                         self.registers.d &= !(1 << 4);
                     }
                     0xA3 => {
-                        debug!("0xCBA3");
                         self.registers.e &= !(1 << 4);
                     }
                     0xA4 => {
-                        debug!("0xCBA4");
                         self.registers.h &= !(1 << 4);
                     }
                     0xA5 => {
-                        debug!("0xCBA5");
                         self.registers.l &= !(1 << 4);
                     }
                     0xA6 => {
-                        debug!("0xCBA6");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 4);
                     }
                     0xA7 => {
-                        debug!("0xCBA7");
                         self.registers.a &= !(1 << 4);
                     }
                     0xA8 => {
-                        debug!("0xCBA8");
                         self.registers.b &= !(1 << 5);
                     }
                     0xA9 => {
-                        debug!("0xCBA9");
                         self.registers.c &= !(1 << 5);
                     }
                     0xAA => {
-                        debug!("0xCBAA");
                         self.registers.d &= !(1 << 5);
                     }
                     0xAB => {
-                        debug!("0xCBAB");
                         self.registers.e &= !(1 << 5);
                     }
                     0xAC => {
-                        debug!("0xCBAC");
                         self.registers.h &= !(1 << 5);
                     }
                     0xAD => {
-                        debug!("0xCBAD");
                         self.registers.l &= !(1 << 5);
                     }
                     0xAE => {
-                        debug!("0xCBAE");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 5);
                     }
                     0xAF => {
-                        debug!("0xCBAF");
                         self.registers.a &= !(1 << 5);
                     }
                     0xB0 => {
-                        debug!("0xCBB0");
                         self.registers.b &= !(1 << 6);
                     }
                     0xB1 => {
-                        debug!("0xCBB1");
                         self.registers.c &= !(1 << 6);
                     }
                     0xB2 => {
-                        debug!("0xCBB2");
                         self.registers.d &= !(1 << 6);
                     }
                     0xB3 => {
-                        debug!("0xCBB3");
                         self.registers.e &= !(1 << 6);
                     }
                     0xB4 => {
-                        debug!("0xCBB4");
                         self.registers.h &= !(1 << 6);
                     }
                     0xB5 => {
-                        debug!("0xCBB5");
                         self.registers.l &= !(1 << 6);
                     }
                     0xB6 => {
-                        debug!("0xCBB6");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 6);
                     }
                     0xB7 => {
-                        debug!("0xCBB7");
                         self.registers.a &= !(1 << 6);
                     }
                     0xB8 => {
-                        debug!("0xCBB8");
                         self.registers.b &= !(1 << 7);
                     }
                     0xB9 => {
-                        debug!("0xCBB9");
                         self.registers.c &= !(1 << 7);
                     }
                     0xBA => {
-                        debug!("0xCBBA");
                         self.registers.d &= !(1 << 7);
                     }
                     0xBB => {
-                        debug!("0xCBBB");
                         self.registers.e &= !(1 << 7);
                     }
                     0xBC => {
-                        debug!("0xCBBC");
                         self.registers.h &= !(1 << 7);
                     }
                     0xBD => {
-                        debug!("0xCBBD");
                         self.registers.l &= !(1 << 7);
                     }
                     0xBE => {
-                        debug!("0xCBBE");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 7);
                     }
                     0xBF => {
-                        debug!("0xCBBF");
                         self.registers.a &= !(1 << 7);
                     }
                     0xC0 => {
-                        debug!("0xCBC0");
                         self.registers.b |= 1 << 0;
                     }
                     0xC1 => {
-                        debug!("0xCBC1");
                         self.registers.c |= 1 << 0;
                     }
                     0xC2 => {
-                        debug!("0xCBC2");
                         self.registers.d |= 1 << 0;
                     }
                     0xC3 => {
-                        debug!("0xCBC3");
                         self.registers.e |= 1 << 0;
                     }
                     0xC4 => {
-                        debug!("0xCBC4");
                         self.registers.h |= 1 << 0;
                     }
                     0xC5 => {
-                        debug!("0xCBC5");
                         self.registers.l |= 1 << 0;
                     }
                     0xC6 => {
-                        debug!("0xCBC6");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 0;
                     }
                     0xC7 => {
-                        debug!("0xCBC7");
                         self.registers.a |= 1 << 0;
                     }
                     0xC8 => {
-                        debug!("0xCBC8");
                         self.registers.b |= 1 << 1;
                     }
                     0xC9 => {
-                        debug!("0xCBC9");
                         self.registers.c |= 1 << 1;
                     }
                     0xCA => {
-                        debug!("0xCBCA");
                         self.registers.d |= 1 << 1;
                     }
                     0xCB => {
-                        debug!("0xCBCB");
                         self.registers.e |= 1 << 1;
                     }
                     0xCC => {
-                        debug!("0xCBCC");
                         self.registers.h |= 1 << 1;
                     }
                     0xCD => {
-                        debug!("0xCBCD");
                         self.registers.l |= 1 << 1;
                     }
                     0xCE => {
-                        debug!("0xCBCE");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 1;
                     }
                     0xCF => {
-                        debug!("0xCBCF");
                         self.registers.a |= 1 << 1;
                     }
                     0xD0 => {
-                        debug!("0xCBD0");
                         self.registers.b |= 1 << 2;
                     }
                     0xD1 => {
-                        debug!("0xCBD1");
                         self.registers.c |= 1 << 2;
                     }
                     0xD2 => {
-                        debug!("0xCBD2");
                         self.registers.d |= 1 << 2;
                     }
                     0xD3 => {
-                        debug!("0xCBD3");
                         self.registers.e |= 1 << 2;
                     }
                     0xD4 => {
-                        debug!("0xCBD4");
                         self.registers.h |= 1 << 2;
                     }
                     0xD5 => {
-                        debug!("0xCBD5");
                         self.registers.l |= 1 << 2;
                     }
                     0xD6 => {
-                        debug!("0xCBD6");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 2;
                     }
                     0xD7 => {
-                        debug!("0xCBD7");
                         self.registers.a |= 1 << 2;
                     }
                     0xD8 => {
-                        debug!("0xCBD8");
                         self.registers.b |= 1 << 3;
                     }
                     0xD9 => {
-                        debug!("0xCBD9");
                         self.registers.c |= 1 << 3;
                     }
                     0xDA => {
-                        debug!("0xCBDA");
                         self.registers.d |= 1 << 3;
                     }
                     0xDB => {
-                        debug!("0xCBDB");
                         self.registers.e |= 1 << 3;
                     }
                     0xDC => {
-                        debug!("0xCBDC");
                         self.registers.h |= 1 << 3;
                     }
                     0xDD => {
-                        debug!("0xCBDD");
                         self.registers.l |= 1 << 3;
                     }
                     0xDE => {
-                        debug!("0xCBDE");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 3;
                     }
                     0xDF => {
-                        debug!("0xCBDF");
                         self.registers.a |= 1 << 3;
                     }
                     0xE0 => {
-                        debug!("0xCBE0");
                         self.registers.b |= 1 << 4;
                     }
                     0xE1 => {
-                        debug!("0xCBE1");
                         self.registers.c |= 1 << 4;
                     }
                     0xE2 => {
-                        debug!("0xCBE2");
                         self.registers.d |= 1 << 4;
                     }
                     0xE3 => {
-                        debug!("0xCBE3");
                         self.registers.e |= 1 << 4;
                     }
                     0xE4 => {
-                        debug!("0xCBE4");
                         self.registers.h |= 1 << 4;
                     }
                     0xE5 => {
-                        debug!("0xCBE5");
                         self.registers.l |= 1 << 4;
                     }
                     0xE6 => {
-                        debug!("0xCBE6");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 4;
                     }
                     0xE7 => {
-                        debug!("0xCBE7");
                         self.registers.a |= 1 << 4;
                     }
                     0xE8 => {
-                        debug!("0xCBE8");
                         self.registers.b |= 1 << 5;
                     }
                     0xE9 => {
-                        debug!("0xCBE9");
                         self.registers.c |= 1 << 5;
                     }
                     0xEA => {
-                        debug!("0xCBEA");
                         self.registers.d |= 1 << 5;
                     }
                     0xEB => {
-                        debug!("0xCBEB");
                         self.registers.e |= 1 << 5;
                     }
                     0xEC => {
-                        debug!("0xCBEC");
                         self.registers.h |= 1 << 5;
                     }
                     0xED => {
-                        debug!("0xCBED");
                         self.registers.l |= 1 << 5;
                     }
                     0xEE => {
-                        debug!("0xCBEE");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 5;
                     }
                     0xEF => {
-                        debug!("0xCBEF");
                         self.registers.a |= 1 << 5;
                     }
                     0xF0 => {
-                        debug!("0xCBF0");
                         self.registers.b |= 1 << 6;
                     }
                     0xF1 => {
-                        debug!("0xCBF1");
                         self.registers.c |= 1 << 6;
                     }
                     0xF2 => {
-                        debug!("0xCBF2");
                         self.registers.d |= 1 << 6;
                     }
                     0xF3 => {
-                        debug!("0xCBF3");
                         self.registers.e |= 1 << 6;
                     }
                     0xF4 => {
-                        debug!("0xCBF4");
                         self.registers.h |= 1 << 6;
                     }
                     0xF5 => {
-                        debug!("0xCBF5");
                         self.registers.l |= 1 << 6;
                     }
                     0xF6 => {
-                        debug!("0xCBF6");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 6;
                     }
                     0xF7 => {
-                        debug!("0xCBF7");
                         self.registers.a |= 1 << 6;
                     }
                     0xF8 => {
-                        debug!("0xCBF8");
                         self.registers.b |= 1 << 7;
                     }
                     0xF9 => {
-                        debug!("0xCBF9");
                         self.registers.c |= 1 << 7;
                     }
                     0xFA => {
-                        debug!("0xCBFA");
                         self.registers.d |= 1 << 7;
                     }
                     0xFB => {
-                        debug!("0xCBFB");
                         self.registers.e |= 1 << 7;
                     }
                     0xFC => {
-                        debug!("0xCBFC");
                         self.registers.h |= 1 << 7;
                     }
                     0xFD => {
-                        debug!("0xCBFD");
                         self.registers.l |= 1 << 7;
                     }
                     0xFE => {
-                        debug!("0xCBFE");
                         let value = self.work_ram[self.registers.get_hl() as usize];
                         self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 7;
                     }
                     0xFF => {
-                        debug!("0xCBFF");
                         self.registers.a |= 1 << 7;
                     }
                 }
             }
             0xCC => {
-                debug!("0xCC");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -2948,7 +2648,6 @@ impl CPU {
                 self.op_call_nn(nn);
             }
             0xCD => {
-                debug!("0xCD");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 debug!("lsb: 0x{:X}", lsb);
                 self.registers.pc += 1;
@@ -2964,7 +2663,6 @@ impl CPU {
                 //self.op_call_nn(nn);
             }
             0xCE => {
-                debug!("0xCE");
                 let value = self.work_ram[self.registers.pc as usize];
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
@@ -2985,23 +2683,19 @@ impl CPU {
                 self.registers.a = result;
             }
             0xCF => {
-                debug!("0xCF");
                 self.op_rst_address(0x08);
             }
             0xD0 => {
-                debug!("0xD0");
                 if !self.registers.f.get_flag(Flag::C) {
                     self.op_ret();
                 }
             }
             0xD1 => {
-                debug!("0xD1");
                 //self.op_pop_rr(&mut self.registers.get_de());
                 let value = self.op_pop_stack();
                 self.registers.set_de(value);
             }
             0xD2 => {
-                debug!("0xD2");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -3010,11 +2704,9 @@ impl CPU {
                 self.op_jp_nn(nn);
             }
             0xD3 => {
-                debug!("0xD3");
                 panic!("Unsupported opcode: 0xD3");
             }
             0xD4 => {
-                debug!("0xD4");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -3023,11 +2715,9 @@ impl CPU {
                 self.op_call_nn(nn);
             }
             0xD5 => {
-                debug!("0xD5");
                 self.op_push_stack(self.registers.get_de());
             }
             0xD6 => {
-                debug!("0xD6");
                 let value = self.work_ram[self.registers.pc as usize];
                 let (result, overflow) = self.registers.a.overflowing_sub(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -3041,22 +2731,18 @@ impl CPU {
                 self.registers.pc += 1;
             }
             0xD7 => {
-                debug!("0xD7");
                 self.op_rst_address(0x10);
             }
             0xD8 => {
-                debug!("0xD8");
                 if self.registers.f.get_flag(Flag::C) {
                     self.op_ret();
                 }
             }
             0xD9 => {
-                debug!("0xD9");
                 self.op_ret();
                 self.op_ei();
             }
             0xDA => {
-                debug!("0xDA");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -3065,11 +2751,9 @@ impl CPU {
                 self.op_jp_nn(nn);
             }
             0xDB => {
-                debug!("0xDB");
                 panic!("Unsupported opcode: 0xDB");
             }
             0xDC => {
-                debug!("0xDC");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -3078,11 +2762,9 @@ impl CPU {
                 self.op_call_nn(nn);
             }
             0xDD => {
-                debug!("0xDD");
                 panic!("Unsupported opcode: 0xDD");
             }
             0xDE => {
-                debug!("0xDE");
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -3108,41 +2790,32 @@ impl CPU {
                 self.registers.a = result;
             }
             0xDF => {
-                debug!("0xDF");
                 self.op_rst_address(0x18);
             }
             0xE0 => {
-                debug!("0xE0");
                 let value = self.work_ram[self.registers.pc as usize];
                 let address = 0xFF00 + value as u16;
                 self.registers.pc += 1;
                 self.work_ram[address as usize] = self.registers.a;
             }
             0xE1 => {
-                debug!("0xE1");
                 //self.op_pop_rr(&mut self.registers.get_hl());
                 let value = self.op_pop_stack();
                 self.registers.set_hl(value);
             }
             0xE2 => {
-                debug!("0xE2");
                 self.op_ldh_c_a();
             }
             0xE3 => {
-                debug!("0xE3");
                 panic!("Unsupported opcode: 0xE3");
             }
             0xE4 => {
-                debug!("0xE4");
                 panic!("Unsupported opcode: 0xE4");
             }
             0xE5 => {
-                debug!("0xE5");
-                //self.op_push_rr(self.registers.get_hl());
                 self.op_push_stack(self.registers.get_hl());
             }
             0xE6 => {
-                debug!("0xE6");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = self.registers.a & value;
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -3153,11 +2826,9 @@ impl CPU {
                 self.registers.a = result;
             }
             0xE7 => {
-                debug!("0xE7");
                 self.op_rst_address(0x20);
             }
             0xE8 => {
-                debug!("0xE8");
                 let value = self.work_ram[self.registers.pc as usize] as i16;
                 let sp = self.registers.sp as i16;
                 let result = sp.wrapping_add(value);
@@ -3173,11 +2844,9 @@ impl CPU {
                 self.registers.pc += 1;
             }
             0xE9 => {
-                debug!("0xE9");
                 self.op_jp_hl();
             }
             0xEA => {
-                debug!("0xEA");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -3186,19 +2855,15 @@ impl CPU {
                 self.op_ld_nn_a(nn);
             }
             0xEB => {
-                debug!("0xEB");
                 panic!("Unsupported opcode: 0xEB");
             }
             0xEC => {
-                debug!("0xEC");
                 panic!("Unsupported opcode: 0xEC");
             }
             0xED => {
-                debug!("0xED");
                 panic!("Unsupported opcode: 0xED");
             }
             0xEE => {
-                debug!("0xEE");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = self.registers.a ^ value;
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -3209,39 +2874,30 @@ impl CPU {
                 self.registers.a = result;
             }
             0xEF => {
-                debug!("0xEF");
                 self.op_rst_address(0x28);
             }
             0xF0 => {
-                debug!("0xF0");
                 let value = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 self.op_ldh_a_n8(value);
             }
             0xF1 => {
-                debug!("0xF1");
-                //self.op_pop_rr(&mut self.registers.get_af());
                 let value = self.op_pop_stack();
                 self.registers.set_af(value);
             }
             0xF2 => {
-                debug!("0xF2");
                 self.op_ldh_a_c();
             }
             0xF3 => {
-                debug!("0xF3");
                 self.op_di();
             }
             0xF4 => {
-                debug!("0xF4");
                 panic!("Unsupported opcode: 0xF4");
             }
             0xF5 => {
-                debug!("0xF5");
                 self.op_push_stack(self.registers.get_af());
             }
             0xF6 => {
-                debug!("0xF6");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = self.registers.a | value;
                 self.registers.f.set_flag(Flag::Z, result == 0);
@@ -3252,22 +2908,18 @@ impl CPU {
                 self.registers.a = result;
             }
             0xF7 => {
-                debug!("0xF7");
                 self.op_rst_address(0x30);
             }
             0xF8 => {
-                debug!("0xF8");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
                 self.registers.pc += 1;
                 self.registers.set_hl(result);
             }
             0xF9 => {
-                debug!("0xF9");
                 self.op_ld_sp_hl();
             }
             0xFA => {
-                debug!("0xFA");
                 let lsb = self.work_ram[self.registers.pc as usize];
                 self.registers.pc += 1;
                 let msb = self.work_ram[self.registers.pc as usize];
@@ -3276,19 +2928,15 @@ impl CPU {
                 self.op_ld_a_nn(nn);
             }
             0xFB => {
-                debug!("0xFB");
                 self.op_ei();
             }
             0xFC => {
-                debug!("0xFC");
                 panic!("Unsupported opcode: 0xFC");
             }
             0xFD => {
-                debug!("0xFD");
                 panic!("Unsupported opcode: 0xFD");
             }
             0xFE => {
-                debug!("0xFE");
                 let value = self.work_ram[self.registers.pc as usize];
                 let result = self.registers.a.wrapping_sub(value);
                 self.registers.pc += 1;
@@ -3300,7 +2948,6 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xFF => {
-                debug!("0xFF");
                 self.op_rst_address(0x38);
             } /*_ => {
                   panic!("Unsupported opcode: {}", format!("{:02X}", opcode));
@@ -3314,9 +2961,6 @@ impl CPU {
      */
     fn op_nop(&mut self) {
         debug!("op_nop");
-        //debug!("{}", self.registers);
-        //debug!("{:?}", self.work_ram);
-        //panic!("op_nop"); // TODO temp for debugging
     }
 
     /*

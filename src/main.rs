@@ -12,13 +12,17 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let mut cpu = CPU::CPU::new();
-    cpu.load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
+    /*let mut display = display::Display::new(
+        &String::from("RustGB"),
+        display::SCREEN_WIDTH as u32,
+        display::SCREEN_HEIGHT as u32,
+    );*/
 
-    //cpu.load_rom(String::from("roms/Tetris.gb"));
-    cpu.load_rom(String::from(
-        "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));
+    let mut cpu = CPU::CPU::new();
+    //cpu.load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
+
+    cpu.load_rom(String::from("roms/Tetris.gb"));
+    //cpu.load_rom(String::from("roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb"));
 
     //cpu.load_rom(String::from("roms/test/cpu_instrs.gb"));
     //cpu.load_rom(String::from("roms/test/cpu/07-jr,jp,call,ret,rst.gb"));

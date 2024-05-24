@@ -291,7 +291,7 @@ impl CPU {
         debug!("Fetch");
 
         let opcode = self.work_ram[self.registers.pc as usize];
-        self.registers.pc += 1;
+        self.registers.pc = self.registers.pc.wrapping_add(1);
 
         debug!("PC [0x{:X}]", self.registers.pc);
         debug!("Opcode [0x{:X}]", opcode);
@@ -311,12 +311,7 @@ impl CPU {
                 self.op_nop();
             }
             0x01 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
-                //self.op_ld_rr_nn(&mut self.registers.set_bc, nn);
+                let nn: u16 = self.read_immediate_short();
                 self.registers.set_bc(nn);
             }
             0x02 => {
@@ -333,8 +328,7 @@ impl CPU {
                 self.registers.b = self.registers.b.wrapping_sub(1);
             }
             0x06 => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.registers.b = value;
             }
             0x07 => {
@@ -348,13 +342,8 @@ impl CPU {
                 self.registers.f.set_flag(Flag::H, false);
             }
             0x08 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
-                self.work_ram[nn as usize] = (self.registers.sp & 0xFF) as u8;
-                self.work_ram[(nn + 1) as usize] = (self.registers.sp >> 8) as u8;
+                let nn: u16 = self.read_immediate_short();
+                self.write_immediate_short(nn, self.registers.sp);
             }
             0x09 => {
                 let hl = self.registers.get_hl();
@@ -374,8 +363,8 @@ impl CPU {
                 self.registers.c = self.registers.c.wrapping_sub(1);
             }
             0x0E => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
+                self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.registers.c = value;
             }
             0x0F => {
@@ -395,11 +384,7 @@ impl CPU {
                 //unimplemented!("STOP not implemented");
             }
             0x11 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.registers.set_de(nn);
             }
             0x12 => {
@@ -415,8 +400,7 @@ impl CPU {
                 self.registers.d = self.registers.d.wrapping_sub(1);
             }
             0x16 => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.registers.d = value;
             }
             0x17 => {
@@ -434,7 +418,7 @@ impl CPU {
             }
             0x18 => {
                 let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc += 1;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.op_jr_e(offset);
             }
             0x19 => {
@@ -455,8 +439,7 @@ impl CPU {
                 self.registers.e = self.registers.e.wrapping_sub(1);
             }
             0x1E => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.registers.e = value;
             }
             0x1F => {
@@ -474,15 +457,11 @@ impl CPU {
             }
             0x20 => {
                 let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc += 1;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.op_jr_cc_e(!self.registers.f.get_flag(Flag::Z), offset);
             }
             0x21 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.registers.set_hl(nn);
             }
             0x22 => {
@@ -499,8 +478,7 @@ impl CPU {
                 self.registers.h = self.registers.h.wrapping_sub(1);
             }
             0x26 => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.registers.h = value;
             }
             0x27 => {
@@ -524,7 +502,7 @@ impl CPU {
             }
             0x28 => {
                 let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc += 1;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.op_jr_cc_e(self.registers.f.get_flag(Flag::Z), offset);
             }
             0x29 => {
@@ -547,8 +525,7 @@ impl CPU {
                 self.registers.l = self.registers.l.wrapping_sub(1);
             }
             0x2E => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.registers.l = value;
             }
             0x2F => {
@@ -563,16 +540,13 @@ impl CPU {
                 }
             }
             0x31 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.registers.sp = nn;
             }
             0x32 => {
                 self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
-                self.registers.set_hl(self.registers.get_hl() - 1);
+                self.registers
+                    .set_hl(self.registers.get_hl().wrapping_sub(1));
             }
             0x33 => {
                 self.registers.sp = self.registers.sp.wrapping_add(1);
@@ -600,8 +574,7 @@ impl CPU {
                     .set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
             }
             0x36 => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.work_ram[self.registers.get_hl() as usize] = value;
             }
             0x37 => {
@@ -611,7 +584,7 @@ impl CPU {
             }
             0x38 => {
                 let value = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc += 1;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.op_jr_cc_e(self.registers.f.get_flag(Flag::C), value);
             }
             0x39 => {
@@ -621,7 +594,8 @@ impl CPU {
             }
             0x3A => {
                 self.registers.a = self.work_ram[self.registers.get_hl() as usize];
-                self.registers.set_hl(self.registers.get_hl() - 1);
+                self.registers
+                    .set_hl(self.registers.get_hl().wrapping_sub(1));
             }
             0x3B => {
                 self.registers.sp = self.registers.sp.wrapping_sub(1);
@@ -637,8 +611,7 @@ impl CPU {
                 self.registers.a = self.registers.a.wrapping_sub(1);
             }
             0x3E => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.registers.a = value;
             }
             0x3F => {
@@ -1657,48 +1630,26 @@ impl CPU {
                 self.op_push_stack(self.registers.get_bc());
             }
             0xC2 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_jp_nn(nn);
             }
             0xC3 => {
                 if !self.registers.f.get_flag(Flag::Z) {
-                    let lsb = self.work_ram[self.registers.pc as usize];
-                    self.registers.pc += 1;
-                    let msb = self.work_ram[self.registers.pc as usize];
-                    self.registers.pc += 1;
-                    let nn: u16 = (msb as u16) << 8 | lsb as u16;
+                    let nn: u16 = self.read_immediate_short();
                     debug!("Jumping to 0x{:X}", nn);
                     self.op_jp_nn(nn);
                 }
             }
             0xC4 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_call_nn(nn);
             }
             0xC5 => {
                 self.op_push_stack(self.registers.get_bc());
             }
             0xC6 => {
-                let value = self.work_ram[self.registers.pc as usize];
-                let result = self.registers.a.wrapping_add(value);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
-                self.registers
-                    .f
-                    .set_flag(Flag::C, (self.registers.a as u16) + (value as u16) > 0xFF);
-                self.registers.a = result;
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
+                self.op_add_a_n8(value);
             }
             0xC7 => {
                 self.op_rst_address(0x0000);
@@ -1712,18 +1663,14 @@ impl CPU {
                 self.op_ret();
             }
             0xCA => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_jp_nn(nn);
             }
             0xCB => {
                 // Get the next byte and use it as the extended opcode
                 let extended_opcode = self.work_ram[self.registers.pc as usize];
                 debug!("0xCB{:X}", extended_opcode);
-                self.registers.pc += 1;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
                 match extended_opcode {
                     0x00 => {
                         let mut value = self.registers.b;
@@ -2640,21 +2587,11 @@ impl CPU {
                 }
             }
             0xCC => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_call_nn(nn);
             }
             0xCD => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                debug!("lsb: 0x{:X}", lsb);
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                debug!("msb: 0x{:X}", msb);
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 debug!("nn: 0x{:X}", nn);
                 self.op_push_stack(self.registers.pc);
                 debug!("Pushed 0x{:X} to the stack", self.registers.pc); // TODO may need to be pc + 2
@@ -2696,29 +2633,21 @@ impl CPU {
                 self.registers.set_de(value);
             }
             0xD2 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_jp_nn(nn);
             }
             0xD3 => {
                 panic!("Unsupported opcode: 0xD3");
             }
             0xD4 => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_call_nn(nn);
             }
             0xD5 => {
                 self.op_push_stack(self.registers.get_de());
             }
             0xD6 => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let (result, overflow) = self.registers.a.overflowing_sub(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -2727,8 +2656,6 @@ impl CPU {
                     .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
                 self.registers.f.set_flag(Flag::C, overflow); // Set the carry flag if there's a borrow out of the most significant bit
                 self.registers.a = result;
-
-                self.registers.pc += 1;
             }
             0xD7 => {
                 self.op_rst_address(0x10);
@@ -2743,22 +2670,14 @@ impl CPU {
                 self.op_ei();
             }
             0xDA => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_jp_nn(nn);
             }
             0xDB => {
                 panic!("Unsupported opcode: 0xDB");
             }
             0xDC => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_call_nn(nn);
             }
             0xDD => {
@@ -2786,20 +2705,18 @@ impl CPU {
                     (self.registers.a as u16)
                         < (self.work_ram[self.registers.pc as usize] as u16) + (carry as u16),
                 ); // Set the carry flag if there's a borrow out of the most significant bit
-                   //self.registers.pc += 1;
+                   //self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.registers.a = result;
             }
             0xDF => {
                 self.op_rst_address(0x18);
             }
             0xE0 => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let address = 0xFF00 + value as u16;
-                self.registers.pc += 1;
                 self.work_ram[address as usize] = self.registers.a;
             }
             0xE1 => {
-                //self.op_pop_rr(&mut self.registers.get_hl());
                 let value = self.op_pop_stack();
                 self.registers.set_hl(value);
             }
@@ -2816,13 +2733,12 @@ impl CPU {
                 self.op_push_stack(self.registers.get_hl());
             }
             0xE6 => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let result = self.registers.a & value;
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, true);
                 self.registers.f.set_flag(Flag::C, false);
-                self.registers.pc += 1;
                 self.registers.a = result;
             }
             0xE7 => {
@@ -2841,17 +2757,13 @@ impl CPU {
                     .f
                     .set_flag(Flag::C, (sp as i32) + (value as i32) > 0xFF);
                 self.registers.sp = result as u16;
-                self.registers.pc += 1;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
             }
             0xE9 => {
                 self.op_jp_hl();
             }
             0xEA => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_ld_nn_a(nn);
             }
             0xEB => {
@@ -2864,21 +2776,19 @@ impl CPU {
                 panic!("Unsupported opcode: 0xED");
             }
             0xEE => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let result = self.registers.a ^ value;
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, false);
                 self.registers.f.set_flag(Flag::C, false);
-                self.registers.pc += 1;
                 self.registers.a = result;
             }
             0xEF => {
                 self.op_rst_address(0x28);
             }
             0xF0 => {
-                let value = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
+                let value = self.read_immediate_byte();
                 self.op_ldh_a_n8(value);
             }
             0xF1 => {
@@ -2898,33 +2808,29 @@ impl CPU {
                 self.op_push_stack(self.registers.get_af());
             }
             0xF6 => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let result = self.registers.a | value;
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::H, true);
                 self.registers.f.set_flag(Flag::C, false);
-                self.registers.pc += 1;
+
                 self.registers.a = result;
             }
             0xF7 => {
                 self.op_rst_address(0x30);
             }
             0xF8 => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
-                self.registers.pc += 1;
+
                 self.registers.set_hl(result);
             }
             0xF9 => {
                 self.op_ld_sp_hl();
             }
             0xFA => {
-                let lsb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let msb = self.work_ram[self.registers.pc as usize];
-                self.registers.pc += 1;
-                let nn: u16 = lsb as u16 | (msb as u16) << 8;
+                let nn: u16 = self.read_immediate_short();
                 self.op_ld_a_nn(nn);
             }
             0xFB => {
@@ -2937,9 +2843,8 @@ impl CPU {
                 panic!("Unsupported opcode: 0xFD");
             }
             0xFE => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.read_immediate_byte();
                 let result = self.registers.a.wrapping_sub(value);
-                self.registers.pc += 1;
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                 self.registers
@@ -2949,9 +2854,7 @@ impl CPU {
             }
             0xFF => {
                 self.op_rst_address(0x38);
-            } /*_ => {
-                  panic!("Unsupported opcode: {}", format!("{:02X}", opcode));
-              }*/
+            }
         }
     }
 
@@ -2964,97 +2867,50 @@ impl CPU {
     }
 
     /*
-     *   LD r, r’
-     *   Load to the 8-bit register r, data from the 8-bit register r’.
+     *   Read the immediate 16-bit value from memory for the current program counter and program counter + 1.
      */
-    fn op_ld_r8_r8(&mut self, source: &u8, destination: &mut u8) {
-        debug!(
-            "source register: {:X}, destination reguster: {:X}",
-            source, destination
-        );
-        *destination = source.clone();
+    fn read_immediate_short(&mut self) -> u16 {
+        let lsb = self.work_ram[self.registers.pc as usize];
+        self.registers.pc = self.registers.pc.wrapping_add(1);
+        let msb = self.work_ram[self.registers.pc as usize];
+        self.registers.pc = self.registers.pc.wrapping_add(1);
+        (msb as u16) << 8 | lsb as u16
     }
 
     /*
-     *   LD r, n
-     *   Load to the 8-bit register r, the immediate data n.
+     *   Read the immediate 8-bit value from memory for the current program counter.
      */
-    fn op_ld_r8_n8(&mut self, address: u8, value: &mut u8) {
-        debug!("LD address: {:X}, value: {:X}", address, value);
-        self.work_ram[address as usize] = *value;
+    fn read_immediate_byte(&mut self) -> u8 {
+        let value = self.work_ram[self.registers.pc as usize];
+        self.registers.pc = self.registers.pc.wrapping_add(1);
+        value
     }
 
     /*
-     *   LD r, (HL)
-     *  Load to the 8-bit register r, data from the absolute address specified by the 16-bit register HL.
+     *   Write the immediate 16-bit value to memory.
      */
-    fn op_ld_r8_hl(&mut self, register: &mut u8) {
-        debug!("op_ld_r8_hl");
-        let hlv = self.registers.get_hl();
-        debug!("HLV: {:X}", hlv);
-        *register = self.work_ram[hlv as usize];
+    fn write_immediate_short(&mut self, address: u16, value: u16) {
+        let lsb = (value & 0x00FF) as u8;
+        let msb = (address >> 8) as u8;
+        self.work_ram[address as usize] = lsb;
+        self.work_ram[address.wrapping_add(1) as usize] = msb;
     }
 
     /*
-     *   LD (HL), r
-     *   Load to the absolute address specified by the 16-bit register HL, data from the 8-bit register r.
+     *   Add the immediate 8-bit value to the 8-bit A register.
      */
-    fn op_ld_hl_r8(&mut self, register: &u8) {
-        debug!("op_ld_hl_r8");
-        let hlv = self.registers.get_hl();
-        debug!("HLV: {:X}", hlv);
-        self.work_ram[hlv as usize] = *register;
-    }
-
-    /*
-     *   LD (HL), n
-     *   Load to the absolute address specified by the 16-bit register HL, the immediate data n.
-     */
-    fn op_ld_hl_n8(&mut self, value: u8) {
-        debug!("op_ld_hl_n8");
-        let hlv = self.registers.get_hl();
-        debug!("HLV: {:X}", hlv);
-        self.work_ram[hlv as usize] = value;
-    }
-
-    /*
-     *   LD A, (BC)
-     *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit register BC.
-     */
-    fn op_ld_a_bc(&mut self) {
-        debug!("op_ld_a_bc");
-        let bc = self.registers.get_bc();
-        self.registers.a = self.work_ram[bc as usize];
-    }
-
-    /*
-     *   LD A, (DE)
-     *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit register DE.
-     */
-    fn op_ld_a_de(&mut self) {
-        debug!("op_ld_a_de");
-        let de = self.registers.get_de();
-        self.registers.a = self.work_ram[de as usize];
-    }
-
-    /*
-     *   LD (BC), a
-     *   Load to the absolute address specified by the 16-bit register BC, data from the 8-bit A register.
-     */
-    fn op_ld_bc_a(&mut self) {
-        debug!("op_ld_bc_a");
-        let bc = self.registers.get_bc();
-        self.work_ram[bc as usize] = self.registers.a;
-    }
-
-    /*
-     *   LD (DE), a
-     *   Load to the absolute address specified by the 16-bit register DE, data from the 8-bit A register.
-     */
-    fn op_ld_de_a(&mut self) {
-        debug!("op_ld_de_a");
-        let de = self.registers.get_de();
-        self.work_ram[de as usize] = self.registers.a;
+    fn op_add_a_n8(&mut self, value: u8) {
+        debug!("op_add_a_n8");
+        let result: u8 = self.registers.a.wrapping_add(value);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers
+            .f
+            .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+        self.registers
+            .f
+            .set_flag(Flag::C, (self.registers.a as u16) + (value as u16) > 0xFF);
+        self.registers.a = result;
     }
 
     /*
@@ -3111,86 +2967,6 @@ impl CPU {
     }
 
     /*
-     *   LDH (n), A
-     *   Load to the address specified by the 8-bit immediate data n, data from the 8-bit A register. The full 16-bit
-     *   absolute address is obtained by setting the most significant byte to 0xFF and the least significant byte to the
-     *   value of n, so the possible range is 0xFF00-0xFFFF.
-     */
-    fn op_ldh_n8_a(&mut self, value: u8) {
-        debug!("op_ldh_n8_a");
-        let address = 0xFF00 | value as u16;
-        self.work_ram[address as usize] = self.registers.a;
-    }
-
-    /*
-     *   LD A, (HL-)
-     *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit register HL. The value of
-     *   HL is decremented after the memory read.
-     */
-    fn op_ld_a_hl_dec(&mut self) {
-        debug!("op_ld_a_hl_dec");
-        let hlv = self.registers.get_hl();
-        self.registers.a = self.work_ram[hlv as usize];
-        self.registers.set_hl(hlv - 1);
-    }
-
-    /*
-     *   LD (HL-), A
-     *   Load to the absolute address specified by the 16-bit register HL, data from the 8-bit A register. The value of
-     *   HL is decremented after the memory write.
-     */
-    fn op_ld_hl_dec_a(&mut self) {
-        debug!("op_ld_hl_dec_a");
-        let hlv = self.registers.get_hl();
-        self.work_ram[hlv as usize] = self.registers.a;
-        self.registers.set_hl(hlv - 1);
-    }
-
-    /*
-     *   LD A, (HL+)
-     *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit register HL. The value of
-     *   HL is incremented after the memory read.
-     */
-    fn op_ld_a_hl_inc(&mut self) {
-        debug!("op_ld_a_hl_inc");
-        let hlv = self.registers.get_hl();
-        self.registers.a = self.work_ram[hlv as usize];
-        self.registers.set_hl(hlv + 1);
-    }
-
-    /*
-     *   LD (HL+), A
-     *   Load to the absolute address specified by the 16-bit register HL, data from the 8-bit A register. The value of
-     *   HL is incremented after the memory write.
-     */
-    fn op_ld_hl_inc_a(&mut self) {
-        debug!("op_ld_hl_inc_a");
-        let hlv = self.registers.get_hl();
-        self.work_ram[hlv as usize] = self.registers.a;
-        self.registers.set_hl(hlv + 1);
-    }
-
-    /*
-     *   LD rr, nn
-     *   Load to the 16-bit register rr, the immediate 16-bit data nn.
-     */
-    // TODO function pointer here?
-    fn op_ld_rr_nn(&mut self, register: &mut u16, value: u16) {
-        debug!("op_ld_rr_nn");
-        *register = value;
-    }
-
-    /*
-     *   LD (nn), SP
-     *   Load to the absolute address specified by the 16-bit operand nn, data from the 16-bit SP register.
-     */
-    fn op_ld_nn_sp(&mut self, address: u16) {
-        debug!("op_ld_nn_sp");
-        self.work_ram[address as usize] = (self.registers.sp & 0xFF) as u8;
-        self.work_ram[(address + 1) as usize] = (self.registers.sp >> 8) as u8;
-    }
-
-    /*
      *   LD SP, HL
      *   Load to the 16-bit SP register, data from the 16-bit HL register.
      */
@@ -3198,34 +2974,6 @@ impl CPU {
         debug!("op_ld_sp_hl");
         self.registers.sp = self.registers.get_hl();
     }
-
-    /*
-     *   PUSH rr
-     *   Push to the stack memory, data from the 16-bit register rr.
-     */
-    // TODO - work ram in the stack?
-    // TODO function pointer here?
-    /*fn op_push_rr(&mut self, register: u16) {
-        debug!("op_push_rr");
-        self.registers.sp -= 2;
-        self.work_ram[self.registers.sp as usize] = (register >> 8) as u8;
-        self.work_ram[(self.registers.sp + 1) as usize] = register as u8;
-    }*/
-
-    /*
-     *   POP rr
-     *   Pops to the 16-bit register rr, data from the stack memory.
-     *   This instruction does not do calculations that affect flags, but POP AF completely replaces the F register
-     *   value, so all flags are changed based on the 8-bit data that is read from memory.
-     */
-    // TODO - work ram in the stack?
-    // TODO function pointer here?
-    /*fn op_pop_rr(&mut self, register: &mut u16) {
-        debug!("op_pop_rr");
-        *register = (self.work_ram[self.registers.sp as usize] as u16) << 8
-            | self.work_ram[(self.registers.sp + 1) as usize] as u16;
-        self.registers.sp += 2;
-    }*/
 
     /*
      *   JP nn
@@ -3243,19 +2991,6 @@ impl CPU {
     fn op_jp_hl(&mut self) {
         debug!("op_jp_hl");
         self.registers.pc = self.registers.get_hl();
-    }
-
-    /*
-     *   JP cc, nn
-     *   Conditional jump to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
-     *   Note that the operand (absolute address) is read even when the condition is false!
-     */
-    // TODO condition likely incorrect
-    fn op_jp_cc_nn(&mut self, condition: bool, address: u16) {
-        debug!("op_jp_cc_nn");
-        if condition {
-            self.registers.pc = address;
-        }
     }
 
     /*
@@ -3291,23 +3026,6 @@ impl CPU {
     }
 
     /*
-     *   CALL cc, nn
-     *   Conditional function call to the absolute address specified by the 16-bit operand nn, depending on the condition cc.
-     */
-    // TODO logic likely incorrect
-    fn op_call_cc_nn(&mut self, condition: bool, address: u16) {
-        debug!("op_call_cc_nn");
-        if condition {
-            self.registers.pc += 1;
-            let lsb = (self.registers.pc & 0xFF) as u8;
-            //self.registers.pc += 1;
-            let msb = (self.registers.pc >> 8) as u8;
-            let nn: u16 = lsb as u16 | (msb as u16) << 8;
-            self.registers.pc = nn;
-        }
-    }
-
-    /*
      *   RET
      *   Unconditional return from a function.
      */
@@ -3315,44 +3033,6 @@ impl CPU {
         debug!("op_ret");
         //unimplemented!("op_ret");
         self.registers.pc = self.op_pop_stack();
-    }
-
-    /*
-     *   RET cc
-     *   Conditional return from a function, depending on the condition cc.
-     */
-    // TODO logic likely incorrect
-    fn op_ret_cc(&mut self, condition: bool) {
-        debug!("op_ret_cc");
-        if condition {
-            let lsb = self.work_ram[self.registers.sp as usize];
-            self.registers.sp += 1;
-            let msb = self.work_ram[self.registers.sp as usize];
-            self.registers.sp += 1;
-            self.registers.pc = ((msb as u16) << 8) | lsb as u16;
-        }
-    }
-
-    /*
-     *   RETI
-     *   Unconditional return from a function. Also enables interrupts by setting IME=1.
-     */
-    fn op_reti(&mut self) {
-        debug!("op_reti");
-        self.op_ret();
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 1;
-    }
-
-    /*
-     *   RST n
-     *   Unconditional function call to the absolute fixed address defined by the opcode.
-     */
-    // TODO logic likely incorrect
-    fn op_rst_n(&mut self, address: u16) {
-        debug!("op_rst_n");
-        let return_address = self.registers.pc;
-        self.op_push_stack(return_address);
-        self.registers.pc = address;
     }
 
     /*
@@ -3382,74 +3062,6 @@ impl CPU {
     fn op_ei(&mut self) {
         debug!("op_ei");
         self.interupt = true;
-    }
-
-    /*
-     *   CCF
-     *   Flips the carry flag, and clears the N and H flags.
-     */
-    fn op_ccf(&mut self) {
-        debug!("op_ccf");
-        // Flip the carry flag (bit 4)
-        self.registers
-            .f
-            .set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
-        //self.registers.f ^= 0x10;
-        // Clear the subtract (N) and half-carry (H) flags (bits 6 and 5)
-        //self.registers.f &= 0b1001_1111;
-        self.registers.f.set_flag(Flag::N, false);
-        self.registers.f.set_flag(Flag::H, false);
-    }
-
-    /*
-     *   SCF
-     *   Sets the carry flag, and clears the N and H flags.
-     */
-    fn op_scf(&mut self) {
-        debug!("op_scf");
-        // Set the carry flag (bit 4)
-        //self.registers.f |= 0x10;
-        self.registers.f.set_flag(Flag::C, true);
-        // Clear the subtract (N) and half-carry (H) flags (bits 6 and 5)
-        //self.registers.f &= 0b1001_1111;
-        self.registers.f.set_flag(Flag::N, false);
-        self.registers.f.set_flag(Flag::H, false);
-    }
-
-    // TODO - very likely incorrect
-    // TODO - Put function description comment
-    fn op_daa(&mut self) {
-        debug!("op_daa");
-
-        let mut adjustment = 0;
-        let mut carry_adjustment = 0;
-
-        if self.registers.f.get_flag(Flag::H) || (self.registers.a & 0xF) > 9 {
-            adjustment |= 0x06;
-        }
-
-        if self.registers.f.get_flag(Flag::C) || self.registers.a > 0x99 {
-            adjustment |= 0x60;
-            carry_adjustment |= 0x100u16;
-        }
-
-        let result = self.registers.a.wrapping_add(adjustment) as u16;
-        self.registers.f.set_flag(Flag::Z, result == 0);
-        self.registers.f.set_flag(Flag::H, false);
-        self.registers.f.set_flag(Flag::C, (result & 0x100) != 0);
-
-        self.registers.a = (result + carry_adjustment) as u8;
-    }
-
-    /*
-     *   CPL
-     *   Flips all the bits in the 8-bit A register, and sets the N and H flags.
-     */
-    fn op_cpl(&mut self) {
-        debug!("op_cpl");
-        self.registers.a = !self.registers.a;
-        self.registers.f.set_flag(Flag::N, true);
-        self.registers.f.set_flag(Flag::H, true);
     }
 
     /*

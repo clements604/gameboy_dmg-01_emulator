@@ -244,6 +244,16 @@ impl CPU {
         }
     }
 
+    fn debug_print_tile_data(&mut self) {
+        let tile_data = &self.work_ram[TILE_RAM_START as usize..=TILE_RAM_END as usize];
+        for (i, byte) in tile_data.iter().enumerate() {
+            if i % 16 == 0 {
+                println!();
+            }
+            print!("{:02X} ", byte);
+        }
+    }
+
     /*
      *  Load the boot ROM into memory
      */
@@ -321,14 +331,11 @@ impl CPU {
         debug!("##################################################");
         debug!("Fetch");
 
-        if self.registers.f.get_flag(Flag::Z) {
-            error!("Zero flag set");
-        }
-
         let opcode = self.work_ram[self.registers.pc as usize];
         debug!("PC [0x{:X}]", self.registers.pc);
         debug!("Opcode [0x{:X}]", opcode);
         //debug!("{}", self.registers);
+        self.debug_print_tile_data();
         self.registers.pc = self.registers.pc.wrapping_add(1);
 
         //self.wait_for_input();
@@ -358,7 +365,13 @@ impl CPU {
                     .set_bc(self.registers.get_bc().wrapping_add(1));
             }
             0x04 => {
+                let old_value = self.registers.b;
                 self.registers.b = self.registers.b.wrapping_add(1);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x05 => {
                 let old_value = self.registers.b;
@@ -403,7 +416,13 @@ impl CPU {
                 self.registers.set_bc(self.registers.get_bc() - 1);
             }
             0x0C => {
+                let old_value = self.registers.c;
                 self.registers.c = self.registers.c.wrapping_add(1);
+                self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x0D => {
                 let old_value = self.registers.c;
@@ -443,7 +462,13 @@ impl CPU {
                 self.registers.set_de(self.registers.get_de() + 1);
             }
             0x14 => {
+                let old_value = self.registers.d;
                 self.registers.d = self.registers.d.wrapping_add(1);
+                self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x15 => {
                 let old_value = self.registers.d;
@@ -491,7 +516,13 @@ impl CPU {
                 self.registers.set_de(self.registers.get_de() - 1);
             }
             0x1C => {
+                let old_value = self.registers.e;
                 self.registers.e = self.registers.e.wrapping_add(1);
+                self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x1D => {
                 let old_value = self.registers.e;
@@ -536,7 +567,13 @@ impl CPU {
                 self.registers.set_hl(self.registers.get_hl() + 1);
             }
             0x24 => {
+                let old_value = self.registers.h;
                 self.registers.h = self.registers.h.wrapping_add(1);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x25 => {
                 let old_value = self.registers.h;
@@ -594,7 +631,13 @@ impl CPU {
                     .set_hl(self.registers.get_hl().wrapping_sub(1));
             }
             0x2C => {
+                let old_value = self.registers.l;
                 self.registers.l = self.registers.l.wrapping_add(1);
+                self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x2D => {
                 let old_value = self.registers.l;
@@ -687,11 +730,13 @@ impl CPU {
                 self.registers.sp = self.registers.sp.wrapping_sub(1);
             }
             0x3C => {
-                let (result, overflow) = self.registers.a.overflowing_add(1);
-                self.registers.a = result;
+                let old_value = self.registers.a;
+                self.registers.a = self.registers.a.wrapping_add(1);
                 self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
                 self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, overflow);
+                self.registers
+                    .f
+                    .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
             }
             0x3D => {
                 let old_value = self.registers.a;
@@ -905,22 +950,70 @@ impl CPU {
                 self.registers.a = self.registers.a;
             }
             0x80 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.b);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.b);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (self.registers.b & 0x0F) > 0x0F,
+                );
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.a = result;
             }
             0x81 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.c);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.c);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (self.registers.c & 0x0F) > 0x0F,
+                );
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.a = result;
             }
             0x82 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.d);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.d);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (self.registers.d & 0x0F) > 0x0F,
+                );
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.a = result;
             }
             0x83 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.e);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.e);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (self.registers.e & 0x0F) > 0x0F,
+                );
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.a = result;
             }
             0x84 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.h);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.h);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (self.registers.h & 0x0F) > 0x0F,
+                );
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.a = result;
             }
             0x85 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.l);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.l);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, false);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) + (self.registers.l & 0x0F) > 0x0F,
+                );
+                self.registers.f.set_flag(Flag::C, carry);
+                self.registers.a = result;
             }
             0x86 => {
                 let hl = self.registers.get_hl();
@@ -935,16 +1028,14 @@ impl CPU {
                 self.registers.a = result;
             }
             0x87 => {
-                let result = self.registers.a.wrapping_add(self.registers.a);
+                let (result, carry) = self.registers.a.overflowing_add(self.registers.a);
                 self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(
                     Flag::H,
                     (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers
-                    .f
-                    .set_flag(Flag::C, result < self.registers.a);
+                );
+                self.registers.f.set_flag(Flag::C, carry);
                 self.registers.a = result;
             }
             0x88 => {
@@ -1128,22 +1219,70 @@ impl CPU {
                 self.registers.a = result;
             }
             0x90 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.b);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.b);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.b & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x91 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.c);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.c);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.c & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x92 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.d);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.d);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.d & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x93 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.e);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.e);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.e & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x94 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.h);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.h);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x95 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.l);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.l);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x96 => {
                 let value = self.work_ram[self.registers.get_hl() as usize];
@@ -1165,7 +1304,15 @@ impl CPU {
                 self.registers.a = result;
             }
             0x97 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.a);
+                let (result, borrow) = self.registers.a.overflowing_sub(self.registers.a);
+                self.registers.f.set_flag(Flag::Z, result == 0);
+                self.registers.f.set_flag(Flag::N, true);
+                self.registers.f.set_flag(
+                    Flag::H,
+                    (self.registers.a & 0x0F) < (self.registers.a & 0x0F),
+                );
+                self.registers.f.set_flag(Flag::C, borrow);
+                self.registers.a = result;
             }
             0x98 => {
                 let carry = if self.registers.f.get_flag(Flag::C) {

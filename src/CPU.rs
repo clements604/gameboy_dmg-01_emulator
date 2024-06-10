@@ -5,9 +5,13 @@ use std::io::{self, Read};
 use std::{error, fmt, result};
 
 use crate::constants;
+use crate::display::GPU;
+use crate::display::*;
 use crate::rom;
+use crate::memory_bus::*;
 use constants::*;
 use rom::*;
+
 
 pub struct Registers {
     a: u8, // Accumulator register
@@ -38,13 +42,13 @@ pub enum Flag {
     C, // Carry flag
 }
 
-pub struct CPU {
+pub struct CPU<'a> {
     pub registers: Registers,
-    //work_ram: [u8; 0xFFFF],
-    work_ram: [u8; 0xFFFFF],
+    //work_ram: [u8; 0xFFFFF],
     video_ram: [u16; 8192],
     interupt: bool,
-    //call_stack: Vec<u16>,
+    gpu: GPU,
+    memory_bus: &'a mut MemoryBus,
 }
 
 impl Registers {
@@ -233,18 +237,20 @@ impl std::convert::From<u16> for FlagsRegister {
     }
 }
 
-impl CPU {
-    pub fn new() -> Self {
+impl<'a> CPU<'a> {
+    pub fn new(memory_bus: &'a mut  MemoryBus) -> Self {
         CPU {
             registers: Registers::new(),
-            work_ram: [0; 0xFFFFF],
+            //work_ram: [0; 0xFFFFF],
             video_ram: [0; 8192],
             interupt: false,
+            gpu: GPU::new(),
             //call_stack: vec![0x0000], //TODO should be 0xFFFE?
+            memory_bus,
         }
     }
 
-    fn debug_print_tile_data(&mut self) {
+    /*fn debug_print_tile_data(&mut self) {
         let tile_data = &self.work_ram[TILE_RAM_START as usize..=TILE_RAM_END as usize];
         for (i, byte) in tile_data.iter().enumerate() {
             if i % 16 == 0 {
@@ -252,77 +258,7 @@ impl CPU {
             }
             print!("{:02X} ", byte);
         }
-    }
-
-    /*
-     *  Load the boot ROM into memory
-     */
-    pub fn load_boot_rom(&mut self, file_path: String) {
-        debug!("Loading boot ROM");
-        let mut file = File::open(file_path).expect("Boot ROM file not found");
-        let mut buffer: Vec<u8> = Vec::new();
-
-        // Read the file into a buffer
-        file.read_to_end(&mut buffer)
-            .expect("Error reading boot rom file");
-        debug!(
-            "Boot ROM file size: {} bytes / {} kilobytes",
-            buffer.len(),
-            buffer.len() / 1024
-        );
-
-        for (i, byte) in buffer.iter().enumerate() {
-            self.work_ram[i] = *byte;
-        }
-
-        debug!("Boot ROM loaded into memory");
-    }
-
-    /*
-     *   Load the ROM into memory
-     */
-    pub fn load_rom(&mut self, file_path: String) {
-        debug!("Loading ROM: {}", file_path);
-        let mut file = File::open(file_path).expect("ROM file not found");
-        let mut buffer: Vec<u8> = Vec::new();
-
-        // Read the file into a buffer
-        file.read_to_end(&mut buffer).expect("Error reading file");
-        debug!(
-            "ROM file size: {} bytes / {} kilobytes",
-            buffer.len(),
-            buffer.len() / 1024
-        );
-
-        let rom = ROM::new(buffer);
-        debug!("{}", rom);
-
-        rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
-                                                 // Check cartridge type and load the ROM into memory based on the type
-
-        for byte in 0x00..0x3FFF {
-            self.work_ram[byte] = rom.rom[byte];
-        }
-
-        //for (i, byte) in rom.rom.iter().enumerate() {
-        //    self.work_ram[0x0100 + i] = *byte;
-        //}
-
-        debug!("ROM Bank 0 loaded into memory");
-        if rom.cartridge_type == 0x00 {
-            // ROM ONLY
-            debug!("ROM ONLY");
-        } else {
-            debug!("ROM with MBC");
-            let rom_banks = rom.load_rom_to_banks();
-            self.work_ram[0x4000..=0x7FFF].copy_from_slice(&rom_banks.data[0]); // Load the first bank of the ROM into memory
-            debug!(
-                "ROM Bank 1 loaded into memory, size: {} bytes",
-                rom_banks.data[0].len()
-            );
-        }
-        //debug!("ROM loaded into memory");
-    }
+    }*/
 
     /*
      *   CPU cycle - fetch, decode, execute
@@ -331,20 +267,22 @@ impl CPU {
         debug!("##################################################");
         debug!("Fetch");
 
-        let opcode = self.work_ram[self.registers.pc as usize];
+        let opcode = self.memory_bus.read_byte(self.registers.pc);
         debug!("PC [0x{:X}]", self.registers.pc);
         debug!("Opcode [0x{:X}]", opcode);
         //debug!("{}", self.registers);
-        self.debug_print_tile_data();
+        //self.debug_print_tile_data();
+        self.print_debug();
+
         self.registers.pc = self.registers.pc.wrapping_add(1);
 
         //self.wait_for_input();
-        self.print_debug();
 
-        if self.work_ram[0xff02] == 0x81 {
+        if self.memory_bus.read_byte(0xFF02) == 0x81 {
             // TODO Temp for development, delete this
-            info!("CPU test [{}]", self.work_ram[0xff01] as char);
-            self.work_ram[0xff02] = 0x0;
+            info!("CPU test [{}]", self.memory_bus.read_byte(0xFF01) as char);
+            self.memory_bus.write_byte(0xFF02, 0x0);
+            panic!("test reaches here");
         }
 
         debug!("Decode & Execute");
@@ -358,7 +296,7 @@ impl CPU {
                 self.registers.set_bc(nn);
             }
             0x02 => {
-                self.work_ram[self.registers.get_bc() as usize] = self.registers.a;
+                self.memory_bus.write_byte(self.registers.get_bc(), self.registers.a);
             }
             0x03 => {
                 self.registers
@@ -396,6 +334,7 @@ impl CPU {
             }
             0x08 => {
                 let nn: u16 = self.read_immediate_short();
+                panic!("0x08. nn: 0x{:X}", nn);
                 self.write_immediate_short(nn, self.registers.sp);
             }
             0x09 => {
@@ -410,7 +349,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, carry);
             }
             0x0A => {
-                self.registers.a = self.work_ram[self.registers.get_bc() as usize];
+                self.registers.a = self.memory_bus.read_byte(self.registers.get_bc());
             }
             0x0B => {
                 self.registers.set_bc(self.registers.get_bc() - 1);
@@ -456,7 +395,7 @@ impl CPU {
                 self.registers.set_de(nn);
             }
             0x12 => {
-                self.work_ram[self.registers.get_de() as usize] = self.registers.a;
+                self.memory_bus.write_byte(self.registers.get_de(), self.registers.a);
             }
             0x13 => {
                 self.registers.set_de(self.registers.get_de() + 1);
@@ -510,7 +449,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, carry);
             }
             0x1A => {
-                self.registers.a = self.work_ram[self.registers.get_de() as usize];
+                self.registers.a = self.memory_bus.read_byte(self.registers.get_de());
             }
             0x1B => {
                 self.registers.set_de(self.registers.get_de() - 1);
@@ -550,7 +489,6 @@ impl CPU {
             }
             0x20 => {
                 let offset = self.read_immediate_byte() as i8;
-                debug!("Offset: {}", offset);
                 if !self.registers.f.get_flag(Flag::Z) {
                     self.op_jr_e(offset);
                 }
@@ -560,7 +498,7 @@ impl CPU {
                 self.registers.set_hl(nn);
             }
             0x22 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
                 self.registers.set_hl(self.registers.get_hl() + 1);
             }
             0x23 => {
@@ -622,7 +560,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, carry);
             }
             0x2A => {
-                self.registers.a = self.work_ram[self.registers.get_hl() as usize];
+                self.registers.a = self.memory_bus.read_byte(self.registers.get_hl());
                 self.registers
                     .set_hl(self.registers.get_hl().wrapping_add(1));
             }
@@ -656,7 +594,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::H, true);
             }
             0x30 => {
-                let value = self.work_ram[self.registers.pc as usize] as i8;
+                let value = self.memory_bus.read_byte(self.registers.pc) as i8;
                 if !self.registers.f.get_flag(Flag::C) {
                     self.registers.pc = self.registers.pc.wrapping_add(value as u16);
                 }
@@ -666,7 +604,7 @@ impl CPU {
                 self.registers.sp = nn;
             }
             0x32 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
                 self.registers
                     .set_hl(self.registers.get_hl().wrapping_sub(1));
             }
@@ -675,29 +613,29 @@ impl CPU {
             }
             0x34 => {
                 let hl = self.registers.get_hl();
-                let value = self.work_ram[hl as usize];
+                let value = self.memory_bus.read_byte(self.registers.get_hl());
                 self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
                 self.registers.f.set_flag(Flag::N, false);
                 self.registers.f.set_flag(Flag::C, value == 0xFF);
-                self.work_ram[hl as usize] = value.wrapping_add(1);
+                self.memory_bus.write_byte(hl, value.wrapping_add(1));
                 self.registers
                     .f
-                    .set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
+                    .set_flag(Flag::Z, self.memory_bus.read_byte(hl) == 0);
             }
             0x35 => {
                 let hl = self.registers.get_hl();
-                let value = self.work_ram[hl as usize];
+                let value = self.memory_bus.read_byte(hl);
                 self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x00);
                 self.registers.f.set_flag(Flag::N, true);
                 self.registers.f.set_flag(Flag::C, value == 0x00);
-                self.work_ram[hl as usize] = value.wrapping_sub(1);
+                self.memory_bus.write_byte(hl, value.wrapping_sub(1));
                 self.registers
                     .f
-                    .set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
+                    .set_flag(Flag::Z, self.memory_bus.read_byte(hl) == 0);
             }
             0x36 => {
                 let value = self.read_immediate_byte();
-                self.work_ram[self.registers.get_hl() as usize] = value;
+                self.memory_bus.write_byte(self.registers.get_hl(), value);
             }
             0x37 => {
                 self.registers.f.set_flag(Flag::N, false);
@@ -722,7 +660,7 @@ impl CPU {
                 self.registers.f.set_flag(Flag::C, carry);
             }
             0x3A => {
-                self.registers.a = self.work_ram[self.registers.get_hl() as usize];
+                self.registers.a = self.memory_bus.read_byte(self.registers.get_hl());
                 self.registers
                     .set_hl(self.registers.get_hl().wrapping_sub(1));
             }
@@ -901,29 +839,30 @@ impl CPU {
                 self.registers.l = self.registers.a;
             }
             0x70 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.b;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.b);
             }
             0x71 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.c;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.c);
             }
             0x72 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.d;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.d);
             }
             0x73 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.e;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.e);
             }
             0x74 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.h;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.h);
             }
             0x75 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.l;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.l);
             }
             0x76 => {
                 //unimplemented!("HALT not implemented");
                 //TODO
+                error!("HALT not implemented");
             }
             0x77 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
+                self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
             }
             0x78 => {
                 self.registers.a = self.registers.b;
@@ -1016,8 +955,7 @@ impl CPU {
                 self.registers.a = result;
             }
             0x86 => {
-                let hl = self.registers.get_hl();
-                let value = self.work_ram[hl as usize];
+                let value = self.memory_bus.read_byte(self.registers.get_hl());
                 let (result, carry) = self.registers.a.overflowing_add(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, false);
@@ -1177,7 +1115,7 @@ impl CPU {
                 self.registers.a = result;
             }
             0x8E => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
+                let value = self.memory_bus.read_byte(self.registers.get_hl());
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1285,7 +1223,7 @@ impl CPU {
                 self.registers.a = result;
             }
             0x96 => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
+                let value = self.memory_bus.read_byte(self.registers.get_hl());
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1453,7 +1391,7 @@ impl CPU {
                 self.registers.a = result;
             }
             0x9E => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
+                let value = self.memory_bus.read_byte(self.registers.get_hl());
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -1553,7 +1491,7 @@ impl CPU {
             }
             0xA6 => {
                 self.registers.a =
-                    self.registers.a & self.work_ram[self.registers.get_hl() as usize];
+                    self.registers.a & self.memory_bus.read_byte(self.registers.get_hl());
 
                 if self.registers.a == 0 {
                     self.registers.f.set_flag(Flag::Z, true);
@@ -1650,7 +1588,7 @@ impl CPU {
             }
             0xAE => {
                 self.registers.a =
-                    self.registers.a ^ self.work_ram[self.registers.get_hl() as usize];
+                    self.registers.a ^ self.memory_bus.read_byte(self.registers.get_hl());
 
                 if self.registers.a == 0 {
                     self.registers.f.set_flag(Flag::Z, true);
@@ -1742,7 +1680,7 @@ impl CPU {
             }
             0xB6 => {
                 self.registers.a =
-                    self.registers.a | self.work_ram[self.registers.get_hl() as usize];
+                    self.registers.a | self.memory_bus.read_byte(self.registers.get_hl());
 
                 if self.registers.a == 0 {
                     self.registers.f.set_flag(Flag::Z, true);
@@ -1838,7 +1776,7 @@ impl CPU {
                     .set_flag(Flag::C, self.registers.a < self.registers.l); // Set the carry flag if there's a borrow out of the most significant bit
             }
             0xBE => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
+                let value = self.memory_bus.read_byte(self.registers.get_hl());
                 let result = self.registers.a.wrapping_sub(value);
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -1933,9 +1871,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x06 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_rlc(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x07 => {
                         let mut value = self.registers.a;
@@ -1973,9 +1911,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x0E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_rrc(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x0F => {
                         let mut value = self.registers.a;
@@ -2013,9 +1951,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x16 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_rl(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl() , value);
                     }
                     0x17 => {
                         let mut value = self.registers.a;
@@ -2053,9 +1991,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x1E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_rr(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x1F => {
                         let mut value = self.registers.a;
@@ -2093,9 +2031,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x26 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_sla(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x27 => {
                         let mut value = self.registers.a;
@@ -2133,9 +2071,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x2E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_sra(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x2F => {
                         let mut value = self.registers.a;
@@ -2173,9 +2111,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x36 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_swap(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x37 => {
                         let mut value = self.registers.a;
@@ -2213,9 +2151,9 @@ impl CPU {
                         self.registers.l = value;
                     }
                     0x3E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
+                        let mut value = self.memory_bus.read_byte(self.registers.get_hl());
                         self.op_srl(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
+                        self.memory_bus.write_byte(self.registers.get_hl(), value);
                     }
                     0x3F => {
                         let mut value = self.registers.a;
@@ -2241,7 +2179,7 @@ impl CPU {
                         self.op_bit(0, self.registers.l);
                     }
                     0x46 => {
-                        self.op_bit(0, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(0, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x47 => {
                         self.op_bit(0, self.registers.a);
@@ -2265,7 +2203,7 @@ impl CPU {
                         self.op_bit(1, self.registers.l);
                     }
                     0x4E => {
-                        self.op_bit(1, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(1, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x4F => {
                         self.op_bit(1, self.registers.a);
@@ -2289,7 +2227,7 @@ impl CPU {
                         self.op_bit(2, self.registers.l);
                     }
                     0x56 => {
-                        self.op_bit(2, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(2, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x57 => {
                         self.op_bit(2, self.registers.a);
@@ -2313,7 +2251,10 @@ impl CPU {
                         self.op_bit(3, self.registers.l);
                     }
                     0x5E => {
-                        self.op_bit(3, self.work_ram[self.registers.get_hl() as usize]);
+                        //self.op_bit(3, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(3,
+                                    self.memory_bus.read_byte(self.registers.get_hl())
+                        );
                     }
                     0x5F => {
                         self.op_bit(3, self.registers.a);
@@ -2337,7 +2278,7 @@ impl CPU {
                         self.op_bit(4, self.registers.l);
                     }
                     0x66 => {
-                        self.op_bit(4, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(4, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x67 => {
                         self.op_bit(4, self.registers.a);
@@ -2361,7 +2302,7 @@ impl CPU {
                         self.op_bit(5, self.registers.l);
                     }
                     0x6E => {
-                        self.op_bit(5, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(5, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x6F => {
                         self.op_bit(5, self.registers.a);
@@ -2385,7 +2326,7 @@ impl CPU {
                         self.op_bit(6, self.registers.l);
                     }
                     0x76 => {
-                        self.op_bit(6, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(6, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x77 => {
                         self.op_bit(6, self.registers.a);
@@ -2409,7 +2350,7 @@ impl CPU {
                         self.op_bit(7, self.registers.l);
                     }
                     0x7E => {
-                        self.op_bit(7, self.work_ram[self.registers.get_hl() as usize]);
+                        self.op_bit(7, self.memory_bus.read_byte(self.registers.get_hl()));
                     }
                     0x7F => {
                         self.op_bit(7, self.registers.a);
@@ -2433,8 +2374,12 @@ impl CPU {
                         self.registers.l &= !(1 << 0);
                     }
                     0x86 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 0);
+                        // TODO test this
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        //self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 0);
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 0);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0x87 => {
                         self.registers.a &= !(1 << 0);
@@ -2458,8 +2403,10 @@ impl CPU {
                         self.registers.l &= !(1 << 1);
                     }
                     0x8E => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 1);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 1);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0x8F => {
                         self.registers.a &= !(1 << 1);
@@ -2483,8 +2430,10 @@ impl CPU {
                         self.registers.l &= !(1 << 2);
                     }
                     0x96 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 2);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 2);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0x97 => {
                         self.registers.a &= !(1 << 2);
@@ -2508,8 +2457,10 @@ impl CPU {
                         self.registers.l &= !(1 << 3);
                     }
                     0x9E => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 3);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 3);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0x9F => {
                         self.registers.a &= !(1 << 3);
@@ -2533,8 +2484,10 @@ impl CPU {
                         self.registers.l &= !(1 << 4);
                     }
                     0xA6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 4);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 4);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xA7 => {
                         self.registers.a &= !(1 << 4);
@@ -2558,8 +2511,10 @@ impl CPU {
                         self.registers.l &= !(1 << 5);
                     }
                     0xAE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 5);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 5);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xAF => {
                         self.registers.a &= !(1 << 5);
@@ -2583,8 +2538,10 @@ impl CPU {
                         self.registers.l &= !(1 << 6);
                     }
                     0xB6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 6);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 6);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xB7 => {
                         self.registers.a &= !(1 << 6);
@@ -2608,8 +2565,10 @@ impl CPU {
                         self.registers.l &= !(1 << 7);
                     }
                     0xBE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 7);
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());;
+                        result &= value & !(1 << 7);
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xBF => {
                         self.registers.a &= !(1 << 7);
@@ -2633,8 +2592,10 @@ impl CPU {
                         self.registers.l |= 1 << 0;
                     }
                     0xC6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 0;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 0;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xC7 => {
                         self.registers.a |= 1 << 0;
@@ -2658,8 +2619,10 @@ impl CPU {
                         self.registers.l |= 1 << 1;
                     }
                     0xCE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 1;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 1;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xCF => {
                         self.registers.a |= 1 << 1;
@@ -2683,8 +2646,10 @@ impl CPU {
                         self.registers.l |= 1 << 2;
                     }
                     0xD6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 2;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 2;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xD7 => {
                         self.registers.a |= 1 << 2;
@@ -2708,8 +2673,10 @@ impl CPU {
                         self.registers.l |= 1 << 3;
                     }
                     0xDE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 3;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 3;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xDF => {
                         self.registers.a |= 1 << 3;
@@ -2733,8 +2700,10 @@ impl CPU {
                         self.registers.l |= 1 << 4;
                     }
                     0xE6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 4;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 4;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xE7 => {
                         self.registers.a |= 1 << 4;
@@ -2758,8 +2727,10 @@ impl CPU {
                         self.registers.l |= 1 << 5;
                     }
                     0xEE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 5;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 5;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xEF => {
                         self.registers.a |= 1 << 5;
@@ -2783,8 +2754,10 @@ impl CPU {
                         self.registers.l |= 1 << 6;
                     }
                     0xF6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 6;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 6;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xF7 => {
                         self.registers.a |= 1 << 6;
@@ -2808,11 +2781,16 @@ impl CPU {
                         self.registers.l |= 1 << 7;
                     }
                     0xFE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 7;
+                        let value = self.memory_bus.read_byte(self.registers.get_hl());
+                        let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                        result |= value | 1 << 7;
+                        self.memory_bus.write_byte(self.registers.get_hl(), result);
                     }
                     0xFF => {
                         self.registers.a |= 1 << 7;
+                    }
+                    _ => {
+                        panic!("Unsupported opcode: 0xCB{:02X}", opcode);
                     }
                 }
             }
@@ -2822,11 +2800,10 @@ impl CPU {
             }
             0xCD => {
                 let nn: u16 = self.read_immediate_short();
-                debug!("Calling 0x{:04X}", nn);
                 self.op_call_nn(nn);
             }
             0xCE => {
-                let value = self.work_ram[self.registers.pc as usize];
+                let value = self.memory_bus.read_byte(self.registers.pc);
                 let carry = if self.registers.f.get_flag(Flag::C) {
                     1
                 } else {
@@ -2918,18 +2895,18 @@ impl CPU {
                 let result = self
                     .registers
                     .a
-                    .wrapping_sub(self.work_ram[self.registers.pc as usize]);
+                    .wrapping_sub(self.memory_bus.read_byte(self.registers.pc));
                 self.registers.f.set_flag(Flag::Z, result == 0);
                 self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                 self.registers.f.set_flag(
                     Flag::H,
                     (self.registers.a & 0x0F)
-                        < (self.work_ram[self.registers.pc as usize] & 0x0F) + carry,
+                        < (self.memory_bus.read_byte(self.registers.pc) & 0x0F) + carry,
                 ); // Set the half-carry flag if there's a borrow from bit 4
                 self.registers.f.set_flag(
                     Flag::C,
                     (self.registers.a as u16)
-                        < (self.work_ram[self.registers.pc as usize] as u16) + (carry as u16),
+                        < (self.memory_bus.read_byte(self.registers.pc) as u16) + (carry as u16),
                 ); // Set the carry flag if there's a borrow out of the most significant bit
                    //self.registers.pc = self.registers.pc.wrapping_add(1);
                 self.registers.a = result;
@@ -2938,9 +2915,9 @@ impl CPU {
                 self.op_rst_address(0x18);
             }
             0xE0 => {
-                let value = self.read_immediate_byte() as u16;
-                let address = 0xFF00 + value;
-                self.work_ram[address as usize] = self.registers.a;
+                let offset = self.read_immediate_byte() as u16;
+                let address = 0xFF00 + offset;
+                self.memory_bus.write_byte(address, self.registers.a);
             }
             0xE1 => {
                 let value = self.op_pop_stack();
@@ -3080,6 +3057,9 @@ impl CPU {
             0xFF => {
                 self.op_rst_address(0x0038);
             }
+            _ => {
+                panic!("Unsupported opcode: {:X}", opcode);
+            }
         }
     }
 
@@ -3095,9 +3075,14 @@ impl CPU {
      *   Read the immediate 16-bit value from memory for the current program counter and program counter + 1.
      */
     fn read_immediate_short(&mut self) -> u16 {
-        let lsb = self.work_ram[self.registers.pc as usize];
+        /*let lsb = self.work_ram[self.registers.pc as usize];
         self.registers.pc = self.registers.pc.wrapping_add(1);
         let msb = self.work_ram[self.registers.pc as usize];
+        self.registers.pc = self.registers.pc.wrapping_add(1);
+        (msb as u16) << 8 | lsb as u16*/
+        let lsb = self.memory_bus.read_byte(self.registers.pc);
+        self.registers.pc = self.registers.pc.wrapping_add(1);
+        let msb = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
         (msb as u16) << 8 | lsb as u16
     }
@@ -3105,17 +3090,48 @@ impl CPU {
     /*
      *   Read the 16-bit value from memory for a given address.
      */
-    fn read_short(&mut self, address: u16) -> u16 {
-        let lsb = self.work_ram[address as usize];
-        let msb = self.work_ram[address.wrapping_add(1) as usize];
-        (msb as u16) << 8 | lsb as u16
-    }
+    /*fn read_short(&mut self, address: u16) -> u16 {
+        match address {
+            0x0000..=0x7FFF => {
+                let lsb = self.work_ram[address as usize];
+                let msb = self.work_ram[address.wrapping_add(1) as usize];
+                (msb as u16) << 8 | lsb as u16
+            }
+            0x8000..=0x9FFF => self.gpu.read_short(address),
+            0xA000..=0xBFFF => unimplemented!("From cartridge, switchable bank if any"),
+            0xC000..=0xCFFF => {
+                unimplemented!("4 KiB Work RAM (WRAM)")
+            },
+            0xE000..=0xFDFF => {
+                debug!("Echo RAM (mirror of C000–DDFF), Nintendo says use of this area is prohibited.");
+                return 0x0;
+            },
+            0xFE00..=0xFE9F => {
+                unimplemented!("Sprite attribute table (OAM)")
+            },
+            0xFEA0..=0xFEFF => {
+                debug!("Not Usable");
+                return 0x0;
+            },
+            0xFF00..=0xFF7F => {
+                unimplemented!("I/O Registers")
+            },
+            0xFF80..=0xFFFE => {
+                unimplemented!("High RAM (HRAM)")
+            },
+            0xFFFF => {
+                unimplemented!("Interrupt Enable Register")
+            },
+            _ => panic!("Unsupported address: {:X}", address),
+        }
+
+    }*/
 
     /*
      *   Read the immediate 8-bit value from memory for the current program counter.
      */
     fn read_immediate_byte(&mut self) -> u8 {
-        let value = self.work_ram[self.registers.pc as usize];
+        let value = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
         value
     }
@@ -3124,10 +3140,22 @@ impl CPU {
      *   Write the immediate 16-bit value to memory.
      */
     fn write_immediate_short(&mut self, address: u16, value: u16) {
-        let lsb = (value & 0x00FF) as u8;
-        let msb = (address >> 8) as u8;
-        self.work_ram[address as usize] = lsb;
-        self.work_ram[address.wrapping_add(1) as usize] = msb;
+        info!("write immediate short address {:X} value {:X}", address, value);
+        match address {
+            0x0000..=0x7FFF  => {
+                let lsb = (value & 0x00FF) as u8;
+                let msb = (address >> 8) as u8;
+                self.memory_bus.write_byte(address, lsb);
+                self.memory_bus.write_byte(address.wrapping_add(1), msb);
+            },
+            0x8000..=0x9FFF => {
+                self.gpu.write_short(address, value);
+            },
+            _ => {
+                panic!("Unsupported address: {:X}", address);
+
+            }
+        }
     }
 
     /*
@@ -3153,7 +3181,7 @@ impl CPU {
      */
     fn op_ld_a_nn(&mut self, address: u16) {
         debug!("op_ld_a_nn");
-        self.registers.a = self.work_ram[address as usize];
+        self.registers.a = self.memory_bus.read_byte(address);
     }
     /*
      *    LD (nn), A
@@ -3161,7 +3189,7 @@ impl CPU {
      */
     fn op_ld_nn_a(&mut self, address: u16) {
         debug!("op_ld_nn_a");
-        self.work_ram[address as usize] = self.registers.a;
+        self.memory_bus.write_byte(address, self.registers.a);
     }
     /*
      *   LDH A, (C)
@@ -3173,7 +3201,7 @@ impl CPU {
     fn op_ldh_a_c(&mut self) {
         debug!("op_ldh_a_c");
         let address = 0xFF00 | self.registers.c as u16;
-        self.registers.a = self.work_ram[address as usize];
+        self.registers.a = self.memory_bus.read_byte(address);
     }
 
     /*
@@ -3185,7 +3213,7 @@ impl CPU {
     fn op_ldh_c_a(&mut self) {
         debug!("op_ldh_c_a");
         let address = 0xFF00 | self.registers.c as u16;
-        self.work_ram[address as usize] = self.registers.a;
+        self.memory_bus.write_byte(address, self.registers.a);
     }
 
     /*
@@ -3198,7 +3226,7 @@ impl CPU {
         debug!("op_ldh_a_n8");
         //let address = 0xFF00 | value as u16;
         let address = 0xFF00 + value as u16;
-        self.registers.a = self.work_ram[address as usize];
+        self.registers.a = self.memory_bus.read_byte(address);
     }
 
     /*
@@ -3270,11 +3298,11 @@ impl CPU {
 
     fn op_halt(&mut self) {
         debug!("op_halt");
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+        self.memory_bus.write_byte(INTERRUPT_ENABLE_REGISTER, 0);
     }
     fn op_stop(&mut self) {
         debug!("op_stop");
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+        self.memory_bus.write_byte(INTERRUPT_ENABLE_REGISTER, 0);
     }
     fn op_di(&mut self) {
         debug!("op_di");
@@ -3412,13 +3440,13 @@ impl CPU {
         debug!("stack pointer: {:#X}", self.registers.sp);
         self.registers.sp = self.registers.sp.wrapping_sub(2);
         debug!("stack pointer: {:#X}", self.registers.sp);
-        self.work_ram[self.registers.sp as usize] = (address >> 8) as u8;
-        self.work_ram[self.registers.sp.wrapping_add(1) as usize] = address as u8;
+        self.memory_bus.write_byte(self.registers.sp, (address >> 8) as u8);
+        self.memory_bus.write_byte(self.registers.sp.wrapping_add(1), address as u8);
     }
 
     fn op_pop_stack(&mut self) -> u16 {
         debug!("op_pop_stack");
-        let value = self.read_short(self.registers.sp);
+        let value = self.memory_bus.read_short(self.registers.sp);
         self.registers.sp = self.registers.sp.wrapping_add(2);
         value
         //TODO with this logic stack pointer isn't required
@@ -3451,10 +3479,11 @@ impl CPU {
         }
     }
 
-    fn print_debug(&self) {
-        if self.work_ram[0xFF02] == 0x81 {
-            info!("{}", self.work_ram[0xFF01] as char);
+    fn print_debug(&mut self) {
+        if self.memory_bus.read_byte(0xFF02) == 0x81 {
+            info!("{}", self.memory_bus.read_byte(0xFF01) as char);
             panic!("0x81");
+            self.memory_bus.write_byte(0xFF02, 0x0);
         }
     }
 }

@@ -6,12 +6,12 @@ use std::{error, fmt, result};
 
 use crate::constants;
 use crate::display::GPU;
-use crate::display::*;
+use crate::display;
 use crate::rom;
-use crate::memory_bus::*;
+use crate::memory_bus;
 use constants::*;
 use rom::*;
-
+use memory_bus::MemoryBus;
 
 pub struct Registers {
     a: u8, // Accumulator register
@@ -46,9 +46,10 @@ pub struct CPU<'a> {
     pub registers: Registers,
     //work_ram: [u8; 0xFFFFF],
     video_ram: [u16; 8192],
-    interupt: bool,
+    interupt_enable_register: u8,
     gpu: GPU,
     memory_bus: &'a mut MemoryBus,
+    pub call_stack: Vec<u16>,
 }
 
 impl Registers {
@@ -243,10 +244,11 @@ impl<'a> CPU<'a> {
             registers: Registers::new(),
             //work_ram: [0; 0xFFFFF],
             video_ram: [0; 8192],
-            interupt: false,
+            interupt_enable_register: 0,
             gpu: GPU::new(),
             //call_stack: vec![0x0000], //TODO should be 0xFFFE?
             memory_bus,
+            call_stack: Vec::with_capacity(CALL_STACK_SIZE),
         }
     }
 
@@ -270,7 +272,7 @@ impl<'a> CPU<'a> {
         let opcode = self.memory_bus.read_byte(self.registers.pc);
         debug!("PC [0x{:X}]", self.registers.pc);
         debug!("Opcode [0x{:X}]", opcode);
-        //debug!("{}", self.registers);
+        debug!("{}", self.registers);
         //self.debug_print_tile_data();
         self.print_debug();
 
@@ -1798,7 +1800,9 @@ impl<'a> CPU<'a> {
                 }
             }
             0xC1 => {
-                self.op_push_stack(self.registers.get_bc());
+                //self.op_push_stack(self.registers.get_bc());
+                let value = self.op_pop_stack();
+                self.registers.set_bc(value);
             }
             0xC2 => {
                 let nn: u16 = self.read_immediate_short();
@@ -2831,7 +2835,6 @@ impl<'a> CPU<'a> {
                 }
             }
             0xD1 => {
-                //self.op_pop_rr(&mut self.registers.get_de());
                 let value = self.op_pop_stack();
                 self.registers.set_de(value);
             }
@@ -3285,8 +3288,8 @@ impl<'a> CPU<'a> {
      */
     fn op_ret(&mut self) {
         debug!("op_ret");
-        //unimplemented!("op_ret");
-        self.registers.pc = self.op_pop_stack();
+        let address = self.op_pop_stack();
+        self.registers.pc = address;
     }
 
     /*
@@ -3298,15 +3301,15 @@ impl<'a> CPU<'a> {
 
     fn op_halt(&mut self) {
         debug!("op_halt");
-        self.memory_bus.write_byte(INTERRUPT_ENABLE_REGISTER, 0);
+        self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 0);
     }
     fn op_stop(&mut self) {
         debug!("op_stop");
-        self.memory_bus.write_byte(INTERRUPT_ENABLE_REGISTER, 0);
+        self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 0);
     }
     fn op_di(&mut self) {
         debug!("op_di");
-        self.interupt = false;
+        self.interupt_enable_register = 0;
     }
 
     /*
@@ -3315,7 +3318,7 @@ impl<'a> CPU<'a> {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.interupt = true;
+        self.interupt_enable_register = 1;
     }
 
     /*
@@ -3437,20 +3440,13 @@ impl<'a> CPU<'a> {
 
     fn op_push_stack(&mut self, address: u16) {
         debug!("op_push_stack");
-        debug!("stack pointer: {:#X}", self.registers.sp);
-        self.registers.sp = self.registers.sp.wrapping_sub(2);
-        debug!("stack pointer: {:#X}", self.registers.sp);
-        self.memory_bus.write_byte(self.registers.sp, (address >> 8) as u8);
-        self.memory_bus.write_byte(self.registers.sp.wrapping_add(1), address as u8);
+        self.call_stack.push(address);
     }
 
     fn op_pop_stack(&mut self) -> u16 {
         debug!("op_pop_stack");
-        let value = self.memory_bus.read_short(self.registers.sp);
-        self.registers.sp = self.registers.sp.wrapping_add(2);
-        value
-        //TODO with this logic stack pointer isn't required
-        //self.call_stack.pop().expect("op_pop_stack stack underflow")
+        debug!("{:?} ", self.call_stack);
+        self.call_stack.pop().expect("Stack underflow in pop_stack")
     }
 
     fn wait_for_input(&mut self) {

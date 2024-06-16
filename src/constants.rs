@@ -1,30 +1,3 @@
-// Constants for the Gameboy's memory map
-pub const BOOT_ROM_START: u16 = 0x0000; // TODO incorrect
-pub const BOOT_ROM_END: u16 = 0x00FF; // TODO incorrect
-
-pub const GAME_ROM_BANK_0_START: u16 = 0x0000;
-pub const GAME_ROM_BANK_0_END: u16 = 0x3FFF;
-pub const GAME_ROM_BANK_N_START: u16 = 0x4000;
-pub const GAME_ROM_BANK_N_END: u16 = 0x7FFF;
-pub const TILE_RAM_START: u16 = 0x8000;
-pub const TILE_RAM_END: u16 = 0x97FF;
-pub const BACKGROUND_RAM_START: u16 = 0x9800;
-pub const BACKGROUND_RAM_END: u16 = 0x9FFF;
-pub const CARTRIDGE_RAM_START: u16 = 0xA000;
-pub const CARTRIDGE_RAM_END: u16 = 0xBFFF;
-pub const WORK_RAM_START: u16 = 0xC000;
-pub const WORK_RAM_END: u16 = 0xDFFF;
-pub const ECHO_RAM_START: u16 = 0xE000;
-pub const ECHO_RAM_END: u16 = 0xFDFF;
-pub const OAM_START: u16 = 0xFE00; // Object Attribute Memory
-pub const OAM_END: u16 = 0xFE9F; // Object Attribute Memory
-pub const UNUSED_START: u16 = 0xFEA0;
-pub const UNUSED_END: u16 = 0xFEFF;
-pub const IO_REGISTERS_START: u16 = 0xFF00;
-pub const IO_REGISTERS_END: u16 = 0xFF7F;
-pub const HIGH_RAM_START: u16 = 0xFF80;
-//pub const HIGH_RAM_END: u16 = 0xFFFE;
-pub const INTERRUPT_ENABLE_REGISTER: u16 = 0xFFFE; //TODO shouldn't this be 0xFFFF? It throws an error if it is.
 
 // Constants for the Gameboy's I/O ranges
 pub const JOYPAD_INPUT: u16 = 0xFF00;

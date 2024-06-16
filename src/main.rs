@@ -3,6 +3,7 @@ mod constants;
 mod display;
 mod rom;
 mod memory_bus;
+mod ppu;
 
 use log::{debug, error};
 use crate::rom::ROM;
@@ -30,13 +31,12 @@ fn main() {
     //cpu.load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
-    /*cpu.load_rom(String::from(
+    /*let rom = cpu.load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
 
-    //cpu.load_rom(String::from("roms/test/cpu_instrs.gb"));
     let rom = load_rom(String::from("roms/test/cpu_instrs.gb"));
-    //cpu.load_rom(String::from("roms/test/cpu/07-jr,jp,call,ret,rst.gb"));
+    //let rom = load_rom(String::from("roms/test/cpu/07-jr,jp,call,ret,rst.gb"));
 
     let mut memory_bus = memory_bus::MemoryBus::new(&rom.rom);
     let mut cpu = CPU::CPU::new(&mut memory_bus);

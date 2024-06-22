@@ -248,7 +248,7 @@ impl<'a> CPU<'a> {
             gpu: GPU::new(),
             //call_stack: vec![0x0000], //TODO should be 0xFFFE?
             memory_bus,
-            call_stack: Vec::with_capacity(CALL_STACK_SIZE),
+            call_stack: Vec::new(),
         }
     }
 
@@ -272,7 +272,7 @@ impl<'a> CPU<'a> {
         let opcode = self.memory_bus.read_byte(self.registers.pc);
         debug!("PC [0x{:X}]", self.registers.pc);
         debug!("Opcode [0x{:X}]", opcode);
-        debug!("{}", self.registers);
+        //debug!("{}", self.registers);
         //self.debug_print_tile_data();
         self.print_debug();
 
@@ -389,7 +389,7 @@ impl<'a> CPU<'a> {
             }
             0x10 => {
                 // TODO - Implement STOP
-                error!("STOP not implemented");
+                //error!("STOP not implemented");
                 //unimplemented!("STOP not implemented");
             }
             0x11 => {
@@ -861,7 +861,7 @@ impl<'a> CPU<'a> {
             0x76 => {
                 //unimplemented!("HALT not implemented");
                 //TODO
-                error!("HALT not implemented");
+                //error!("HALT not implemented");
             }
             0x77 => {
                 self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
@@ -3441,12 +3441,19 @@ impl<'a> CPU<'a> {
     fn op_push_stack(&mut self, address: u16) {
         debug!("op_push_stack");
         self.call_stack.push(address);
+        debug!("{:?} ", self.call_stack);
+        /*self.call_stack[self.registers.sp as usize] = address;*/
+        self.registers.sp = self.registers.sp.wrapping_sub(1);
     }
 
     fn op_pop_stack(&mut self) -> u16 {
         debug!("op_pop_stack");
         debug!("{:?} ", self.call_stack);
-        self.call_stack.pop().expect("Stack underflow in pop_stack")
+        //let address = self.call_stack.pop().expect("Stack underflow in pop_stack");
+        /*let address = self.call_stack[self.registers.sp as usize];*/
+        let address = self.call_stack.remove(0);
+        self.registers.sp = self.registers.sp.wrapping_add(1);
+        address
     }
 
     fn wait_for_input(&mut self) {
@@ -3478,7 +3485,7 @@ impl<'a> CPU<'a> {
     fn print_debug(&mut self) {
         if self.memory_bus.read_byte(0xFF02) == 0x81 {
             info!("{}", self.memory_bus.read_byte(0xFF01) as char);
-            panic!("0x81");
+            //panic!("0x81");
             self.memory_bus.write_byte(0xFF02, 0x0);
         }
     }

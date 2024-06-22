@@ -25,4 +25,4 @@ pub const SUBTRACT_FLAG_BYTE_POSITION: u8 = 6;
 pub const HALF_CARRY_FLAG_BYTE_POSITION: u8 = 5;
 pub const CARRY_FLAG_BYTE_POSITION: u8 = 4;
 
-pub const CALL_STACK_SIZE: usize = 100;
+pub const CALL_STACK_SIZE: usize = 0x100;

@@ -15,7 +15,7 @@ use std::io::{self, Read};
 fn main() {
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Info)
         .is_test(false)
         .try_init();
 

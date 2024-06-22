@@ -43,7 +43,7 @@ pub struct MemoryBus {
     pub rom: [u8; (ROM_BANK_0_END - ROM_BANK_0_START) as usize], // TODO UPDATE
     pub rom_bank_0: [u8; ROM_BANK_0_SIZE],
     pub rom_bank_n: [u8; ROM_BANK_N_SIZE],
-    pub vram: [u8; VRAM_SIZE],
+    //pub vram: [u8; VRAM_SIZE],
     pub external_ram: [u8; EXTERNAL_RAM_SIZE],
     pub wram_0: [u8; WRAM_0_SIZE],
     pub wram_1: [u8; WRAM_1_SIZE],
@@ -62,7 +62,7 @@ impl<'a> MemoryBus {
             rom: [0; (ROM_BANK_0_END - ROM_BANK_0_START) as usize],
             rom_bank_0: [0; ROM_BANK_0_SIZE],
             rom_bank_n: [0; ROM_BANK_N_SIZE],
-            vram: [0; VRAM_SIZE],
+            //vram: [0; VRAM_SIZE],
             external_ram: [0; EXTERNAL_RAM_SIZE],
             wram_0: [0; WRAM_0_SIZE],
             wram_1: [0; WRAM_1_SIZE],
@@ -89,16 +89,12 @@ impl<'a> MemoryBus {
         debug!("Reading byte from address {:X}", address);
         match address {
             ROM_BANK_0_START..=ROM_BANK_0_END => self.rom_bank_0[(address) as usize],
-            ROM_BANK_N_START..=ROM_BANK_N_END => {
-                self.rom_bank_n[(address - ROM_BANK_N_START) as usize]
-            }
+            ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize],
             VRAM_START..=VRAM_END => {
                 //self.vram[(address - VRAM_START) as usize]
                 self.ppu.vram_read(address)
             },
-            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
-                self.external_ram[(address - EXTERNAL_RAM_START) as usize]
-            }
+            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.external_ram[(address - EXTERNAL_RAM_START) as usize],
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize],
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
             ECHO_RAM_START..=ECHO_RAM_END => self.echo_ram[(address - ECHO_RAM_START) as usize],
@@ -107,6 +103,7 @@ impl<'a> MemoryBus {
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
             IO_REGISTERS_START..=IO_REGISTERS_END => {
+                debug!("IO register value {:X}", self.io_registers[(address - IO_REGISTERS_START) as usize]);
                 self.io_registers[(address - IO_REGISTERS_START) as usize]
             }
             HRAM_START..=HRAM_END => self.hram[(address - HRAM_START) as usize],
@@ -122,9 +119,7 @@ impl<'a> MemoryBus {
         debug!("Writing byte to address {:X}", address);
         match address {
             ROM_BANK_0_START..=ROM_BANK_0_END => self.rom_bank_0[address as usize] = value,
-            ROM_BANK_N_START..=ROM_BANK_N_END => {
-                self.rom_bank_n[(address - ROM_BANK_N_START) as usize] = value
-            }
+            ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize] = value,
             VRAM_START..=VRAM_END => { 
                 //self.vram[(address - VRAM_START) as usize] = value;
                 self.ppu.vram_write(address, value);
@@ -141,7 +136,10 @@ impl<'a> MemoryBus {
                 self.ppu.oam_write(address - OAM_START, value);
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
-            IO_REGISTERS_START..=IO_REGISTERS_END => self.interrupt_enable_register = value,
+            IO_REGISTERS_START..=IO_REGISTERS_END => {
+                debug!("Writing to IO register {:X} value {:X}", address, value);
+                self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
+            },
             HRAM_START..=HRAM_END => {
                 //unimplemented!("HRAM write");
                 self.hram[(address - HRAM_START) as usize] = value

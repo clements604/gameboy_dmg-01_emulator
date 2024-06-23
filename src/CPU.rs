@@ -14,16 +14,16 @@ use rom::*;
 use memory_bus::MemoryBus;
 
 pub struct Registers {
-    a: u8, // Accumulator register
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    f: FlagsRegister, // Flags
-    h: u8,
-    l: u8,
+    pub a: u8, // Accumulator register
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub f: FlagsRegister, // Flags
+    pub h: u8,
+    pub l: u8,
     pub pc: u16, // Program counter
-    sp: u16,     // Stack pointer
+    pub sp: u16,     // Stack pointer
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -46,10 +46,10 @@ pub struct CPU<'a> {
     pub registers: Registers,
     //work_ram: [u8; 0xFFFFF],
     video_ram: [u16; 8192],
-    //interupt_enable_register: u8,
+    //interrupt_enable_register: u8,
     gpu: GPU,
     memory_bus: &'a mut MemoryBus,
-    pub call_stack: Vec<u16>,
+    //pub call_stack: Vec<u16>,
     halted: bool,
     stopped: bool,
     rom_debug: rom_debug::rom_debug,
@@ -58,15 +58,15 @@ pub struct CPU<'a> {
 impl Registers {
     pub fn new() -> Self {
         Registers {
-            a: 0x0,
+            a: 0x01,
             b: 0x0,
-            c: 0x0,
+            c: 0x13,
             d: 0x0,
-            e: 0x0,
+            e: 0xD8,
             f: FlagsRegister::new(),
-            h: 0x0,
-            l: 0x0,
-            pc: 0x0100, //0x0,
+            h: 0x01,
+            l: 0x4D,
+            pc: 0x0100,
             sp: 0xFFFE,
         }
     }
@@ -150,9 +150,9 @@ impl fmt::Display for Registers {
 impl FlagsRegister {
     pub fn new() -> Self {
         FlagsRegister {
-            zero: false,
+            zero: true,
             subtract: false,
-            half_carry: false,
+            half_carry: true,
             carry: false,
         }
     }
@@ -250,7 +250,7 @@ impl<'a> CPU<'a> {
             gpu: GPU::new(),
             //call_stack: vec![0x0000], //TODO should be 0xFFFE?
             memory_bus,
-            call_stack: Vec::new(),
+            //call_stack: Vec::new(),
             halted: false,
             stopped: false,
             rom_debug: rom_debug::rom_debug::new(),
@@ -279,16 +279,10 @@ impl<'a> CPU<'a> {
         debug!("Opcode [0x{:X}]", opcode);
         //debug!("{}", self.registers);
         //self.debug_print_tile_data();
+        debug!("Registers: {}", self.registers);
         self.registers.pc = self.registers.pc.wrapping_add(1);
 
         //self.wait_for_input();
-
-        /*if self.memory_bus.read_byte(0xFF02) == 0x81 {
-            // TODO Temp for development, delete this
-            info!("CPU test [{}]", self.memory_bus.read_byte(0xFF01) as char);
-            self.memory_bus.write_byte(0xFF02, 0x0);
-            //panic!("test reaches here");
-        }*/
 
         self.debug_update();
         self.debug_print();
@@ -297,7 +291,7 @@ impl<'a> CPU<'a> {
 
         if self.halted {
             info!("CPU halted");
-            info!("Interupt enable register: 0x{:X}", self.memory_bus.interrupt_enable_register);
+            info!("Interrupt enable register: 0x{:X}", self.memory_bus.interrupt_enable_register);
             self.op_nop();
             //if self.memory_bus.interrupt_enable_register & self.memory_bus.read_byte(0xFF0F) != 0x0 {
             if self.memory_bus.read_byte(0xFFFF) != 0x0 {
@@ -432,7 +426,7 @@ impl<'a> CPU<'a> {
                     self.registers.d = self.registers.d.wrapping_sub(1);
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x00 && (self.registers.d & 0x0F) == 0x0F);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
                 }
                 0x16 => {
                     let value = self.read_immediate_byte();
@@ -446,7 +440,7 @@ impl<'a> CPU<'a> {
                     } else {
                         0
                     });
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, carry);
@@ -726,7 +720,7 @@ impl<'a> CPU<'a> {
                     self.registers.b = self.registers.l;
                 }
                 0x46 => {
-                    self.registers.b = self.registers.get_hl() as u8;
+                    self.registers.b = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x47 => {
                     self.registers.b = self.registers.a;
@@ -750,7 +744,7 @@ impl<'a> CPU<'a> {
                     self.registers.c = self.registers.l;
                 }
                 0x4E => {
-                    self.registers.c = self.registers.get_hl() as u8;
+                    self.registers.c = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x4F => {
                     self.registers.c = self.registers.a;
@@ -774,7 +768,7 @@ impl<'a> CPU<'a> {
                     self.registers.d = self.registers.l;
                 }
                 0x56 => {
-                    self.registers.d = self.registers.get_hl() as u8;
+                    self.registers.d = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x57 => {
                     self.registers.d = self.registers.a;
@@ -798,7 +792,7 @@ impl<'a> CPU<'a> {
                     self.registers.e = self.registers.l;
                 }
                 0x5E => {
-                    self.registers.e = self.registers.get_hl() as u8;
+                    self.registers.e = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x5F => {
                     self.registers.e = self.registers.a;
@@ -822,7 +816,7 @@ impl<'a> CPU<'a> {
                     self.registers.h = self.registers.l;
                 }
                 0x66 => {
-                    self.registers.h = self.registers.get_hl() as u8;
+                    self.registers.h = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x67 => {
                     self.registers.h = self.registers.a;
@@ -846,7 +840,7 @@ impl<'a> CPU<'a> {
                     self.registers.l = self.registers.l;
                 }
                 0x6E => {
-                    self.registers.l = self.registers.get_hl() as u8;
+                    self.registers.l = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x6F => {
                     self.registers.l = self.registers.a;
@@ -870,7 +864,6 @@ impl<'a> CPU<'a> {
                     self.memory_bus.write_byte(self.registers.get_hl(), self.registers.l);
                 }
                 0x76 => {
-                    //unimplemented!("HALT not implemented");
                     info!("Halting CPU");
                     self.halted = true;
                 }
@@ -896,7 +889,7 @@ impl<'a> CPU<'a> {
                     self.registers.a = self.registers.l;
                 }
                 0x7E => {
-                    self.registers.a = self.registers.get_hl() as u8;
+                    self.registers.a = self.memory_bus.read_byte(self.registers.get_hl());
                 }
                 0x7F => {
                     self.registers.a = self.registers.a;
@@ -1811,13 +1804,14 @@ impl<'a> CPU<'a> {
                     }
                 }
                 0xC1 => {
-                    //self.op_push_stack(self.registers.get_bc());
                     let value = self.op_pop_stack();
                     self.registers.set_bc(value);
                 }
                 0xC2 => {
-                    let nn: u16 = self.read_immediate_short();
-                    self.op_jp_nn(nn);
+                    if !self.registers.f.get_flag(Flag::Z) {
+                        let nn: u16 = self.read_immediate_short();
+                        self.op_jp_nn(nn);
+                    }
                 }
                 0xC3 => {
                     let nn: u16 = self.read_immediate_short();
@@ -1825,8 +1819,10 @@ impl<'a> CPU<'a> {
                     self.op_jp_nn(nn);
                 }
                 0xC4 => {
-                    let nn: u16 = self.read_immediate_short();
-                    self.op_call_nn(nn);
+                    if !self.registers.f.get_flag(Flag::Z) {
+                        let nn: u16 = self.read_immediate_short();
+                        self.op_call_nn(nn);
+                    }
                 }
                 0xC5 => {
                     self.op_push_stack(self.registers.get_bc());
@@ -1848,7 +1844,9 @@ impl<'a> CPU<'a> {
                 }
                 0xCA => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_jp_nn(nn);
+                    if self.registers.f.get_flag(Flag::Z) {
+                        self.op_jp_nn(nn);
+                    }
                 }
                 0xCB => {
                     // Get the next byte and use it as the extended opcode
@@ -2393,7 +2391,7 @@ impl<'a> CPU<'a> {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             //self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 0);
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 0);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2421,7 +2419,7 @@ impl<'a> CPU<'a> {
                         0x8E => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 1);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2449,7 +2447,7 @@ impl<'a> CPU<'a> {
                         0x96 => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 2);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2477,7 +2475,7 @@ impl<'a> CPU<'a> {
                         0x9E => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 3);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2505,7 +2503,7 @@ impl<'a> CPU<'a> {
                         0xA6 => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 4);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2533,7 +2531,7 @@ impl<'a> CPU<'a> {
                         0xAE => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 5);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2561,7 +2559,7 @@ impl<'a> CPU<'a> {
                         0xB6 => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 6);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2589,7 +2587,7 @@ impl<'a> CPU<'a> {
                         0xBE => {
                             let value = self.memory_bus.read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.read_byte(self.registers.get_hl());
-                            ;
+                            
                             result &= value & !(1 << 7);
                             self.memory_bus.write_byte(self.registers.get_hl(), result);
                         }
@@ -2819,7 +2817,9 @@ impl<'a> CPU<'a> {
                 }
                 0xCC => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_call_nn(nn);
+                    if self.registers.f.get_flag(Flag::Z) {
+                        self.op_call_nn(nn);
+                    }
                 }
                 0xCD => {
                     let nn: u16 = self.read_immediate_short();
@@ -2859,14 +2859,18 @@ impl<'a> CPU<'a> {
                 }
                 0xD2 => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_jp_nn(nn);
+                    if !self.registers.f.get_flag(Flag::C) {
+                        self.op_jp_nn(nn);
+                    }
                 }
                 0xD3 => {
                     panic!("Unsupported opcode: 0xD3");
                 }
                 0xD4 => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_call_nn(nn);
+                    if !self.registers.f.get_flag(Flag::C) {
+                        self.op_call_nn(nn);
+                    }
                 }
                 0xD5 => {
                     self.op_push_stack(self.registers.get_de());
@@ -2896,7 +2900,9 @@ impl<'a> CPU<'a> {
                 }
                 0xDA => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_jp_nn(nn);
+                    if self.registers.f.get_flag(Flag::C) {
+                        self.op_jp_nn(nn);
+                    }
                 }
                 0xDB => {
                     panic!("Unsupported opcode: 0xDB");
@@ -2914,23 +2920,19 @@ impl<'a> CPU<'a> {
                     } else {
                         0
                     } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.memory_bus.read_byte(self.registers.pc));
+                    let n = self.memory_bus.read_byte(self.registers.pc);
+                    self.registers.pc = self.registers.pc.wrapping_add(1);
+                    let result = self.registers.a.wrapping_sub(n).wrapping_sub(carry);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                     self.registers.f.set_flag(
                         Flag::H,
-                        (self.registers.a & 0x0F)
-                            < (self.memory_bus.read_byte(self.registers.pc) & 0x0F) + carry,
+                        (self.registers.a & 0x0F) < (n & 0x0F) + carry,
                     ); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(
                         Flag::C,
-                        (self.registers.a as u16)
-                            < (self.memory_bus.read_byte(self.registers.pc) as u16) + (carry as u16),
+                        (self.registers.a as u16) < (n as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
-                    //self.registers.pc = self.registers.pc.wrapping_add(1);
                     self.registers.a = result;
                 }
                 0xDF => {
@@ -2946,7 +2948,8 @@ impl<'a> CPU<'a> {
                     self.registers.set_hl(value);
                 }
                 0xE2 => {
-                    self.op_ldh_c_a();
+                    let address = 0xFF00 | self.registers.c as u16;
+                    self.memory_bus.write_byte(address, self.registers.a);
                 }
                 0xE3 => {
                     panic!("Unsupported opcode: 0xE3");
@@ -2984,11 +2987,11 @@ impl<'a> CPU<'a> {
                     self.registers.sp = result as u16;
                 }
                 0xE9 => {
-                    self.op_jp_hl();
+                    self.registers.pc = self.registers.get_hl();
                 }
                 0xEA => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_ld_nn_a(nn);
+                    self.memory_bus.write_byte(nn, self.registers.a);
                 }
                 0xEB => {
                     panic!("Unsupported opcode: 0xEB");
@@ -3013,14 +3016,16 @@ impl<'a> CPU<'a> {
                 }
                 0xF0 => {
                     let value = self.read_immediate_byte();
-                    self.op_ldh_a_n8(value);
+                    let address = 0xFF00 + value as u16;
+                    self.registers.a = self.memory_bus.read_byte(address);
                 }
                 0xF1 => {
                     let value = self.op_pop_stack();
                     self.registers.set_af(value);
                 }
                 0xF2 => {
-                    self.op_ldh_a_c();
+                    let address = 0xFF00 | self.registers.c as u16;
+                    self.registers.a = self.memory_bus.read_byte(address);
                 }
                 0xF3 => {
                     self.op_di();
@@ -3036,9 +3041,8 @@ impl<'a> CPU<'a> {
                     let result = self.registers.a | value;
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
-
                     self.registers.a = result;
                 }
                 0xF7 => {
@@ -3051,11 +3055,11 @@ impl<'a> CPU<'a> {
                     self.registers.set_hl(result);
                 }
                 0xF9 => {
-                    self.op_ld_sp_hl();
+                    self.registers.sp = self.registers.get_hl();
                 }
                 0xFA => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_ld_a_nn(nn);
+                    self.registers.a = self.memory_bus.read_byte(nn);
                 }
                 0xFB => {
                     self.op_ei();
@@ -3199,69 +3203,6 @@ impl<'a> CPU<'a> {
     }
 
     /*
-     *   LD A, (nn)
-     *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit operand nn.
-     */
-    fn op_ld_a_nn(&mut self, address: u16) {
-        debug!("op_ld_a_nn");
-        self.registers.a = self.memory_bus.read_byte(address);
-    }
-    /*
-     *    LD (nn), A
-     *    Load to the absolute address specified by the 16-bit operand nn, data from the 8-bit A register.
-     */
-    fn op_ld_nn_a(&mut self, address: u16) {
-        debug!("op_ld_nn_a");
-        self.memory_bus.write_byte(address, self.registers.a);
-    }
-    /*
-     *   LDH A, (C)
-     *   Load to the 8-bit A register, data from the address specified by the 8-bit C register. The full 16-bit absolute
-     *   address is obtained by setting the most significant byte to 0xFF and the least significant byte to the value of C,
-     *   so the possible range is 0xFF00-0xFFFF.
-     */
-    //  TODO - Check this is setting the upper and lower bits correctly
-    fn op_ldh_a_c(&mut self) {
-        debug!("op_ldh_a_c");
-        let address = 0xFF00 | self.registers.c as u16;
-        self.registers.a = self.memory_bus.read_byte(address);
-    }
-
-    /*
-     *   LDH (C), A
-     *   Load to the address specified by the 8-bit C register, data from the 8-bit A register. The full 16-bit absolute
-     *   address is obtained by setting the most significant byte to 0xFF and the least significant byte to the value of C,
-     *   so the possible range is 0xFF00-0xFFFF.
-     */
-    fn op_ldh_c_a(&mut self) {
-        debug!("op_ldh_c_a");
-        let address = 0xFF00 | self.registers.c as u16;
-        self.memory_bus.write_byte(address, self.registers.a);
-    }
-
-    /*
-     *   LDH A, (n)
-     *   Load to the 8-bit A register, data from the address specified by the 8-bit immediate data n. The full 16-bit
-     *   absolute address is obtained by setting the most significant byte to 0xFF and the least significant byte to the
-     *   value of n, so the possible range is 0xFF00-0xFFFF.
-     */
-    fn op_ldh_a_n8(&mut self, value: u8) {
-        debug!("op_ldh_a_n8");
-        //let address = 0xFF00 | value as u16;
-        let address = 0xFF00 + value as u16;
-        self.registers.a = self.memory_bus.read_byte(address);
-    }
-
-    /*
-     *   LD SP, HL
-     *   Load to the 16-bit SP register, data from the 16-bit HL register.
-     */
-    fn op_ld_sp_hl(&mut self) {
-        debug!("op_ld_sp_hl");
-        self.registers.sp = self.registers.get_hl();
-    }
-
-    /*
      *   JP nn
      *   Unconditional jump to the absolute address specified by the 16-bit operand nn.
      */
@@ -3271,20 +3212,10 @@ impl<'a> CPU<'a> {
     }
 
     /*
-     *   JP HL
-     *   Unconditional jump to the absolute address specified by the 16-bit register HL.
-     */
-    fn op_jp_hl(&mut self) {
-        debug!("op_jp_hl");
-        self.registers.pc = self.registers.get_hl();
-    }
-
-    /*
      *   JR e
      *   Unconditional jump to the relative address specified by the signed 8-bit operand e.
      */
     fn op_jr_e(&mut self, offset: i8) {
-        debug!("op_jr_e");
         debug!(
             "Jumping to 0x{:04X}",
             self.registers.pc.wrapping_add(offset as u16)
@@ -3460,20 +3391,15 @@ impl<'a> CPU<'a> {
 
     fn op_push_stack(&mut self, address: u16) {
         debug!("op_push_stack");
-        self.call_stack.push(address);
-        //debug!("{:?} ", self.call_stack);
-        /*self.call_stack[self.registers.sp as usize] = address;*/
-        self.registers.sp = self.registers.sp.wrapping_sub(1);
+        self.registers.sp = self.registers.sp.wrapping_sub(2);
+        self.memory_bus.write_short(self.registers.sp, address);
     }
 
     fn op_pop_stack(&mut self) -> u16 {
         debug!("op_pop_stack");
-        //debug!("{:?} ", self.call_stack);
-        //let address = self.call_stack.pop().expect("Stack underflow in pop_stack");
-        /*let address = self.call_stack[self.registers.sp as usize];*/
-        let address = self.call_stack.remove(0);
-        self.registers.sp = self.registers.sp.wrapping_add(1);
-        address
+        let value = self.memory_bus.read_short(self.registers.sp);
+        self.registers.sp = self.registers.sp.wrapping_add(2);
+        value
     }
 
     fn wait_for_input(&mut self) {
@@ -3505,7 +3431,7 @@ impl<'a> CPU<'a> {
     fn debug_update(&mut self) {
         if self.memory_bus.read_byte(0xFF02) == 0x81 {
             self.rom_debug.add_char(self.memory_bus.read_byte(0xFF01) as char);
-            self.memory_bus.write_byte(0xFF02, 0x0);
+            self.memory_bus.write_byte(0xFF02, 0);
         }
     }
 

@@ -4,6 +4,8 @@ use log::{debug, error, info};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, Read};
+use crate::rom_debug::rom_debug;
+use crate::dmg_io::IO;
 
 const ROM_BANK_0_START: u16 = 0x0000;
 const ROM_BANK_0_END: u16 = 0x3FFF;
@@ -32,9 +34,9 @@ const OAM_SIZE: usize = ((OAM_END - OAM_START) + 1) as usize;
 const UNUSED_START: u16 = 0xFEA0;
 const UNUSED_END: u16 = 0xFEFF;
 const UNUSED_SIZE: usize = ((UNUSED_END - UNUSED_START) + 1) as usize;
-const IO_REGISTERS_START: u16 = 0xFF00;
-const IO_REGISTERS_END: u16 = 0xFF7F;
-const IO_REGISTERS_SIZE: usize = ((IO_REGISTERS_END - IO_REGISTERS_START) + 1) as usize;
+pub const IO_REGISTERS_START: u16 = 0xFF00;
+pub const IO_REGISTERS_END: u16 = 0xFF7F;
+pub const IO_REGISTERS_SIZE: usize = ((IO_REGISTERS_END - IO_REGISTERS_START) + 1) as usize;
 const HRAM_START: u16 = 0xFF80;
 const HRAM_END: u16 = 0xFFFE;
 const HRAM_SIZE: usize = ((HRAM_END - HRAM_START) + 1) as usize;
@@ -50,10 +52,12 @@ pub struct MemoryBus {
     pub echo_ram: [u8; ECHO_RAM_SIZE],
     pub oam: [u8; OAM_SIZE],
     pub unused: [u8; UNUSED_SIZE],
-    pub io_registers: [u8; IO_REGISTERS_SIZE],
+    //pub io_registers: [u8; IO_REGISTERS_SIZE],
     pub hram: [u8; HRAM_SIZE],
     pub interrupt_enable_register: u8,
     pub ppu: Ppu,
+    rom_debug: rom_debug,
+    dmg_io: IO,
 }
 
 impl<'a> MemoryBus {
@@ -69,10 +73,12 @@ impl<'a> MemoryBus {
             echo_ram: [0; ECHO_RAM_SIZE],
             oam: [0; OAM_SIZE],
             unused: [0; UNUSED_SIZE],
-            io_registers: [0; IO_REGISTERS_SIZE],
+            //io_registers: [0; IO_REGISTERS_SIZE],
             hram: [0; HRAM_SIZE],
             interrupt_enable_register: 0,
             ppu: Ppu::new(),
+            rom_debug: rom_debug::new(),
+            dmg_io: IO::new(),
         };
         //debug!("ROM data to be loaded: {:?}", rom);
         memory_bus.load_rom(rom);
@@ -103,13 +109,12 @@ impl<'a> MemoryBus {
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
             IO_REGISTERS_START..=IO_REGISTERS_END => {
-                debug!("IO register value {:X}", self.io_registers[(address - IO_REGISTERS_START) as usize]);
-                self.io_registers[(address - IO_REGISTERS_START) as usize]
+                //debug!("IO register value {:X}", self.io_registers[(address - IO_REGISTERS_START) as usize]);
+                //self.io_registers[(address - IO_REGISTERS_START) as usize]
+                self.dmg_io.read(address)
             }
             HRAM_START..=HRAM_END => self.hram[(address - HRAM_START) as usize],
-            INTERRUPT_ENABLE_REGISTER => {
-                self.interrupt_enable_register
-            }
+            INTERRUPT_ENABLE_REGISTER => self.interrupt_enable_register,
             _ => {
                 panic!("Unimplemented read_byte in memory bus")
             }
@@ -138,13 +143,21 @@ impl<'a> MemoryBus {
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
             IO_REGISTERS_START..=IO_REGISTERS_END => {
                 debug!("Writing to IO register {:X} value {:X}", address, value);
-                self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
+                //self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
+                if address == 0xFF01 || address == 0xFF02 {
+                    debug!("Serial data write");
+                    //panic!("Serial data write")
+                }
+                self.dmg_io.write(address, value);
             },
             HRAM_START..=HRAM_END => {
                 //unimplemented!("HRAM write");
                 self.hram[(address - HRAM_START) as usize] = value
             },
-            INTERRUPT_ENABLE_REGISTER => self.interrupt_enable_register = value,
+            INTERRUPT_ENABLE_REGISTER => {
+                info!("Interrupt enable register set to {:X}", value);
+                self.interrupt_enable_register = value
+            },
             _ => {
                 panic!("Unimplemented write_byte in memory bus")
             }
@@ -154,70 +167,18 @@ impl<'a> MemoryBus {
     /*
      *   Read the 16-bit value from memory for a given address.
      */
-    /*pub fn read_short(&mut self, address: u16) -> u16 {
-        match address {
-            ROM_BANK_0_START..=ROM_BANK_0_END => {
-                let lsb = self.rom_bank_0[address as usize];
-                let msb = self.rom_bank_0[address.wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            ROM_BANK_N_START..=ROM_BANK_N_END => {
-                let lsb = self.rom_bank_n[(address - ROM_BANK_N_START) as usize];
-                let msb = self.rom_bank_n[(address - ROM_BANK_N_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            VRAM_START..=VRAM_END => {
-                let lsb = self.vram[(address - VRAM_START) as usize];
-                let msb = self.vram[(address - VRAM_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
-                let lsb = self.external_ram[(address - EXTERNAL_RAM_START) as usize];
-                let msb =
-                    self.external_ram[(address - EXTERNAL_RAM_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            WRAM_0_START..=WRAM_0_END => {
-                let lsb = self.wram_0[(address - WRAM_0_START) as usize];
-                let msb = self.wram_0[(address - WRAM_0_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            },
-            WRAM_1_START..=WRAM_1_END => {
-                let lsb = self.wram_0[(address - WRAM_1_START) as usize];
-                let msb = self.wram_0[(address - WRAM_1_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            },
-            ECHO_RAM_START..=ECHO_RAM_END => {
-                debug!(
-                    "Echo RAM (mirror of C000–DDFF), Nintendo says use of this area is prohibited."
-                );
-                return 0x0;
-            }
-            OAM_START..=OAM_END => {
-                let lsb = self.oam[(address - OAM_START) as usize];
-                let msb = self.oam[(address - OAM_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            UNUSED_START..=UNUSED_END => {
-                debug!("Not Usable");
-                return 0x0;
-            }
-            IO_REGISTERS_START..=IO_REGISTERS_END => {
-                let lsb = self.io_registers[(address - IO_REGISTERS_START) as usize];
-                let msb = self.io_registers[(address - IO_REGISTERS_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            HRAM_START..=HRAM_END => {
-                let lsb = self.hram[(address - HRAM_START) as usize];
-                let msb = self.hram[(address - HRAM_START).wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            INTERRUPT_ENABLE_REGISTER => {
-                unimplemented!("Interrupt Enable Register")
-            }
-            _ => panic!("Unsupported address: {:X}", address),
-        }
-    }*/
+    pub fn read_short(&mut self, address: u16) -> u16 {
+        let lsb = self.read_byte(address);
+        let msb = self.read_byte(address.wrapping_add(1));
+        (msb as u16) << 8 | lsb as u16
+    }
+    
+    pub fn write_short(&mut self, address: u16, value: u16) {
+        let lsb = value as u8;
+        let msb = (value >> 8) as u8;
+        self.write_byte(address, lsb);
+        self.write_byte(address.wrapping_add(1), msb);
+    }
 
     /*
      *   Load the ROM into memory

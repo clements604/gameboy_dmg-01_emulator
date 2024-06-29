@@ -1,4 +1,4 @@
-
+use log::{debug, info};
 pub struct rom_debug {
     message: Vec<char>,
 }
@@ -22,10 +22,12 @@ impl rom_debug {
 
     pub fn print(&self) {
         if self.message.len() > 0 {
-            for c in &self.message {
-                print!("DEBUG: {}", c);
-            }
-            println!();
+            let message: String = self.message.iter().collect();
+            info!("DEBUG: {}", message);
         }
+    }
+
+    pub fn debug_print(&self, s: &str) {
+        debug!("DEBUG: {}", s);
     }
 }

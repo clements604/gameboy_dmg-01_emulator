@@ -4,8 +4,13 @@ mod display;
 mod rom;
 mod memory_bus;
 mod ppu;
+mod rom_debug;
+mod dmg_io;
 
-use log::{debug, error};
+use std::io::Write;
+use std::sync::Mutex;
+
+use log::{debug, error, info};
 use crate::rom::ROM;
 
 use std::fs::File;
@@ -13,8 +18,11 @@ use std::io::prelude::*;
 use std::io::{self, Read};
 
 fn main() {
+    // Open the log file
+    let file = File::create("output.log").unwrap();
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
+        //.target(env_logger::Target::Pipe(Box::new(file)))
         .filter_level(log::LevelFilter::Info)
         .is_test(false)
         .try_init();
@@ -35,8 +43,8 @@ fn main() {
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
 
-    let rom = load_rom(String::from("roms/test/cpu_instrs.gb"));
-    //let rom = load_rom(String::from("roms/test/cpu/07-jr,jp,call,ret,rst.gb"));
+    //let rom = load_rom(String::from("roms/test/cpu_instrs.gb"));
+    let rom = load_rom(String::from("roms/test/cpu/06-ld r,r.gb"));
 
     let mut memory_bus = memory_bus::MemoryBus::new(&rom.rom);
     let mut cpu = CPU::CPU::new(&mut memory_bus);
@@ -46,6 +54,7 @@ fn main() {
         debug!("Cycle: {}", cycle_count);
         cpu.cycle();
     }
+
 }
 pub fn load_rom(file_path: String) -> ROM {
     debug!("Loading ROM: {}", file_path);

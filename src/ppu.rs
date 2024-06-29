@@ -141,6 +141,7 @@ impl Ppu {
     pub fn vram_write(&mut self, address: u16, value: u8) {
         debug!("VRAM write at address: {:#X}", address);
         self.vram[(address - 0x8000) as usize] = value;
+        //debug!("VRAM data: {:?}", self.vram);
     }
 
 }

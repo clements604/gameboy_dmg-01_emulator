@@ -284,11 +284,7 @@ impl<'a> CPU<'a> {
         //debug!("{}", self.registers);
         //self.debug_print_tile_data();
         //debug!("Registers: {}", self.registers);
-        if self.registers.pc == 0xCC5F {panic!("PC reached 0xCC5F");}
-        if self.registers.pc == 0x020B {
-            error!("{:?}", self.registers);
-            //panic!("PC reached 0x020B");
-        }
+
         self.registers.pc = self.registers.pc.wrapping_add(1);
 
         //self.wait_for_input();
@@ -300,7 +296,7 @@ impl<'a> CPU<'a> {
 
         if self.halted {
             info!("CPU halted");
-            info!("Interrupt enable register: 0x{:X}", self.memory_bus.interrupt_enable_register);
+            debug!("Interrupt enable register: 0x{:X}", self.memory_bus.interrupt_enable_register);
             self.op_nop();
             //if self.memory_bus.interrupt_enable_register & self.memory_bus.read_byte(0xFF0F) != 0x0 {
             if self.memory_bus.read_byte(0xFFFF) != 0x0 {
@@ -608,10 +604,9 @@ impl<'a> CPU<'a> {
                     self.registers.f.set_flag(Flag::H, true);
                 }
                 0x30 => {
-                    //let value = self.memory_bus.read_byte(self.registers.pc) as i8;
                     let offset = self.read_immediate_byte() as i8;
                     if !self.registers.f.get_flag(Flag::C) {
-                        self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
+                        self.op_jr_e(offset);
                     }
                 }
                 0x31 => {
@@ -655,9 +650,9 @@ impl<'a> CPU<'a> {
                     self.registers.f.set_flag(Flag::C, true);
                 }
                 0x38 => {
-                    let offset = self.read_immediate_byte();
+                    let offset = self.read_immediate_byte() as i8;
                     if self.registers.f.get_flag(Flag::C) {
-                        self.op_jr_e(offset as i8);
+                        self.op_jr_e(offset);
                     }
                 }
                 0x39 => {
@@ -2806,7 +2801,9 @@ impl<'a> CPU<'a> {
                 }
                 0xDC => {
                     let nn: u16 = self.read_immediate_short();
-                    self.op_call_nn(nn);
+                    if self.registers.f.get_flag(Flag::C) {
+                        self.op_call_nn(nn);
+                    }
                 }
                 0xDD => {
                     panic!("Unsupported opcode: 0xDD");
@@ -2870,13 +2867,13 @@ impl<'a> CPU<'a> {
                     self.op_rst_address(0x20);
                 }
                 0xE8 => {
-                    let value = self.read_immediate_byte() as i16;
+                    let value = self.read_immediate_byte() as i8 as i16;
                     let sp = self.registers.sp as i16;
                     let result = sp.wrapping_add(value);
                     self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (sp & 0x0F) + (value & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, (sp as i32) + (value as i32) > 0xFF);
+                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result) & 0x10) == 0x10);
+                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result) & 0x100) == 0x100);
                     self.registers.sp = result as u16;
                 }
                 0xE9 => {
@@ -2890,10 +2887,12 @@ impl<'a> CPU<'a> {
                     panic!("Unsupported opcode: 0xEB");
                 }
                 0xEC => {
-                    panic!("Unsupported opcode: 0xEC");
+                    //panic!("Unsupported opcode: 0xEC");
+                    error!("Unsupported opcode: 0xEC");
                 }
                 0xED => {
-                    panic!("Unsupported opcode: 0xED");
+                    //panic!("Unsupported opcode: 0xED");
+                    error!("Unsupported opcode: 0xED");
                 }
                 0xEE => {
                     let value = self.read_immediate_byte();
@@ -2948,8 +2947,8 @@ impl<'a> CPU<'a> {
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ (sp + value)) & 0x10) == 0x10);
-                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ (sp + value)) & 0x100) == 0x100);
+                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ (sp.wrapping_add(value))) & 0x10) == 0x10);
+                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ (sp.wrapping_add(value))) & 0x100) == 0x100);
                 }
 
                 0xF9 => {
@@ -3123,13 +3122,10 @@ impl<'a> CPU<'a> {
         self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
     }*/
     fn op_jr_e(&mut self, offset: i8) {
-        debug!("Jumping to 0x{:04X}",
-        (self.registers.pc as i16).wrapping_add(offset as i16) as u16
-    );
+        debug!("Jumping to 0x{:04X}", (self.registers.pc as i16).wrapping_add(offset as i16) as u16);
         self.registers.pc = (self.registers.pc as i16).wrapping_add(offset as i16) as u16;
     }
-
-
+    
     /*
      *   CALL nn
      *   Unconditional function call to the absolute address specified by the 16-bit operand nn.

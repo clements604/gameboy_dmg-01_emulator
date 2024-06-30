@@ -155,7 +155,7 @@ impl<'a> MemoryBus {
                 self.hram[(address - HRAM_START) as usize] = value
             },
             INTERRUPT_ENABLE_REGISTER => {
-                info!("Interrupt enable register set to {:X}", value);
+                debug!("Interrupt enable register set to {:X}", value);
                 self.interrupt_enable_register = value
             },
             _ => {

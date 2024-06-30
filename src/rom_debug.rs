@@ -1,4 +1,5 @@
-use log::{debug, info};
+use std::process::exit;
+use log::{debug, info, error};
 pub struct rom_debug {
     message: Vec<char>,
 }
@@ -23,7 +24,14 @@ impl rom_debug {
     pub fn print(&self) {
         if self.message.len() > 0 {
             let message: String = self.message.iter().collect();
-            info!("DEBUG: {}", message);
+            if message.contains("Passed") {
+                info!("PASSED: {}", message);
+                exit(0);
+            } else if message.contains("Failed") {
+                error!("FAILED: {}", message);
+                exit(0);
+            }
+            debug!("DEBUG: {}", message);
         }
     }
 

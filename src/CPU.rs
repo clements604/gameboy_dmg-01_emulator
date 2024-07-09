@@ -288,6 +288,7 @@ impl<'a> CPU<'a> {
         self.registers.pc = self.registers.pc.wrapping_add(1);
 
         //self.wait_for_input();
+        if self.registers.pc == 0xCB35 {panic!("0xCB35");}
 
         self.debug_update();
         self.debug_print();
@@ -471,9 +472,7 @@ impl<'a> CPU<'a> {
                     self.registers.e = self.registers.e.wrapping_add(1);
                     self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
                 }
                 0x1D => {
                     let old_value = self.registers.e;
@@ -1230,21 +1229,12 @@ impl<'a> CPU<'a> {
                 }
                 0x96 => {
                     let value = self.memory_bus.read_byte(self.registers.get_hl());
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
+                    //let result = self.registers.a.wrapping_sub(value);
+                    let (result, borrow) = self.registers.a.overflowing_sub(value);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (value as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, borrow); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
                 }
                 0x97 => {
@@ -1271,14 +1261,8 @@ impl<'a> CPU<'a> {
                         .wrapping_sub(carry);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry,
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16)); 
                     self.registers.a = result;
                 }
                 0x99 => {
@@ -1707,15 +1691,9 @@ impl<'a> CPU<'a> {
                     let value = self.read_immediate_byte();
                     let (result, carry) = self.registers.a.overflowing_add(value);
                     self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F, );
+                    self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
                 0xC7 => {
@@ -2411,7 +2389,7 @@ impl<'a> CPU<'a> {
                         0xAE => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.read_byte(hl);
-                            let result = value & !(1 << 6);
+                            let result = value & !(1 << 5);
                             self.memory_bus.write_byte(hl, result);
                         }
                         0xAF => {
@@ -2517,25 +2495,7 @@ impl<'a> CPU<'a> {
                             self.registers.l |= 1 << 1;
                         }
                         0xCE => {
-                            let value = self.read_immediate_byte();
-                            let carry = if self.registers.f.get_flag(Flag::C) {
-                                1
-                            } else {
-                                0
-                            } as u8;
-                            let (result, carry1) = self.registers.a.overflowing_add(value);
-                            let (result, carry2) = result.overflowing_add(carry);
-                            self.registers.f.set_flag(Flag::Z, result == 0);
-                            self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                            self.registers.f.set_flag(
-                                Flag::H,
-                                (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-                            ); // Set the half-carry flag if there's a carry from bit 3
-                            self.registers.f.set_flag(
-                                Flag::C,
-                                carry1 || carry2,
-                            ); // Set the carry flag if there's a carry out of the most significant bit
-                            self.registers.a = result;
+                            self.memory_bus.write_byte(self.registers.get_hl(), self.memory_bus.read_byte(self.registers.get_hl()) | 1 << 1);
                         }
                         0xCF => {
                             self.registers.a |= 1 << 1;
@@ -2771,11 +2731,11 @@ impl<'a> CPU<'a> {
                     let value = self.read_immediate_byte();
                     let (result, overflow) = self.registers.a.overflowing_sub(value);
                     self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(Flag::N, true);
                     self.registers
                         .f
-                        .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, overflow); // Set the carry flag if there's a borrow out of the most significant bit
+                        .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+                    self.registers.f.set_flag(Flag::C, overflow);
                     self.registers.a = result;
                 }
                 0xD7 => {
@@ -2814,18 +2774,18 @@ impl<'a> CPU<'a> {
                     } else {
                         0
                     } as u8;
-                    let n = self.memory_bus.read_byte(self.registers.pc);
+                    let value = self.memory_bus.read_byte(self.registers.pc);
                     self.registers.pc = self.registers.pc.wrapping_add(1);
-                    let result = self.registers.a.wrapping_sub(n).wrapping_sub(carry);
+                    let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                     self.registers.f.set_flag(
                         Flag::H,
-                        (self.registers.a & 0x0F) < (n & 0x0F) + carry,
+                        (self.registers.a & 0x0F) < (value & 0x0F) + carry,
                     ); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(
                         Flag::C,
-                        (self.registers.a as u16) < (n as u16) + (carry as u16),
+                        (self.registers.a as u16) < (value as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
                 }
@@ -2971,9 +2931,9 @@ impl<'a> CPU<'a> {
                     let value = self.read_immediate_byte();
                     let result = self.registers.a.wrapping_sub(value);
                     self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+                    self.registers.f.set_flag(Flag::C, self.registers.a < value);
                 }
                 0xFF => {
                     self.op_rst_address(0x0038);
@@ -3232,13 +3192,18 @@ impl<'a> CPU<'a> {
 
     // TODO add detailed description
     fn op_sla(&mut self, register: &mut u8) {
-        debug!("op_sla");
-        let carry = *register & 0x80 != 0;
+        /*let carry = *register & 0x80 != 0;
         *register <<= 1;
         self.registers.f.set_flag(Flag::Z, *register == 0);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, false);
-        self.registers.f.set_flag(Flag::C, carry);
+        self.registers.f.set_flag(Flag::C, carry);*/
+        let carry = *register >> 7;
+        *register <<= 1;
+        self.registers.f.set_flag(Flag::Z, *register == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, carry == 1);
     }
 
     // TODO add detailed description

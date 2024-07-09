@@ -53,6 +53,9 @@ pub struct CPU<'a> {
     //pub call_stack: Vec<u16>,
     halted: bool,
     stopped: bool,
+    int_master_enable: bool,
+    enable_ime: bool,
+    interupt_enable_register: u8,
     rom_debug: rom_debug::rom_debug,
 }
 
@@ -246,14 +249,14 @@ impl<'a> CPU<'a> {
     pub fn new(memory_bus: &'a mut  MemoryBus) -> Self {
         CPU {
             registers: Registers::new(),
-            //work_ram: [0; 0xFFFFF],
             video_ram: [0; 8192],
             gpu: GPU::new(),
-            //call_stack: vec![0x0000], //TODO should be 0xFFFE?
             memory_bus,
-            //call_stack: Vec::new(),
             halted: false,
             stopped: false,
+            int_master_enable: false,
+            enable_ime: false,
+            interupt_enable_register: 0,
             rom_debug: rom_debug::rom_debug::new(),
         }
     }
@@ -300,13 +303,23 @@ impl<'a> CPU<'a> {
             debug!("Interrupt enable register: 0x{:X}", self.memory_bus.interrupt_enable_register);
             self.op_nop();
             //if self.memory_bus.interrupt_enable_register & self.memory_bus.read_byte(0xFF0F) != 0x0 {
+            if self.interupt_enable_register > 0x0 {
+                info!("CPU waking up");
+                self.halted = false;
+            }
+            if self.int_master_enable {
+                unimplemented!("int_master_enable not implemented");
+            }
+            if self.enable_ime {
+                unimplemented!("enable_ime not implemented");
+            }
             if self.memory_bus.read_byte(0xFFFF) != 0x0 {
                 info!("CPU waking up");
                 self.halted = false;
             }
             else{
                 debug!("For testing purposes, disabling halt");
-                self.memory_bus.write_byte(0xFFFF, 0x1);
+                //self.memory_bus.write_byte(0xFFFF, 0x1);
             }
         }
         else {
@@ -535,21 +548,25 @@ impl<'a> CPU<'a> {
                 }
                 0x27 => {
                     let mut a = self.registers.a;
-                    let mut adjust = 0;
-                    if self.registers.f.get_flag(Flag::H)
-                        || (!self.registers.f.get_flag(Flag::N) && (a & 0x0F) > 9)
-                    {
-                        adjust |= 0x06;
+                    if !self.registers.f.get_flag(Flag::N) {
+                        if self.registers.f.get_flag(Flag::C) || a > 0x99 {
+                            a = a.wrapping_add(0x60);
+                            self.registers.f.set_flag(Flag::C, true);
+                        }
+                        if self.registers.f.get_flag(Flag::H) || (a & 0x0F) > 0x09 {
+                            a = a.wrapping_add(0x06);
+                        }
+                    } else {
+                        if self.registers.f.get_flag(Flag::C) {
+                            a = a.wrapping_sub(0x60);
+                        }
+                        if self.registers.f.get_flag(Flag::H) {
+                            a = a.wrapping_sub(0x06);
+                        }
                     }
-                    if self.registers.f.get_flag(Flag::C)
-                        || (!self.registers.f.get_flag(Flag::N) && a > 0x99)
-                    {
-                        adjust |= 0x60;
-                        self.registers.f.set_flag(Flag::C, true);
-                    }
-                    a = a.wrapping_add(adjust);
-                    self.registers.f.set_flag(Flag::H, false);
+
                     self.registers.f.set_flag(Flag::Z, a == 0);
+                    self.registers.f.set_flag(Flag::H, false);
                     self.registers.a = a;
                 }
                 0x28 => {
@@ -598,6 +615,7 @@ impl<'a> CPU<'a> {
                     self.registers.l = value;
                 }
                 0x2F => {
+                    // CPL = complement A register
                     self.registers.a = !self.registers.a;
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::H, true);

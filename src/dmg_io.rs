@@ -1,4 +1,5 @@
 use log::{debug, error};
+use crate::CPU::CPU;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE};
 
 pub struct IO {
@@ -28,7 +29,7 @@ impl IO {
             }
         }
     }
-    pub fn write(&mut self, address: u16, value: u8) {
+    pub fn write(&mut self, address: u16, value: u8, cpu: &mut CPU) {
         debug!("Write to IO address: {:#X}", address);
         match address {
             0xFF01 => {
@@ -36,6 +37,10 @@ impl IO {
             },
             0xFF02 => {
                 self.serial_data[1] = value as char;
+            },
+            0xFF0F => {
+                debug!("Interrupt flag write: {:#X}", value);
+                cpu.interrupt_flags = value;
             },
             _ => {
                 self.io_registers[(address - IO_REGISTERS_START) as usize] = value;

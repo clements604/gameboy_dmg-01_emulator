@@ -12,6 +12,7 @@ use crate::memory_bus;
 use constants::*;
 use rom::*;
 use memory_bus::MemoryBus;
+use crate::interupts::*;
 
 #[derive(Debug)]
 pub struct Registers {
@@ -49,13 +50,15 @@ pub struct CPU<'a> {
     video_ram: [u16; 8192],
     //interrupt_enable_register: u8,
     gpu: GPU,
-    memory_bus: &'a mut MemoryBus,
+    pub memory_bus: MemoryBus,
     //pub call_stack: Vec<u16>,
-    halted: bool,
+    pub halted: bool,
     stopped: bool,
-    int_master_enable: bool,
+    pub interrupt_master_enable: bool,
     enable_ime: bool,
-    interupt_enable_register: u8,
+    pub interrupt_enable_register: u8,
+    pub interrupt_flags: u8,
+    //interrupts: Interrupts,
     rom_debug: rom_debug::rom_debug,
 }
 
@@ -246,7 +249,7 @@ impl std::convert::From<u16> for FlagsRegister {
 }
 
 impl<'a> CPU<'a> {
-    pub fn new(memory_bus: &'a mut  MemoryBus) -> Self {
+    pub fn new(memory_bus: &'a mut MemoryBus) -> Self {
         CPU {
             registers: Registers::new(),
             video_ram: [0; 8192],
@@ -254,10 +257,12 @@ impl<'a> CPU<'a> {
             memory_bus,
             halted: false,
             stopped: false,
-            int_master_enable: false,
+            interrupt_master_enable: false,
             enable_ime: false,
-            interupt_enable_register: 0,
+            interrupt_enable_register: 0,
             rom_debug: rom_debug::rom_debug::new(),
+            //interrupts: Interrupts::new(),
+            interrupt_flags: 0,
         }
     }
 
@@ -276,53 +281,34 @@ impl<'a> CPU<'a> {
      */
     pub fn cycle(&mut self) {
         debug!("##################################################");
-        debug!("Fetch");
 
-        //debug!("{:?}", self.registers);
+        if !self.halted {
 
-        let opcode = self.memory_bus.read_byte(self.registers.pc);
+            debug!("Fetch");
+    
+            //debug!("{:?}", self.registers);
+    
+            let opcode = self.memory_bus.read_byte(self.registers.pc);
+    
+            debug!("PC [0x{:X}]", self.registers.pc);
+            debug!("Opcode [0x{:X}]", opcode);
+            //debug!("{}", self.registers);
+            //self.debug_print_tile_data();
+            //debug!("Registers: {}", self.registers);
 
-        debug!("PC [0x{:X}]", self.registers.pc);
-        debug!("Opcode [0x{:X}]", opcode);
-        //debug!("{}", self.registers);
-        //self.debug_print_tile_data();
-        //debug!("Registers: {}", self.registers);
-
-        self.registers.pc = self.registers.pc.wrapping_add(1);
-
-        //self.wait_for_input();
-        if self.registers.pc == 0xCB35 {panic!("0xCB35");}
-
-        self.debug_update();
-        self.debug_print();
-
-        debug!("Decode & Execute");
-
-        if self.halted {
-            info!("CPU halted");
-            debug!("Interrupt enable register: 0x{:X}", self.memory_bus.interrupt_enable_register);
-            self.op_nop();
-            //if self.memory_bus.interrupt_enable_register & self.memory_bus.read_byte(0xFF0F) != 0x0 {
-            if self.interupt_enable_register > 0x0 {
-                info!("CPU waking up");
-                self.halted = false;
+            if self.registers.pc == 0xc701 {
+                info!("{}", self.registers);
+                panic!("hello [0x{:X}]", self.registers.pc);
             }
-            if self.int_master_enable {
-                unimplemented!("int_master_enable not implemented");
-            }
-            if self.enable_ime {
-                unimplemented!("enable_ime not implemented");
-            }
-            if self.memory_bus.read_byte(0xFFFF) != 0x0 {
-                info!("CPU waking up");
-                self.halted = false;
-            }
-            else{
-                debug!("For testing purposes, disabling halt");
-                //self.memory_bus.write_byte(0xFFFF, 0x1);
-            }
-        }
-        else {
+    
+            self.registers.pc = self.registers.pc.wrapping_add(1);
+    
+            self.debug_update();
+            self.debug_print();
+    
+            debug!("Decode & Execute");
+
+        
             match opcode {
                 0x00 => {
                     self.op_nop();
@@ -384,7 +370,7 @@ impl<'a> CPU<'a> {
                     self.registers.a = self.memory_bus.read_byte(self.registers.get_bc());
                 }
                 0x0B => {
-                    self.registers.set_bc(self.registers.get_bc() - 1);
+                    self.registers.set_bc(self.registers.get_bc().wrapping_sub(1));
                 }
                 0x0C => {
                     let old_value = self.registers.c;
@@ -415,7 +401,7 @@ impl<'a> CPU<'a> {
                 }
                 0x10 => {
                     // TODO - Implement STOP
-                    debug!("CPU stopped");
+                    error!("CPU stopped");
                     self.stopped = true;
                 }
                 0x11 => {
@@ -426,7 +412,7 @@ impl<'a> CPU<'a> {
                     self.memory_bus.write_byte(self.registers.get_de(), self.registers.a);
                 }
                 0x13 => {
-                    self.registers.set_de(self.registers.get_de() + 1);
+                    self.registers.set_de(self.registers.get_de().wrapping_add(1));
                 }
                 0x14 => {
                     let old_value = self.registers.d;
@@ -469,16 +455,14 @@ impl<'a> CPU<'a> {
                     let (result, carry) = hl.overflowing_add(de);
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (hl & 0x0FFF) + (de & 0x0FFF) > 0x0FFF);
+                    self.registers.f.set_flag(Flag::H, (hl & 0xFFF) + (de & 0xFFF) > 0xFFF);
                     self.registers.f.set_flag(Flag::C, carry);
                 }
                 0x1A => {
                     self.registers.a = self.memory_bus.read_byte(self.registers.get_de());
                 }
                 0x1B => {
-                    self.registers.set_de(self.registers.get_de() - 1);
+                    self.registers.set_de(self.registers.get_de().wrapping_sub(1));
                 }
                 0x1C => {
                     let old_value = self.registers.e;
@@ -526,7 +510,7 @@ impl<'a> CPU<'a> {
                     self.registers.set_hl(self.registers.get_hl() + 1);
                 }
                 0x23 => {
-                    self.registers.set_hl(self.registers.get_hl() + 1);
+                    self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
                 }
                 0x24 => {
                     let old_value = self.registers.h;
@@ -564,7 +548,6 @@ impl<'a> CPU<'a> {
                             a = a.wrapping_sub(0x06);
                         }
                     }
-
                     self.registers.f.set_flag(Flag::Z, a == 0);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.a = a;
@@ -580,9 +563,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = hl.overflowing_add(hl);
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
+                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
                     self.registers.f.set_flag(Flag::C, carry);
                 }
                 0x2A => {
@@ -599,9 +580,7 @@ impl<'a> CPU<'a> {
                     self.registers.l = self.registers.l.wrapping_add(1);
                     self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
                 }
                 0x2D => {
                     let old_value = self.registers.l;
@@ -644,9 +623,7 @@ impl<'a> CPU<'a> {
                     self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
                     self.registers.f.set_flag(Flag::N, false);
                     self.memory_bus.write_byte(hl, value.wrapping_add(1));
-                    self.registers
-                        .f
-                        .set_flag(Flag::Z, self.memory_bus.read_byte(hl) == 0);
+                    self.registers.f.set_flag(Flag::Z, self.memory_bus.read_byte(hl) == 0);
                 }
                 0x35 => {
                     let hl = self.registers.get_hl();
@@ -677,10 +654,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = hl.overflowing_add(self.registers.sp);
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (hl & 0x0FFF) + (self.registers.sp & 0x0FFF) > 0x0FFF,
-                    );
+                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (self.registers.sp & 0x0FFF) > 0x0FFF);
                     self.registers.f.set_flag(Flag::C, carry);
                 }
                 0x3A => {
@@ -696,9 +670,7 @@ impl<'a> CPU<'a> {
                     self.registers.a = self.registers.a.wrapping_add(1);
                     self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
                 }
                 0x3D => {
                     let old_value = self.registers.a;
@@ -714,9 +686,7 @@ impl<'a> CPU<'a> {
                 0x3F => {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+                    self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
                 }
                 0x40 => {
                     self.registers.b = self.registers.b;
@@ -882,7 +852,7 @@ impl<'a> CPU<'a> {
                 }
                 0x76 => {
                     info!("Halting CPU");
-                    self.halted = true;
+                    self.op_halt();
                 }
                 0x77 => {
                     self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
@@ -915,10 +885,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.b);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.b & 0x0F) > 0x0F,
-                    );
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.b & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -926,10 +893,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.c);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.c & 0x0F) > 0x0F,
-                    );
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.c & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -938,9 +902,7 @@ impl<'a> CPU<'a> {
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.d & 0x0F) > 0x0F,
-                    );
+                        Flag::H, (self.registers.a & 0x0F) + (self.registers.d & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -948,10 +910,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.e);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.e & 0x0F) > 0x0F,
-                    );
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.e & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -959,10 +918,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.h);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.h & 0x0F) > 0x0F,
-                    );
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.h & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -970,10 +926,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.l);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.l & 0x0F) > 0x0F,
-                    );
+                    self.registers.f.set_flag(Flag::H,(self.registers.a & 0x0F) + (self.registers.l & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -982,9 +935,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(value);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -992,10 +943,7 @@ impl<'a> CPU<'a> {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.a);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F,
-                    );
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
                 }
@@ -2693,6 +2641,7 @@ impl<'a> CPU<'a> {
                 }
                 0xCD => {
                     let nn: u16 = self.read_immediate_short();
+                    debug!("CALL {:04X}", nn);
                     self.op_call_nn(nn);
                 }
                 0xCE => {
@@ -2750,9 +2699,7 @@ impl<'a> CPU<'a> {
                     let (result, overflow) = self.registers.a.overflowing_sub(value);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
                     self.registers.f.set_flag(Flag::C, overflow);
                     self.registers.a = result;
                 }
@@ -2793,7 +2740,7 @@ impl<'a> CPU<'a> {
                         0
                     } as u8;
                     let value = self.memory_bus.read_byte(self.registers.pc);
-                    self.registers.pc = self.registers.pc.wrapping_add(1);
+                    // Do not manually increment self.registers.pc here as read_byte already increments it
                     let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
@@ -2813,6 +2760,7 @@ impl<'a> CPU<'a> {
                 0xE0 => {
                     let offset = self.read_immediate_byte() as u16;
                     let address = 0xFF00 + offset;
+                    debug!("LDH (0xFF00 + {:02X}), A", offset);
                     self.memory_bus.write_byte(address, self.registers.a);
                 }
                 0xE1 => {
@@ -2845,7 +2793,7 @@ impl<'a> CPU<'a> {
                     self.op_rst_address(0x20);
                 }
                 0xE8 => {
-                    let value = self.read_immediate_byte() as i8 as i16;
+                    let value = self.read_immediate_byte() as i16;
                     let sp = self.registers.sp as i16;
                     let result = sp.wrapping_add(value);
                     self.registers.f.set_flag(Flag::Z, false);
@@ -2925,10 +2873,9 @@ impl<'a> CPU<'a> {
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ (sp.wrapping_add(value))) & 0x10) == 0x10);
-                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ (sp.wrapping_add(value))) & 0x100) == 0x100);
+                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result as i16) & 0x10) == 0x10);
+                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result as i16) & 0x100) == 0x100);
                 }
-
                 0xF9 => {
                     self.registers.sp = self.registers.get_hl();
                 }
@@ -2961,6 +2908,24 @@ impl<'a> CPU<'a> {
                 }
             }
         }
+        else {
+            info!("CPU halted");
+
+            if self.interrupt_flags > 0x0 {
+                info!("CPU waking up");
+                self.halted = false;
+            }
+        }
+
+        if self.interrupt_master_enable {
+            handle_interrupts(self);
+            self.enable_ime = false;
+        }
+
+        if self.enable_ime {
+            self.interrupt_master_enable = true;
+        }
+
     }
 
     /*
@@ -2975,57 +2940,12 @@ impl<'a> CPU<'a> {
      *   Read the immediate 16-bit value from memory for the current program counter and program counter + 1.
      */
     fn read_immediate_short(&mut self) -> u16 {
-        /*let lsb = self.work_ram[self.registers.pc as usize];
-        self.registers.pc = self.registers.pc.wrapping_add(1);
-        let msb = self.work_ram[self.registers.pc as usize];
-        self.registers.pc = self.registers.pc.wrapping_add(1);
-        (msb as u16) << 8 | lsb as u16*/
         let lsb = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
         let msb = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
         (msb as u16) << 8 | lsb as u16
     }
-
-    /*
-     *   Read the 16-bit value from memory for a given address.
-     */
-    /*fn read_short(&mut self, address: u16) -> u16 {
-        match address {
-            0x0000..=0x7FFF => {
-                let lsb = self.work_ram[address as usize];
-                let msb = self.work_ram[address.wrapping_add(1) as usize];
-                (msb as u16) << 8 | lsb as u16
-            }
-            0x8000..=0x9FFF => self.gpu.read_short(address),
-            0xA000..=0xBFFF => unimplemented!("From cartridge, switchable bank if any"),
-            0xC000..=0xCFFF => {
-                unimplemented!("4 KiB Work RAM (WRAM)")
-            },
-            0xE000..=0xFDFF => {
-                debug!("Echo RAM (mirror of C000–DDFF), Nintendo says use of this area is prohibited.");
-                return 0x0;
-            },
-            0xFE00..=0xFE9F => {
-                unimplemented!("Sprite attribute table (OAM)")
-            },
-            0xFEA0..=0xFEFF => {
-                debug!("Not Usable");
-                return 0x0;
-            },
-            0xFF00..=0xFF7F => {
-                unimplemented!("I/O Registers")
-            },
-            0xFF80..=0xFFFE => {
-                unimplemented!("High RAM (HRAM)")
-            },
-            0xFFFF => {
-                unimplemented!("Interrupt Enable Register")
-            },
-            _ => panic!("Unsupported address: {:X}", address),
-        }
-
-    }*/
 
     /*
      *   Read the immediate 8-bit value from memory for the current program counter.
@@ -3133,15 +3053,18 @@ impl<'a> CPU<'a> {
 
     fn op_halt(&mut self) {
         debug!("op_halt");
-        self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        //self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        self.halted = true;
     }
     fn op_stop(&mut self) {
         debug!("op_stop");
-        self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        self.halted = true;
+        //self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        
     }
     fn op_di(&mut self) {
         debug!("op_di");
-        self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 0);
+        self.interrupt_master_enable = false;
     }
 
     /*
@@ -3150,7 +3073,7 @@ impl<'a> CPU<'a> {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        self.enable_ime = true;
     }
 
     /*
@@ -3210,12 +3133,6 @@ impl<'a> CPU<'a> {
 
     // TODO add detailed description
     fn op_sla(&mut self, register: &mut u8) {
-        /*let carry = *register & 0x80 != 0;
-        *register <<= 1;
-        self.registers.f.set_flag(Flag::Z, *register == 0);
-        self.registers.f.set_flag(Flag::N, false);
-        self.registers.f.set_flag(Flag::H, false);
-        self.registers.f.set_flag(Flag::C, carry);*/
         let carry = *register >> 7;
         *register <<= 1;
         self.registers.f.set_flag(Flag::Z, *register == 0);
@@ -3259,9 +3176,7 @@ impl<'a> CPU<'a> {
     // TODO add detailed description
     fn op_bit(&mut self, bit: u8, register: u8) {
         debug!("op_bit");
-        self.registers
-            .f
-            .set_flag(Flag::Z, (register & (1 << bit)) == 0);
+        self.registers.f.set_flag(Flag::Z, (register & (1 << bit)) == 0);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, true);
     }
@@ -3275,7 +3190,7 @@ impl<'a> CPU<'a> {
         self.registers.pc = address;
     }
 
-    fn op_push_stack(&mut self, address: u16) {
+    pub fn op_push_stack(&mut self, address: u16) {
         debug!("op_push_stack");
         self.registers.sp = self.registers.sp.wrapping_sub(2);
         self.memory_bus.write_short(self.registers.sp, address);

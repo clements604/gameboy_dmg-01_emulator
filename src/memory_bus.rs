@@ -41,6 +41,12 @@ const HRAM_START: u16 = 0xFF80;
 const HRAM_END: u16 = 0xFFFE;
 const HRAM_SIZE: usize = ((HRAM_END - HRAM_START) + 1) as usize;
 pub const INTERRUPT_ENABLE_REGISTER: u16 = 0xFFFF;
+const VBLANK_INTERRUPT_ADDR: u16 = 0x0040;
+const LCD_STAT_INTERRUPT_ADDR: u16 = 0x0048;
+const TIMER_INTERRUPT_ADDR: u16 = 0x0050;
+const SERIAL_INTERRUPT_ADDR: u16 = 0x0058;
+const JOYPAD_INTERRUPT_ADDR: u16 = 0x0060;
+
 pub struct MemoryBus {
     pub rom: [u8; (ROM_BANK_0_END - ROM_BANK_0_START) as usize], // TODO UPDATE
     pub rom_bank_0: [u8; ROM_BANK_0_SIZE],

@@ -4,22 +4,28 @@ use std::io::prelude::*;
 use std::io::{self, Read};
 use std::{error, fmt, result};
 
-use crate::constants;
+use crate::{constants, rom_debug};
+use crate::display::GPU;
+use crate::display;
 use crate::rom;
+use crate::memory_bus;
 use constants::*;
 use rom::*;
+use memory_bus::MemoryBus;
+use crate::interupts::*;
 
+#[derive(Debug)]
 pub struct Registers {
-    a: u8, // Accumulator register
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    f: FlagsRegister, // Flags
-    h: u8,
-    l: u8,
+    pub a: u8, // Accumulator register
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub f: FlagsRegister, // Flags
+    pub h: u8,
+    pub l: u8,
     pub pc: u16, // Program counter
-    sp: u16,     // Stack pointer
+    pub sp: u16,     // Stack pointer
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -38,28 +44,36 @@ pub enum Flag {
     C, // Carry flag
 }
 
-pub struct CPU {
+pub struct CPU<'a> {
     pub registers: Registers,
-    //work_ram: [u8; 0xFFFF],
-    work_ram: [u8; 0xFFFFF],
+    //work_ram: [u8; 0xFFFFF],
     video_ram: [u16; 8192],
-    interupt: bool,
-    call_stack: Vec<u16>,
+    //interrupt_enable_register: u8,
+    gpu: GPU,
+    pub memory_bus: &'a mut MemoryBus,
+    //pub call_stack: Vec<u16>,
+    pub halted: bool,
+    stopped: bool,
+    pub interrupt_master_enable: bool,
+    pub interrupt_enable_register: u8,
+    pub interrupt_flags: u8,
+    //interrupts: Interrupts,
+    rom_debug: rom_debug::rom_debug,
 }
 
 impl Registers {
     pub fn new() -> Self {
         Registers {
-            a: 0,
-            b: 0,
-            c: 0,
-            d: 0,
-            e: 0,
+            a: 0x01,
+            b: 0x0,
+            c: 0x13,
+            d: 0x0,
+            e: 0xD8,
             f: FlagsRegister::new(),
-            h: 0,
-            l: 0,
-            pc: 0x0100, //0x0,
-            sp: 0,
+            h: 0x01,
+            l: 0x4D,
+            pc: 0x0100,
+            sp: 0xFFFE,
         }
     }
 
@@ -104,17 +118,48 @@ impl Registers {
 
 impl fmt::Display for Registers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Registers: A: {:02X} B: {:02X} C: {:02X} D: {:02X} E: {:02X} F: {} H: {:02X} L: {:02X} PC: {:04X} SP: {:04X}", self.a, self.b, self.c, self.d, self.e, self.f, self.h, self.l, self.pc, self.sp)
+        write!(
+            f,
+            "Registers:
+        A: {:02X}
+        B: {:02X}
+        C: {:02X}
+        D: {:02X}
+        E: {:02X}
+        H: {:02X}
+        L: {:02X}
+        AF: {:02X}
+        BC: {:02X}
+        DE: {:02X}
+        HL: {:02X}
+        PC: {:04X}
+        SP: {:04X}
+        F: {}",
+            self.a,
+            self.b,
+            self.c,
+            self.d,
+            self.e,
+            self.h,
+            self.l,
+            self.get_af(),
+            self.get_bc(),
+            self.get_de(),
+            self.get_hl(),
+            self.pc,
+            self.sp,
+            self.f
+        )
     }
 }
 
 impl FlagsRegister {
     pub fn new() -> Self {
         FlagsRegister {
-            zero: false,
+            zero: true,
             subtract: false,
-            half_carry: false,
-            carry: false,
+            half_carry: true,
+            carry: true,
         }
     }
 
@@ -202,2660 +247,2673 @@ impl std::convert::From<u16> for FlagsRegister {
     }
 }
 
-impl CPU {
-    pub fn new() -> Self {
+impl<'a> CPU<'a> {
+    pub fn new(memory_bus: &'a mut MemoryBus) -> Self {
         CPU {
             registers: Registers::new(),
-            work_ram: [0; 0xFFFFF],
             video_ram: [0; 8192],
-            interupt: false,
-            call_stack: vec![0x0000], //TODO should be 0xFFFE?
+            gpu: GPU::new(),
+            memory_bus,
+            halted: false,
+            stopped: false,
+            interrupt_master_enable: false,
+            interrupt_enable_register: 0,
+            rom_debug: rom_debug::rom_debug::new(),
+            //interrupts: Interrupts::new(),
+            interrupt_flags: 0,
         }
     }
 
-    /*
-     *  Load the boot ROM into memory
-     */
-    pub fn load_boot_rom(&mut self, file_path: String) {
-        debug!("Loading boot ROM");
-        let mut file = File::open(file_path).expect("Boot ROM file not found");
-        let mut buffer: Vec<u8> = Vec::new();
-
-        // Read the file into a buffer
-        file.read_to_end(&mut buffer)
-            .expect("Error reading boot rom file");
-        debug!(
-            "Boot ROM file size: {} bytes / {} kilobytes",
-            buffer.len(),
-            buffer.len() / 1024
-        );
-
-        for (i, byte) in buffer.iter().enumerate() {
-            self.work_ram[i] = *byte;
+    /*fn debug_print_tile_data(&mut self) {
+        let tile_data = &self.work_ram[TILE_RAM_START as usize..=TILE_RAM_END as usize];
+        for (i, byte) in tile_data.iter().enumerate() {
+            if i % 16 == 0 {
+                println!();
+            }
+            print!("{:02X} ", byte);
         }
-
-        debug!("Boot ROM loaded into memory");
-    }
-
-    /*
-     *   Load the ROM into memory
-     */
-    pub fn load_rom(&mut self, file_path: String) {
-        debug!("Loading ROM: {}", file_path);
-        let mut file = File::open(file_path).expect("ROM file not found");
-        let mut buffer: Vec<u8> = Vec::new();
-
-        // Read the file into a buffer
-        file.read_to_end(&mut buffer).expect("Error reading file");
-        debug!(
-            "ROM file size: {} bytes / {} kilobytes",
-            buffer.len(),
-            buffer.len() / 1024
-        );
-
-        let rom = ROM::new(buffer);
-        debug!("{}", rom);
-
-        rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
-                                                 // Check cartridge type and load the ROM into memory based on the type
-
-        for byte in 0x00..0x3FFF {
-            self.work_ram[byte] = rom.rom[byte];
-        }
-
-        //for (i, byte) in rom.rom.iter().enumerate() {
-        //    self.work_ram[0x0100 + i] = *byte;
-        //}
-
-        debug!("ROM Bank 0 loaded into memory");
-        if rom.cartridge_type == 0x00 {
-            // ROM ONLY
-            debug!("ROM ONLY");
-        } else {
-            debug!("ROM with MBC");
-            let rom_banks = rom.load_rom_to_banks();
-            self.work_ram[0x4000..=0x7FFF].copy_from_slice(&rom_banks.data[0]); // Load the first bank of the ROM into memory
-            debug!(
-                "ROM Bank 1 loaded into memory, size: {} bytes",
-                rom_banks.data[0].len()
-            );
-        }
-        //debug!("ROM loaded into memory");
-    }
+    }*/
 
     /*
      *   CPU cycle - fetch, decode, execute
      */
     pub fn cycle(&mut self) {
         debug!("##################################################");
-        debug!("Fetch");
 
-        let opcode = self.work_ram[self.registers.pc as usize];
-        self.registers.pc = self.registers.pc.wrapping_add(1);
+        if !self.halted {
 
-        debug!("PC [0x{:X}]", self.registers.pc);
-        debug!("Opcode [0x{:X}]", opcode);
-        //self.wait_for_input();
-        self.print_debug();
+            debug!("Fetch");
+    
+            //debug!("{:?}", self.registers);
+    
+            let opcode = self.memory_bus.read_byte(self.registers.pc);
+    
+            debug!("PC [0x{:X}]", self.registers.pc);
+            debug!("Opcode [0x{:X}]", opcode);
+            //debug!("{}", self.registers);
+            //self.debug_print_tile_data();
+            //debug!("Registers: {}", self.registers);
 
-        if self.work_ram[0xff02] == 0x81 {
-            // TODO Temp for development, delete this
-            info!("CPU test [{}]", self.work_ram[0xff01] as char);
-            self.work_ram[0xff02] = 0x0;
-        }
+            if self.registers.pc == 0xc701 {
+                info!("{}", self.registers);
+                panic!("hello [0x{:X}]", self.registers.pc);
+            }
+    
+            self.registers.pc = self.registers.pc.wrapping_add(1);
+    
+            self.debug_update();
+            self.debug_print();
+    
+            debug!("Decode & Execute");
 
-        debug!("Decode & Execute");
-
-        match opcode {
-            0x00 => {
-                self.op_nop();
-            }
-            0x01 => {
-                let nn: u16 = self.read_immediate_short();
-                self.registers.set_bc(nn);
-            }
-            0x02 => {
-                self.work_ram[self.registers.get_bc() as usize] = self.registers.a;
-            }
-            0x03 => {
-                self.registers
-                    .set_bc(self.registers.get_bc().wrapping_add(1));
-            }
-            0x04 => {
-                self.registers.b = self.registers.b.wrapping_add(1);
-            }
-            0x05 => {
-                self.registers.b = self.registers.b.wrapping_sub(1);
-            }
-            0x06 => {
-                let value = self.read_immediate_byte();
-                self.registers.b = value;
-            }
-            0x07 => {
-                let old_carry = self.registers.f.get_flag(Flag::C);
-                let a = self.registers.a;
-                let new_carry = a & 0x80 != 0;
-                self.registers.a = (a << 1) | (old_carry as u8);
-                self.registers.f.set_flag(Flag::C, new_carry);
-                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-            }
-            0x08 => {
-                let nn: u16 = self.read_immediate_short();
-                self.write_immediate_short(nn, self.registers.sp);
-            }
-            0x09 => {
-                let hl = self.registers.get_hl();
-                let bc = self.registers.get_bc();
-                self.registers.set_hl(hl + bc);
-            }
-            0x0A => {
-                self.registers.a = self.work_ram[self.registers.get_bc() as usize];
-            }
-            0x0B => {
-                self.registers.set_bc(self.registers.get_bc() - 1);
-            }
-            0x0C => {
-                self.registers.c = self.registers.c.wrapping_add(1);
-            }
-            0x0D => {
-                self.registers.c = self.registers.c.wrapping_sub(1);
-            }
-            0x0E => {
-                let value = self.read_immediate_byte();
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-                self.registers.c = value;
-            }
-            0x0F => {
-                let a = self.registers.a;
-                let carry = (self.registers.a & 0x01) != 0;
-                self.registers.a = (a >> 1) | (carry as u8) << 7;
-
-                self.registers.f.set_flag(Flag::C, carry);
-
-                self.registers.f.set_flag(Flag::Z, false);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-            }
-            0x10 => {
-                // TODO - Implement STOP
-                error!("STOP not implemented");
-                //unimplemented!("STOP not implemented");
-            }
-            0x11 => {
-                let nn: u16 = self.read_immediate_short();
-                self.registers.set_de(nn);
-            }
-            0x12 => {
-                self.work_ram[self.registers.get_de() as usize] = self.registers.a;
-            }
-            0x13 => {
-                self.registers.set_de(self.registers.get_de() + 1);
-            }
-            0x14 => {
-                self.registers.d = self.registers.d.wrapping_add(1);
-            }
-            0x15 => {
-                self.registers.d = self.registers.d.wrapping_sub(1);
-            }
-            0x16 => {
-                let value = self.read_immediate_byte();
-                self.registers.d = value;
-            }
-            0x17 => {
-                let carry = self.registers.a & 0x80 != 0;
-                self.registers.a = (self.registers.a << 1)
-                    | (if self.registers.f.get_flag(Flag::C) {
+        
+            match opcode {
+                0x00 => {
+                    self.op_nop();
+                }
+                0x01 => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.registers.set_bc(nn);
+                }
+                0x02 => {
+                    self.memory_bus.write_byte(self.registers.get_bc(), self.registers.a);
+                }
+                0x03 => {
+                    self.registers
+                        .set_bc(self.registers.get_bc().wrapping_add(1));
+                }
+                0x04 => {
+                    let old_value = self.registers.b;
+                    self.registers.b = self.registers.b.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                }
+                0x05 => {
+                    let old_value = self.registers.b;
+                    self.registers.b = self.registers.b.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                }
+                0x06 => {
+                    let value = self.read_immediate_byte();
+                    self.registers.b = value;
+                }
+                0x07 => {
+                    let a = self.registers.a;
+                    let new_carry = (a & 0x80) != 0;
+                    self.registers.a = (a << 1) | if new_carry { 0x01 } else { 0x00 };
+                    self.registers.f.set_flag(Flag::C, new_carry);
+                    self.registers.f.set_flag(Flag::Z, false); // The Z flag is not affected
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                }
+                0x08 => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.write_immediate_short(nn, self.registers.sp);
+                }
+                0x09 => {
+                    let hl = self.registers.get_hl();
+                    let bc = self.registers.get_bc();
+                    let (result, carry) = hl.overflowing_add(bc);
+                    self.registers.set_hl(result);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers
+                        .f
+                        .set_flag(Flag::H, (hl & 0x0FFF) + (bc & 0x0FFF) > 0x0FFF);
+                    self.registers.f.set_flag(Flag::C, carry);
+                }
+                0x0A => {
+                    self.registers.a = self.memory_bus.read_byte(self.registers.get_bc());
+                }
+                0x0B => {
+                    self.registers.set_bc(self.registers.get_bc().wrapping_sub(1));
+                }
+                0x0C => {
+                    let old_value = self.registers.c;
+                    self.registers.c = self.registers.c.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                }
+                0x0D => {
+                    let old_value = self.registers.c;
+                    self.registers.c = self.registers.c.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                }
+                0x0E => {
+                    let value = self.read_immediate_byte();
+                    self.registers.c = value;
+                }
+                0x0F => {
+                    let a = self.registers.a;
+                    let carry = (self.registers.a & 0x01) != 0;
+                    self.registers.a = (a >> 1) | (carry as u8) << 7;
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.f.set_flag(Flag::Z, false);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                }
+                0x10 => {
+                    // TODO - Implement STOP
+                    error!("CPU stopped");
+                    self.stopped = true;
+                }
+                0x11 => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.registers.set_de(nn);
+                }
+                0x12 => {
+                    self.memory_bus.write_byte(self.registers.get_de(), self.registers.a);
+                }
+                0x13 => {
+                    self.registers.set_de(self.registers.get_de().wrapping_add(1));
+                }
+                0x14 => {
+                    let old_value = self.registers.d;
+                    self.registers.d = self.registers.d.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                }
+                0x15 => {
+                    let old_value = self.registers.d;
+                    self.registers.d = self.registers.d.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                }
+                0x16 => {
+                    let value = self.read_immediate_byte();
+                    self.registers.d = value;
+                }
+                0x17 => {
+                    let carry = self.registers.a & 0x80 != 0;
+                    self.registers.a = (self.registers.a << 1)
+                        | (if self.registers.f.get_flag(Flag::C) {
                         1
                     } else {
                         0
                     });
-                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, carry);
-            }
-            0x18 => {
-                let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-                self.op_jr_e(offset);
-            }
-            0x19 => {
-                let hl = self.registers.get_hl();
-                let de = self.registers.get_de();
-                self.registers.set_hl(hl + de);
-            }
-            0x1A => {
-                self.registers.a = self.work_ram[self.registers.get_de() as usize];
-            }
-            0x1B => {
-                self.registers.set_de(self.registers.get_de() - 1);
-            }
-            0x1C => {
-                self.registers.e = self.registers.e.wrapping_add(1);
-            }
-            0x1D => {
-                self.registers.e = self.registers.e.wrapping_sub(1);
-            }
-            0x1E => {
-                let value = self.read_immediate_byte();
-                self.registers.e = value;
-            }
-            0x1F => {
-                let carry = self.registers.a & 0x01 != 0;
-                self.registers.a = (self.registers.a >> 1)
-                    | (if self.registers.f.get_flag(Flag::C) {
+                    self.registers.f.set_flag(Flag::Z, false);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, carry);
+                }
+                0x18 => {
+                    let offset = self.read_immediate_byte() as i8;
+                    self.op_jr_e(offset);
+                }
+                0x19 => {
+                    let hl = self.registers.get_hl();
+                    let de = self.registers.get_de();
+                    let (result, carry) = hl.overflowing_add(de);
+                    self.registers.set_hl(result);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (hl & 0xFFF) + (de & 0xFFF) > 0xFFF);
+                    self.registers.f.set_flag(Flag::C, carry);
+                }
+                0x1A => {
+                    self.registers.a = self.memory_bus.read_byte(self.registers.get_de());
+                }
+                0x1B => {
+                    self.registers.set_de(self.registers.get_de().wrapping_sub(1));
+                }
+                0x1C => {
+                    let old_value = self.registers.e;
+                    self.registers.e = self.registers.e.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                }
+                0x1D => {
+                    let old_value = self.registers.e;
+                    self.registers.e = self.registers.e.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                }
+                0x1E => {
+                    let value = self.read_immediate_byte();
+                    self.registers.e = value;
+                }
+                0x1F => {
+                    let carry = self.registers.a & 0x01 != 0;
+                    self.registers.a = (self.registers.a >> 1)
+                        | (if self.registers.f.get_flag(Flag::C) {
                         0x80
                     } else {
                         0
                     });
-                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, carry);
-            }
-            0x20 => {
-                let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-                self.op_jr_cc_e(!self.registers.f.get_flag(Flag::Z), offset);
-            }
-            0x21 => {
-                let nn: u16 = self.read_immediate_short();
-                self.registers.set_hl(nn);
-            }
-            0x22 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
-                self.registers.set_hl(self.registers.get_hl() + 1);
-            }
-            0x23 => {
-                self.registers.set_hl(self.registers.get_hl() + 1);
-            }
-            0x24 => {
-                self.registers.h = self.registers.h.wrapping_add(1);
-            }
-            0x25 => {
-                self.registers.h = self.registers.h.wrapping_sub(1);
-            }
-            0x26 => {
-                let value = self.read_immediate_byte();
-                self.registers.h = value;
-            }
-            0x27 => {
-                let mut a = self.registers.a;
-                let mut adjust = 0;
-                if self.registers.f.get_flag(Flag::H)
-                    || (!self.registers.f.get_flag(Flag::N) && (a & 0x0F) > 9)
-                {
-                    adjust |= 0x06;
+                    self.registers.f.set_flag(Flag::Z, false);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, carry);
                 }
-                if self.registers.f.get_flag(Flag::C)
-                    || (!self.registers.f.get_flag(Flag::N) && a > 0x99)
-                {
-                    adjust |= 0x60;
+                0x20 => {
+                    let offset = self.read_immediate_byte() as i8;
+                    if !self.registers.f.get_flag(Flag::Z) {
+                        self.op_jr_e(offset);
+                    }
+                }
+                0x21 => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.registers.set_hl(nn);
+                }
+                0x22 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
+                    self.registers.set_hl(self.registers.get_hl() + 1);
+                }
+                0x23 => {
+                    self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
+                }
+                0x24 => {
+                    let old_value = self.registers.h;
+                    self.registers.h = self.registers.h.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                }
+                0x25 => {
+                    let old_value = self.registers.h;
+                    self.registers.h = self.registers.h.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x00 && (self.registers.h & 0x0F) == 0x0F);
+                }
+                0x26 => {
+                    let value = self.read_immediate_byte();
+                    self.registers.h = value;
+                }
+                0x27 => {
+                    let mut a = self.registers.a;
+                    if !self.registers.f.get_flag(Flag::N) {
+                        if self.registers.f.get_flag(Flag::C) || a > 0x99 {
+                            a = a.wrapping_add(0x60);
+                            self.registers.f.set_flag(Flag::C, true);
+                        }
+                        if self.registers.f.get_flag(Flag::H) || (a & 0x0F) > 0x09 {
+                            a = a.wrapping_add(0x06);
+                        }
+                    } else {
+                        if self.registers.f.get_flag(Flag::C) {
+                            a = a.wrapping_sub(0x60);
+                        }
+                        if self.registers.f.get_flag(Flag::H) {
+                            a = a.wrapping_sub(0x06);
+                        }
+                    }
+                    self.registers.f.set_flag(Flag::Z, a == 0);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.a = a;
+                }
+                0x28 => {
+                    let offset = self.read_immediate_byte() as i8;
+                    if self.registers.f.get_flag(Flag::Z) {
+                        self.op_jr_e(offset);
+                    }
+                }
+                0x29 => {
+                    let hl: u16 = self.registers.get_hl();
+                    let (result, carry) = hl.overflowing_add(hl);
+                    self.registers.set_hl(result);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
+                    self.registers.f.set_flag(Flag::C, carry);
+                }
+                0x2A => {
+                    self.registers.a = self.memory_bus.read_byte(self.registers.get_hl());
+                    self.registers
+                        .set_hl(self.registers.get_hl().wrapping_add(1));
+                }
+                0x2B => {
+                    self.registers
+                        .set_hl(self.registers.get_hl().wrapping_sub(1));
+                }
+                0x2C => {
+                    let old_value = self.registers.l;
+                    self.registers.l = self.registers.l.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                }
+                0x2D => {
+                    let old_value = self.registers.l;
+                    self.registers.l = self.registers.l.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                }
+                0x2E => {
+                    let value = self.read_immediate_byte();
+                    self.registers.l = value;
+                }
+                0x2F => {
+                    // CPL = complement A register
+                    self.registers.a = !self.registers.a;
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::H, true);
+                }
+                0x30 => {
+                    let offset = self.read_immediate_byte() as i8;
+                    if !self.registers.f.get_flag(Flag::C) {
+                        self.op_jr_e(offset);
+                    }
+                }
+                0x31 => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.registers.sp = nn;
+                }
+                0x32 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
+                    self.registers
+                        .set_hl(self.registers.get_hl().wrapping_sub(1));
+                }
+                0x33 => {
+                    self.registers.sp = self.registers.sp.wrapping_add(1);
+                }
+                0x34 => {
+                    let hl = self.registers.get_hl();
+                    let value = self.memory_bus.read_byte(self.registers.get_hl());
+                    self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.memory_bus.write_byte(hl, value.wrapping_add(1));
+                    self.registers.f.set_flag(Flag::Z, self.memory_bus.read_byte(hl) == 0);
+                }
+                0x35 => {
+                    let hl = self.registers.get_hl();
+                    let value = self.memory_bus.read_byte(hl);
+                    let result = value.wrapping_sub(1);
+                    self.memory_bus.write_byte(hl, result);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0);
+                }
+                0x36 => {
+                    let value = self.read_immediate_byte();
+                    self.memory_bus.write_byte(self.registers.get_hl(), value);
+                }
+                0x37 => {
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, true);
                 }
-                a = a.wrapping_add(adjust);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::Z, a == 0);
-                self.registers.a = a;
-            }
-            0x28 => {
-                let offset = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-                self.op_jr_cc_e(self.registers.f.get_flag(Flag::Z), offset);
-            }
-            0x29 => {
-                let hl = self.registers.get_hl();
-                self.registers.set_hl(hl + hl);
-            }
-            0x2A => {
-                self.registers.a = self.work_ram[self.registers.get_hl() as usize];
-                self.registers
-                    .set_hl(self.registers.get_hl().wrapping_add(1));
-            }
-            0x2B => {
-                self.registers
-                    .set_hl(self.registers.get_hl().wrapping_sub(1));
-            }
-            0x2C => {
-                self.registers.l = self.registers.l.wrapping_add(1);
-            }
-            0x2D => {
-                self.registers.l = self.registers.l.wrapping_sub(1);
-            }
-            0x2E => {
-                let value = self.read_immediate_byte();
-                self.registers.l = value;
-            }
-            0x2F => {
-                self.registers.a = !self.registers.a;
-                self.registers.f.set_flag(Flag::N, true);
-                self.registers.f.set_flag(Flag::H, true);
-            }
-            0x30 => {
-                let value = self.work_ram[self.registers.pc as usize] as i8;
-                if !self.registers.f.get_flag(Flag::C) {
-                    self.registers.pc = self.registers.pc.wrapping_add(value as u16);
+                0x38 => {
+                    let offset = self.read_immediate_byte() as i8;
+                    if self.registers.f.get_flag(Flag::C) {
+                        self.op_jr_e(offset);
+                    }
                 }
-            }
-            0x31 => {
-                let nn: u16 = self.read_immediate_short();
-                self.registers.sp = nn;
-            }
-            0x32 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
-                self.registers
-                    .set_hl(self.registers.get_hl().wrapping_sub(1));
-            }
-            0x33 => {
-                self.registers.sp = self.registers.sp.wrapping_add(1);
-            }
-            0x34 => {
-                let hl = self.registers.get_hl();
-                let value = self.work_ram[hl as usize];
-                self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::C, value == 0xFF);
-                self.work_ram[hl as usize] = value.wrapping_add(1);
-                self.registers
-                    .f
-                    .set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
-            }
-            0x35 => {
-                let hl = self.registers.get_hl();
-                let value = self.work_ram[hl as usize];
-                self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x00);
-                self.registers.f.set_flag(Flag::N, true);
-                self.registers.f.set_flag(Flag::C, value == 0x00);
-                self.work_ram[hl as usize] = value.wrapping_sub(1);
-                self.registers
-                    .f
-                    .set_flag(Flag::Z, self.work_ram[hl as usize] == 0);
-            }
-            0x36 => {
-                let value = self.read_immediate_byte();
-                self.work_ram[self.registers.get_hl() as usize] = value;
-            }
-            0x37 => {
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, true);
-            }
-            0x38 => {
-                let value = self.work_ram[self.registers.pc as usize] as i8;
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-                self.op_jr_cc_e(self.registers.f.get_flag(Flag::C), value);
-            }
-            0x39 => {
-                let hl = self.registers.get_hl();
-                let sp = self.registers.sp;
-                self.registers.set_hl(hl + sp);
-            }
-            0x3A => {
-                self.registers.a = self.work_ram[self.registers.get_hl() as usize];
-                self.registers
-                    .set_hl(self.registers.get_hl().wrapping_sub(1));
-            }
-            0x3B => {
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
-            }
-            0x3C => {
-                let (result, overflow) = self.registers.a.overflowing_add(1);
-                self.registers.a = result;
-                self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, overflow);
-            }
-            0x3D => {
-                self.registers.a = self.registers.a.wrapping_sub(1);
-            }
-            0x3E => {
-                let value = self.read_immediate_byte();
-                self.registers.a = value;
-            }
-            0x3F => {
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers
-                    .f
-                    .set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
-            }
-            0x40 => {
-                self.registers.b = self.registers.b;
-            }
-            0x41 => {
-                self.registers.b = self.registers.c;
-            }
-            0x42 => {
-                self.registers.b = self.registers.d;
-            }
-            0x43 => {
-                self.registers.b = self.registers.e;
-            }
-            0x44 => {
-                self.registers.b = self.registers.h;
-            }
-            0x45 => {
-                self.registers.b = self.registers.l;
-            }
-            0x46 => {
-                self.registers.b = self.registers.get_hl() as u8;
-            }
-            0x47 => {
-                self.registers.b = self.registers.a;
-            }
-            0x48 => {
-                self.registers.c = self.registers.b;
-            }
-            0x49 => {
-                self.registers.c = self.registers.c;
-            }
-            0x4A => {
-                self.registers.c = self.registers.d;
-            }
-            0x4B => {
-                self.registers.c = self.registers.e;
-            }
-            0x4C => {
-                self.registers.c = self.registers.h;
-            }
-            0x4D => {
-                self.registers.c = self.registers.l;
-            }
-            0x4E => {
-                self.registers.c = self.registers.get_hl() as u8;
-            }
-            0x4F => {
-                self.registers.c = self.registers.a;
-            }
-            0x50 => {
-                self.registers.d = self.registers.b;
-            }
-            0x51 => {
-                self.registers.d = self.registers.c;
-            }
-            0x52 => {
-                self.registers.d = self.registers.d;
-            }
-            0x53 => {
-                self.registers.d = self.registers.e;
-            }
-            0x54 => {
-                self.registers.d = self.registers.h;
-            }
-            0x55 => {
-                self.registers.d = self.registers.l;
-            }
-            0x56 => {
-                self.registers.d = self.registers.get_hl() as u8;
-            }
-            0x57 => {
-                self.registers.d = self.registers.a;
-            }
-            0x58 => {
-                self.registers.e = self.registers.b;
-            }
-            0x59 => {
-                self.registers.e = self.registers.c;
-            }
-            0x5A => {
-                self.registers.e = self.registers.d;
-            }
-            0x5B => {
-                self.registers.e = self.registers.e;
-            }
-            0x5C => {
-                self.registers.e = self.registers.h;
-            }
-            0x5D => {
-                self.registers.e = self.registers.l;
-            }
-            0x5E => {
-                self.registers.e = self.registers.get_hl() as u8;
-            }
-            0x5F => {
-                self.registers.e = self.registers.a;
-            }
-            0x60 => {
-                self.registers.h = self.registers.b;
-            }
-            0x61 => {
-                self.registers.h = self.registers.c;
-            }
-            0x62 => {
-                self.registers.h = self.registers.d;
-            }
-            0x63 => {
-                self.registers.h = self.registers.e;
-            }
-            0x64 => {
-                self.registers.h = self.registers.h;
-            }
-            0x65 => {
-                self.registers.h = self.registers.l;
-            }
-            0x66 => {
-                self.registers.h = self.registers.get_hl() as u8;
-            }
-            0x67 => {
-                self.registers.h = self.registers.a;
-            }
-            0x68 => {
-                self.registers.l = self.registers.b;
-            }
-            0x69 => {
-                self.registers.l = self.registers.c;
-            }
-            0x6A => {
-                self.registers.l = self.registers.d;
-            }
-            0x6B => {
-                self.registers.l = self.registers.e;
-            }
-            0x6C => {
-                self.registers.l = self.registers.h;
-            }
-            0x6D => {
-                self.registers.l = self.registers.l;
-            }
-            0x6E => {
-                self.registers.l = self.registers.get_hl() as u8;
-            }
-            0x6F => {
-                self.registers.l = self.registers.a;
-            }
-            0x70 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.b;
-            }
-            0x71 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.c;
-            }
-            0x72 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.d;
-            }
-            0x73 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.e;
-            }
-            0x74 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.h;
-            }
-            0x75 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.l;
-            }
-            0x76 => {
-                unimplemented!("HALT not implemented");
-            }
-            0x77 => {
-                self.work_ram[self.registers.get_hl() as usize] = self.registers.a;
-            }
-            0x78 => {
-                self.registers.a = self.registers.b;
-            }
-            0x79 => {
-                self.registers.a = self.registers.c;
-            }
-            0x7A => {
-                self.registers.a = self.registers.d;
-            }
-            0x7B => {
-                self.registers.a = self.registers.e;
-            }
-            0x7C => {
-                self.registers.a = self.registers.h;
-            }
-            0x7D => {
-                self.registers.a = self.registers.l;
-            }
-            0x7E => {
-                self.registers.a = self.registers.get_hl() as u8;
-            }
-            0x7F => {
-                self.registers.a = self.registers.a;
-            }
-            0x80 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.b);
-            }
-            0x81 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.c);
-            }
-            0x82 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.d);
-            }
-            0x83 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.e);
-            }
-            0x84 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.h);
-            }
-            0x85 => {
-                self.registers.a = self.registers.a.wrapping_add(self.registers.l);
-            }
-            0x86 => {
-                let hl = self.registers.get_hl();
-                let value = self.work_ram[hl as usize];
-                let (result, carry) = self.registers.a.overflowing_add(value);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
-                self.registers.f.set_flag(Flag::C, carry);
-                self.registers.a = result;
-            }
-            0x87 => {
-                let result = self.registers.a.wrapping_add(self.registers.a);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers
-                    .f
-                    .set_flag(Flag::C, result < self.registers.a);
-                self.registers.a = result;
-            }
-            0x88 => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.b)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.b & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (self.registers.b as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x89 => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.c)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.c & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (self.registers.c as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x8A => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.d)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.d & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (self.registers.d as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x8B => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.e)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.e & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (self.registers.e as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x8C => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.h)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.h & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (self.registers.h as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x8D => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.l)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.l & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (self.registers.l as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x8E => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
-                ); // Set the carry flag if there's a carry out of the most significant bit
-                self.registers.a = result;
-            }
-            0x8F => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_add(self.registers.a)
-                    .wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (self.registers.a & 0x0F) + carry > 0x0F,
-                ); // Set the half-carry flag if there's a carry from bit 3
-                self.registers
-                    .f
-                    .set_flag(Flag::C, result < self.registers.a);
-                self.registers.a = result;
-            }
-            0x90 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.b);
-            }
-            0x91 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.c);
-            }
-            0x92 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.d);
-            }
-            0x93 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.e);
-            }
-            0x94 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.h);
-            }
-            0x95 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.l);
-            }
-            0x96 => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (value as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x97 => {
-                self.registers.a = self.registers.a.wrapping_sub(self.registers.a);
-            }
-            0x98 => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.registers.b)
-                    .wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x99 => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.registers.c)
-                    .wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.c & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (self.registers.c as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x9A => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.registers.d)
-                    .wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.d & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (self.registers.d as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x9B => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.registers.e)
-                    .wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.e & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (self.registers.e as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x9C => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.registers.h)
-                    .wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.h & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (self.registers.h as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x9D => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.registers.l)
-                    .wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.l & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (self.registers.l as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x9E => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) < (value as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0x9F => {
-                let result = self.registers.a.wrapping_sub(self.registers.a);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
-                self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
-                self.registers.a = result;
-            }
-            0xA0 => {
-                self.registers.a = self.registers.a & self.registers.b;
-
-                if self.registers.a == 0 {
+                0x39 => {
+                    let hl = self.registers.get_hl();
+                    let (result, carry) = hl.overflowing_add(self.registers.sp);
+                    self.registers.set_hl(result);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (self.registers.sp & 0x0FFF) > 0x0FFF);
+                    self.registers.f.set_flag(Flag::C, carry);
+                }
+                0x3A => {
+                    self.registers.a = self.memory_bus.read_byte(self.registers.get_hl());
+                    self.registers
+                        .set_hl(self.registers.get_hl().wrapping_sub(1));
+                }
+                0x3B => {
+                    self.registers.sp = self.registers.sp.wrapping_sub(1);
+                }
+                0x3C => {
+                    let old_value = self.registers.a;
+                    self.registers.a = self.registers.a.wrapping_add(1);
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                }
+                0x3D => {
+                    let old_value = self.registers.a;
+                    self.registers.a = self.registers.a.wrapping_sub(1);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                }
+                0x3E => {
+                    let value = self.read_immediate_byte();
+                    self.registers.a = value;
+                }
+                0x3F => {
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+                }
+                0x40 => {
+                    self.registers.b = self.registers.b;
+                }
+                0x41 => {
+                    self.registers.b = self.registers.c;
+                }
+                0x42 => {
+                    self.registers.b = self.registers.d;
+                }
+                0x43 => {
+                    self.registers.b = self.registers.e;
+                }
+                0x44 => {
+                    self.registers.b = self.registers.h;
+                }
+                0x45 => {
+                    self.registers.b = self.registers.l;
+                }
+                0x46 => {
+                    self.registers.b = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x47 => {
+                    self.registers.b = self.registers.a;
+                }
+                0x48 => {
+                    self.registers.c = self.registers.b;
+                }
+                0x49 => {
+                    self.registers.c = self.registers.c;
+                }
+                0x4A => {
+                    self.registers.c = self.registers.d;
+                }
+                0x4B => {
+                    self.registers.c = self.registers.e;
+                }
+                0x4C => {
+                    self.registers.c = self.registers.h;
+                }
+                0x4D => {
+                    self.registers.c = self.registers.l;
+                }
+                0x4E => {
+                    self.registers.c = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x4F => {
+                    self.registers.c = self.registers.a;
+                }
+                0x50 => {
+                    self.registers.d = self.registers.b;
+                }
+                0x51 => {
+                    self.registers.d = self.registers.c;
+                }
+                0x52 => {
+                    self.registers.d = self.registers.d;
+                }
+                0x53 => {
+                    self.registers.d = self.registers.e;
+                }
+                0x54 => {
+                    self.registers.d = self.registers.h;
+                }
+                0x55 => {
+                    self.registers.d = self.registers.l;
+                }
+                0x56 => {
+                    self.registers.d = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x57 => {
+                    self.registers.d = self.registers.a;
+                }
+                0x58 => {
+                    self.registers.e = self.registers.b;
+                }
+                0x59 => {
+                    self.registers.e = self.registers.c;
+                }
+                0x5A => {
+                    self.registers.e = self.registers.d;
+                }
+                0x5B => {
+                    self.registers.e = self.registers.e;
+                }
+                0x5C => {
+                    self.registers.e = self.registers.h;
+                }
+                0x5D => {
+                    self.registers.e = self.registers.l;
+                }
+                0x5E => {
+                    self.registers.e = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x5F => {
+                    self.registers.e = self.registers.a;
+                }
+                0x60 => {
+                    self.registers.h = self.registers.b;
+                }
+                0x61 => {
+                    self.registers.h = self.registers.c;
+                }
+                0x62 => {
+                    self.registers.h = self.registers.d;
+                }
+                0x63 => {
+                    self.registers.h = self.registers.e;
+                }
+                0x64 => {
+                    self.registers.h = self.registers.h;
+                }
+                0x65 => {
+                    self.registers.h = self.registers.l;
+                }
+                0x66 => {
+                    self.registers.h = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x67 => {
+                    self.registers.h = self.registers.a;
+                }
+                0x68 => {
+                    self.registers.l = self.registers.b;
+                }
+                0x69 => {
+                    self.registers.l = self.registers.c;
+                }
+                0x6A => {
+                    self.registers.l = self.registers.d;
+                }
+                0x6B => {
+                    self.registers.l = self.registers.e;
+                }
+                0x6C => {
+                    self.registers.l = self.registers.h;
+                }
+                0x6D => {
+                    self.registers.l = self.registers.l;
+                }
+                0x6E => {
+                    self.registers.l = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x6F => {
+                    self.registers.l = self.registers.a;
+                }
+                0x70 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.b);
+                }
+                0x71 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.c);
+                }
+                0x72 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.d);
+                }
+                0x73 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.e);
+                }
+                0x74 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.h);
+                }
+                0x75 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.l);
+                }
+                0x76 => {
+                    info!("Halting CPU");
+                    self.op_halt();
+                }
+                0x77 => {
+                    self.memory_bus.write_byte(self.registers.get_hl(), self.registers.a);
+                }
+                0x78 => {
+                    self.registers.a = self.registers.b;
+                }
+                0x79 => {
+                    self.registers.a = self.registers.c;
+                }
+                0x7A => {
+                    self.registers.a = self.registers.d;
+                }
+                0x7B => {
+                    self.registers.a = self.registers.e;
+                }
+                0x7C => {
+                    self.registers.a = self.registers.h;
+                }
+                0x7D => {
+                    self.registers.a = self.registers.l;
+                }
+                0x7E => {
+                    self.registers.a = self.memory_bus.read_byte(self.registers.get_hl());
+                }
+                0x7F => {
+                    self.registers.a = self.registers.a;
+                }
+                0x80 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.b);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.b & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x81 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.c);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.c & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x82 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.d);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(
+                        Flag::H, (self.registers.a & 0x0F) + (self.registers.d & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x83 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.e);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.e & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x84 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.h);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.h & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x85 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.l);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H,(self.registers.a & 0x0F) + (self.registers.l & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x86 => {
+                    let value = self.memory_bus.read_byte(self.registers.get_hl());
+                    let (result, carry) = self.registers.a.overflowing_add(value);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x87 => {
+                    let (result, carry) = self.registers.a.overflowing_add(self.registers.a);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F);
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0x88 => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.b)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.b & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (self.registers.b as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x89 => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.c)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.c & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (self.registers.c as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x8A => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.d)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.d & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (self.registers.d as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x8B => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.e)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.e & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (self.registers.e as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x8C => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.h)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.h & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (self.registers.h as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x8D => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.l)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.l & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (self.registers.l as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x8E => {
+                    let value = self.memory_bus.read_byte(self.registers.get_hl());
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
+                    ); // Set the carry flag if there's a carry out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x8F => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_add(self.registers.a)
+                        .wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (self.registers.a & 0x0F) + carry > 0x0F,
+                    ); // Set the half-carry flag if there's a carry from bit 3
+                    self.registers
+                        .f
+                        .set_flag(Flag::C, result < self.registers.a);
+                    self.registers.a = result;
+                }
+                0x90 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.b);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.b & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x91 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.c);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.c & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x92 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.d);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.d & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x93 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.e);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.e & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x94 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.h);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x95 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.l);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x96 => {
+                    let value = self.memory_bus.read_byte(self.registers.get_hl());
+                    //let result = self.registers.a.wrapping_sub(value);
+                    let (result, borrow) = self.registers.a.overflowing_sub(value);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, borrow); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x97 => {
+                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.a);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.a & 0x0F),
+                    );
+                    self.registers.f.set_flag(Flag::C, borrow);
+                    self.registers.a = result;
+                }
+                0x98 => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_sub(self.registers.b)
+                        .wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16)); 
+                    self.registers.a = result;
+                }
+                0x99 => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_sub(self.registers.c)
+                        .wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.c & 0x0F) + carry,
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (self.registers.c as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x9A => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_sub(self.registers.d)
+                        .wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.d & 0x0F) + carry,
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (self.registers.d as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x9B => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_sub(self.registers.e)
+                        .wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.e & 0x0F) + carry,
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (self.registers.e as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x9C => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_sub(self.registers.h)
+                        .wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.h & 0x0F) + carry,
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (self.registers.h as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x9D => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self
+                        .registers
+                        .a
+                        .wrapping_sub(self.registers.l)
+                        .wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.l & 0x0F) + carry,
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (self.registers.l as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x9E => {
+                    let value = self.memory_bus.read_byte(self.registers.get_hl());
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers
+                        .f
+                        .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (value as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0x9F => {
+                    let result = self.registers.a.wrapping_sub(self.registers.a);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
+                    self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
+                    self.registers.a = result;
+                }
+                0xA0 => {
+                    self.registers.a = self.registers.a & self.registers.b;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA1 => {
+                    self.registers.a &= self.registers.c;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA2 => {
+                    self.registers.a &= self.registers.d;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA3 => {
+                    self.registers.a &= self.registers.e;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA4 => {
+                    self.registers.a &= self.registers.h;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA5 => {
+                    self.registers.a &= self.registers.l;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA6 => {
+                    self.registers.a &= self.memory_bus.read_byte(self.registers.get_hl());
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA7 => {
+                    self.registers.a &= self.registers.a;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA8 => {
+                    self.registers.a = self.registers.a ^ self.registers.b;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xA9 => {
+                    self.registers.a ^= self.registers.c;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xAA => {
+                    self.registers.a ^= self.registers.d;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xAB => {
+                    self.registers.a ^= self.registers.e;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xAC => {
+                    self.registers.a ^= self.registers.h;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xAD => {
+                    self.registers.a ^= self.registers.l;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xAE => {
+                    self.registers.a ^= self.memory_bus.read_byte(self.registers.get_hl());
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                }
+                0xAF => {
+                    self.registers.a = 0x0000;
                     self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA1 => {
-                self.registers.a = self.registers.a & self.registers.c;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB0 => {
+                    self.registers.a |= self.registers.b;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA2 => {
-                self.registers.a = self.registers.a & self.registers.d;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB1 => {
+                    self.registers.a |= self.registers.c;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA3 => {
-                self.registers.a = self.registers.a & self.registers.e;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB2 => {
+                    self.registers.a |= self.registers.d;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA4 => {
-                self.registers.a = self.registers.a & self.registers.h;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB3 => {
+                    self.registers.a |= self.registers.e;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA5 => {
-                self.registers.a = self.registers.a & self.registers.l;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB4 => {
+                    self.registers.a |= self.registers.h;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA6 => {
-                self.registers.a =
-                    self.registers.a & self.work_ram[self.registers.get_hl() as usize];
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB5 => {
+                    self.registers.a |= self.registers.l;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA7 => {
-                self.registers.a = self.registers.a & self.registers.a;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB6 => {
+                    self.registers.a |= self.memory_bus.read_byte(self.registers.get_hl());
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true); // TODO why are we setting this to true for and ops?
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA8 => {
-                self.registers.a = self.registers.a ^ self.registers.b;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB7 => {
+                    self.registers.a |= self.registers.a;
+                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xA9 => {
-                self.registers.a = self.registers.a ^ self.registers.c;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB8 => {
+                    let result = self.registers.a.wrapping_sub(self.registers.b);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.b & 0x0F),
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers
+                        .f
+                        .set_flag(Flag::C, self.registers.a < self.registers.b); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xAA => {
-                self.registers.a = self.registers.a ^ self.registers.d;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xB9 => {
+                    let result = self.registers.a.wrapping_sub(self.registers.c);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.c & 0x0F),
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers
+                        .f
+                        .set_flag(Flag::C, self.registers.a < self.registers.c); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xAB => {
-                self.registers.a = self.registers.a ^ self.registers.e;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xBA => {
+                    let result = self.registers.a.wrapping_sub(self.registers.d);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.d & 0x0F),
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers
+                        .f
+                        .set_flag(Flag::C, self.registers.a < self.registers.d); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xAC => {
-                self.registers.a = self.registers.a ^ self.registers.h;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xBB => {
+                    let result = self.registers.a.wrapping_sub(self.registers.e);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.e & 0x0F),
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers
+                        .f
+                        .set_flag(Flag::C, self.registers.a < self.registers.e); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xAD => {
-                self.registers.a = self.registers.a ^ self.registers.l;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xBC => {
+                    let result = self.registers.a.wrapping_sub(self.registers.h);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, self.registers.a < self.registers.h); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xAE => {
-                self.registers.a =
-                    self.registers.a ^ self.work_ram[self.registers.get_hl() as usize];
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xBD => {
+                    let result = self.registers.a.wrapping_sub(self.registers.l);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, self.registers.a < self.registers.l); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xAF => {
-                self.registers.a = self.registers.a ^ self.registers.a;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xBE => {
+                    let value = self.memory_bus.read_byte(self.registers.get_hl());
+                    let result = self.registers.a.wrapping_sub(value);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB0 => {
-                self.registers.a = self.registers.a | self.registers.b;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xBF => {
+                    let result = self.registers.a.wrapping_sub(self.registers.a);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
+                    self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB1 => {
-                self.registers.a = self.registers.a | self.registers.c;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xC0 => {
+                    if !self.registers.f.get_flag(Flag::Z) {
+                        self.op_ret();
+                    }
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB2 => {
-                self.registers.a = self.registers.a | self.registers.d;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xC1 => {
+                    let value = self.op_pop_stack();
+                    self.registers.set_bc(value);
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB3 => {
-                self.registers.a = self.registers.a | self.registers.e;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
+                0xC2 => {
+                    if !self.registers.f.get_flag(Flag::Z) {
+                        let nn: u16 = self.read_immediate_short();
+                        self.op_jp_nn(nn);
+                    }
                 }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB4 => {
-                self.registers.a = self.registers.a | self.registers.h;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
-                }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB5 => {
-                self.registers.a = self.registers.a | self.registers.l;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
-                }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB6 => {
-                self.registers.a =
-                    self.registers.a | self.work_ram[self.registers.get_hl() as usize];
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
-                }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB7 => {
-                self.registers.a = self.registers.a | self.registers.a;
-
-                if self.registers.a == 0 {
-                    self.registers.f.set_flag(Flag::Z, true);
-                } else {
-                    self.registers.f.set_flag(Flag::Z, false);
-                }
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-            }
-            0xB8 => {
-                let result = self.registers.a.wrapping_sub(self.registers.b);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.b & 0x0F),
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers
-                    .f
-                    .set_flag(Flag::C, self.registers.a < self.registers.b); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xB9 => {
-                let result = self.registers.a.wrapping_sub(self.registers.c);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.c & 0x0F),
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers
-                    .f
-                    .set_flag(Flag::C, self.registers.a < self.registers.c); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xBA => {
-                let result = self.registers.a.wrapping_sub(self.registers.d);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.d & 0x0F),
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers
-                    .f
-                    .set_flag(Flag::C, self.registers.a < self.registers.d); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xBB => {
-                let result = self.registers.a.wrapping_sub(self.registers.e);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.e & 0x0F),
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers
-                    .f
-                    .set_flag(Flag::C, self.registers.a < self.registers.e); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xBC => {
-                let result = self.registers.a.wrapping_sub(self.registers.h);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers
-                    .f
-                    .set_flag(Flag::C, self.registers.a < self.registers.h); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xBD => {
-                let result = self.registers.a.wrapping_sub(self.registers.l);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers
-                    .f
-                    .set_flag(Flag::C, self.registers.a < self.registers.l); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xBE => {
-                let value = self.work_ram[self.registers.get_hl() as usize];
-                let result = self.registers.a.wrapping_sub(value);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xBF => {
-                let result = self.registers.a.wrapping_sub(self.registers.a);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
-                self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
-            }
-            0xC0 => {
-                if !self.registers.f.get_flag(Flag::Z) {
-                    self.op_ret();
-                }
-            }
-            0xC1 => {
-                self.op_push_stack(self.registers.get_bc());
-            }
-            0xC2 => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_jp_nn(nn);
-            }
-            0xC3 => {
-                if !self.registers.f.get_flag(Flag::Z) {
+                0xC3 => {
                     let nn: u16 = self.read_immediate_short();
                     debug!("Jumping to 0x{:X}", nn);
                     self.op_jp_nn(nn);
                 }
-            }
-            0xC4 => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_call_nn(nn);
-            }
-            0xC5 => {
-                self.op_push_stack(self.registers.get_bc());
-            }
-            0xC6 => {
-                let value = self.read_immediate_byte();
-                self.op_add_a_n8(value);
-            }
-            0xC7 => {
-                self.op_rst_address(0x0000);
-            }
-            0xC8 => {
-                if self.registers.f.get_flag(Flag::Z) {
+                0xC4 => {
+                    if !self.registers.f.get_flag(Flag::Z) {
+                        let nn: u16 = self.read_immediate_short();
+                        self.op_call_nn(nn);
+                    }
+                }
+                0xC5 => {
+                    self.op_push_stack(self.registers.get_bc());
+                }
+                0xC6 => {
+                    let value = self.read_immediate_byte();
+                    let (result, carry) = self.registers.a.overflowing_add(value);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F, );
+                    self.registers.f.set_flag(Flag::C, carry);
+                    self.registers.a = result;
+                }
+                0xC7 => {
+                    self.op_rst_address(0x0000);
+                }
+                0xC8 => {
+                    if self.registers.f.get_flag(Flag::Z) {
+                        self.op_ret();
+                    }
+                }
+                0xC9 => {
                     self.op_ret();
                 }
-            }
-            0xC9 => {
-                self.op_ret();
-            }
-            0xCA => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_jp_nn(nn);
-            }
-            0xCB => {
-                // Get the next byte and use it as the extended opcode
-                let extended_opcode = self.work_ram[self.registers.pc as usize];
-                debug!("0xCB{:X}", extended_opcode);
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-                match extended_opcode {
-                    0x00 => {
-                        let mut value = self.registers.b;
-                        self.op_rlc(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x01 => {
-                        let mut value = self.registers.c;
-                        self.op_rlc(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x02 => {
-                        let mut value = self.registers.d;
-                        self.op_rlc(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x03 => {
-                        let mut value = self.registers.e;
-                        self.op_rlc(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x04 => {
-                        let mut value = self.registers.h;
-                        self.op_rlc(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x05 => {
-                        let mut value = self.registers.l;
-                        self.op_rlc(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x06 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_rlc(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x07 => {
-                        let mut value = self.registers.a;
-                        self.op_rlc(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x08 => {
-                        let mut value = self.registers.b;
-                        self.op_rrc(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x09 => {
-                        let mut value = self.registers.c;
-                        self.op_rrc(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x0A => {
-                        let mut value = self.registers.d;
-                        self.op_rrc(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x0B => {
-                        let mut value = self.registers.e;
-                        self.op_rrc(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x0C => {
-                        let mut value = self.registers.h;
-                        self.op_rrc(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x0D => {
-                        let mut value = self.registers.l;
-                        self.op_rrc(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x0E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_rrc(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x0F => {
-                        let mut value = self.registers.a;
-                        self.op_rrc(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x10 => {
-                        let mut value = self.registers.b;
-                        self.op_rl(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x11 => {
-                        let mut value = self.registers.c;
-                        self.op_rl(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x12 => {
-                        let mut value = self.registers.d;
-                        self.op_rl(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x13 => {
-                        let mut value = self.registers.e;
-                        self.op_rl(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x14 => {
-                        let mut value = self.registers.h;
-                        self.op_rl(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x15 => {
-                        let mut value = self.registers.l;
-                        self.op_rl(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x16 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_rl(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x17 => {
-                        let mut value = self.registers.a;
-                        self.op_rl(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x18 => {
-                        let mut value = self.registers.b;
-                        self.op_rr(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x19 => {
-                        let mut value = self.registers.c;
-                        self.op_rr(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x1A => {
-                        let mut value = self.registers.d;
-                        self.op_rr(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x1B => {
-                        let mut value = self.registers.e;
-                        self.op_rr(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x1C => {
-                        let mut value = self.registers.h;
-                        self.op_rr(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x1D => {
-                        let mut value = self.registers.l;
-                        self.op_rr(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x1E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_rr(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x1F => {
-                        let mut value = self.registers.a;
-                        self.op_rr(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x20 => {
-                        let mut value = self.registers.b;
-                        self.op_sla(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x21 => {
-                        let mut value = self.registers.c;
-                        self.op_sla(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x22 => {
-                        let mut value = self.registers.d;
-                        self.op_sla(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x23 => {
-                        let mut value = self.registers.e;
-                        self.op_sla(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x24 => {
-                        let mut value = self.registers.h;
-                        self.op_sla(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x25 => {
-                        let mut value = self.registers.l;
-                        self.op_sla(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x26 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_sla(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x27 => {
-                        let mut value = self.registers.a;
-                        self.op_sla(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x28 => {
-                        let mut value = self.registers.b;
-                        self.op_sra(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x29 => {
-                        let mut value = self.registers.c;
-                        self.op_sra(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x2A => {
-                        let mut value = self.registers.d;
-                        self.op_sra(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x2B => {
-                        let mut value = self.registers.e;
-                        self.op_sra(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x2C => {
-                        let mut value = self.registers.h;
-                        self.op_sra(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x2D => {
-                        let mut value = self.registers.l;
-                        self.op_sra(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x2E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_sra(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x2F => {
-                        let mut value = self.registers.a;
-                        self.op_sra(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x30 => {
-                        let mut value = self.registers.b;
-                        self.op_swap(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x31 => {
-                        let mut value = self.registers.c;
-                        self.op_swap(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x32 => {
-                        let mut value = self.registers.d;
-                        self.op_swap(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x33 => {
-                        let mut value = self.registers.e;
-                        self.op_swap(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x34 => {
-                        let mut value = self.registers.h;
-                        self.op_swap(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x35 => {
-                        let mut value = self.registers.l;
-                        self.op_swap(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x36 => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_swap(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x37 => {
-                        let mut value = self.registers.a;
-                        self.op_swap(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x38 => {
-                        let mut value = self.registers.b;
-                        self.op_srl(&mut value);
-                        self.registers.b = value;
-                    }
-                    0x39 => {
-                        let mut value = self.registers.c;
-                        self.op_srl(&mut value);
-                        self.registers.c = value;
-                    }
-                    0x3A => {
-                        let mut value = self.registers.d;
-                        self.op_srl(&mut value);
-                        self.registers.d = value;
-                    }
-                    0x3B => {
-                        let mut value = self.registers.e;
-                        self.op_srl(&mut value);
-                        self.registers.e = value;
-                    }
-                    0x3C => {
-                        let mut value = self.registers.h;
-                        self.op_srl(&mut value);
-                        self.registers.h = value;
-                    }
-                    0x3D => {
-                        let mut value = self.registers.l;
-                        self.op_srl(&mut value);
-                        self.registers.l = value;
-                    }
-                    0x3E => {
-                        let mut value = self.work_ram[self.registers.get_hl() as usize];
-                        self.op_srl(&mut value);
-                        self.work_ram[self.registers.get_hl() as usize] = value;
-                    }
-                    0x3F => {
-                        let mut value = self.registers.a;
-                        self.op_srl(&mut value);
-                        self.registers.a = value;
-                    }
-                    0x40 => {
-                        self.op_bit(0, self.registers.b);
-                    }
-                    0x41 => {
-                        self.op_bit(0, self.registers.c);
-                    }
-                    0x42 => {
-                        self.op_bit(0, self.registers.d);
-                    }
-                    0x43 => {
-                        self.op_bit(0, self.registers.e);
-                    }
-                    0x44 => {
-                        self.op_bit(0, self.registers.h);
-                    }
-                    0x45 => {
-                        self.op_bit(0, self.registers.l);
-                    }
-                    0x46 => {
-                        self.op_bit(0, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x47 => {
-                        self.op_bit(0, self.registers.a);
-                    }
-                    0x48 => {
-                        self.op_bit(1, self.registers.b);
-                    }
-                    0x49 => {
-                        self.op_bit(1, self.registers.c);
-                    }
-                    0x4A => {
-                        self.op_bit(1, self.registers.d);
-                    }
-                    0x4B => {
-                        self.op_bit(1, self.registers.e);
-                    }
-                    0x4C => {
-                        self.op_bit(1, self.registers.h);
-                    }
-                    0x4D => {
-                        self.op_bit(1, self.registers.l);
-                    }
-                    0x4E => {
-                        self.op_bit(1, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x4F => {
-                        self.op_bit(1, self.registers.a);
-                    }
-                    0x50 => {
-                        self.op_bit(2, self.registers.b);
-                    }
-                    0x51 => {
-                        self.op_bit(2, self.registers.c);
-                    }
-                    0x52 => {
-                        self.op_bit(2, self.registers.d);
-                    }
-                    0x53 => {
-                        self.op_bit(2, self.registers.e);
-                    }
-                    0x54 => {
-                        self.op_bit(2, self.registers.h);
-                    }
-                    0x55 => {
-                        self.op_bit(2, self.registers.l);
-                    }
-                    0x56 => {
-                        self.op_bit(2, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x57 => {
-                        self.op_bit(2, self.registers.a);
-                    }
-                    0x58 => {
-                        self.op_bit(3, self.registers.b);
-                    }
-                    0x59 => {
-                        self.op_bit(3, self.registers.c);
-                    }
-                    0x5A => {
-                        self.op_bit(3, self.registers.d);
-                    }
-                    0x5B => {
-                        self.op_bit(3, self.registers.e);
-                    }
-                    0x5C => {
-                        self.op_bit(3, self.registers.h);
-                    }
-                    0x5D => {
-                        self.op_bit(3, self.registers.l);
-                    }
-                    0x5E => {
-                        self.op_bit(3, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x5F => {
-                        self.op_bit(3, self.registers.a);
-                    }
-                    0x60 => {
-                        self.op_bit(4, self.registers.b);
-                    }
-                    0x61 => {
-                        self.op_bit(4, self.registers.c);
-                    }
-                    0x62 => {
-                        self.op_bit(4, self.registers.d);
-                    }
-                    0x63 => {
-                        self.op_bit(4, self.registers.e);
-                    }
-                    0x64 => {
-                        self.op_bit(4, self.registers.h);
-                    }
-                    0x65 => {
-                        self.op_bit(4, self.registers.l);
-                    }
-                    0x66 => {
-                        self.op_bit(4, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x67 => {
-                        self.op_bit(4, self.registers.a);
-                    }
-                    0x68 => {
-                        self.op_bit(5, self.registers.b);
-                    }
-                    0x69 => {
-                        self.op_bit(5, self.registers.c);
-                    }
-                    0x6A => {
-                        self.op_bit(5, self.registers.d);
-                    }
-                    0x6B => {
-                        self.op_bit(5, self.registers.e);
-                    }
-                    0x6C => {
-                        self.op_bit(5, self.registers.h);
-                    }
-                    0x6D => {
-                        self.op_bit(5, self.registers.l);
-                    }
-                    0x6E => {
-                        self.op_bit(5, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x6F => {
-                        self.op_bit(5, self.registers.a);
-                    }
-                    0x70 => {
-                        self.op_bit(6, self.registers.b);
-                    }
-                    0x71 => {
-                        self.op_bit(6, self.registers.c);
-                    }
-                    0x72 => {
-                        self.op_bit(6, self.registers.d);
-                    }
-                    0x73 => {
-                        self.op_bit(6, self.registers.e);
-                    }
-                    0x74 => {
-                        self.op_bit(6, self.registers.h);
-                    }
-                    0x75 => {
-                        self.op_bit(6, self.registers.l);
-                    }
-                    0x76 => {
-                        self.op_bit(6, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x77 => {
-                        self.op_bit(6, self.registers.a);
-                    }
-                    0x78 => {
-                        self.op_bit(7, self.registers.b);
-                    }
-                    0x79 => {
-                        self.op_bit(7, self.registers.c);
-                    }
-                    0x7A => {
-                        self.op_bit(7, self.registers.d);
-                    }
-                    0x7B => {
-                        self.op_bit(7, self.registers.e);
-                    }
-                    0x7C => {
-                        self.op_bit(7, self.registers.h);
-                    }
-                    0x7D => {
-                        self.op_bit(7, self.registers.l);
-                    }
-                    0x7E => {
-                        self.op_bit(7, self.work_ram[self.registers.get_hl() as usize]);
-                    }
-                    0x7F => {
-                        self.op_bit(7, self.registers.a);
-                    }
-                    0x80 => {
-                        self.registers.b &= !(1 << 0);
-                    }
-                    0x81 => {
-                        self.registers.c &= !(1 << 0);
-                    }
-                    0x82 => {
-                        self.registers.d &= !(1 << 0);
-                    }
-                    0x83 => {
-                        self.registers.e &= !(1 << 0);
-                    }
-                    0x84 => {
-                        self.registers.h &= !(1 << 0);
-                    }
-                    0x85 => {
-                        self.registers.l &= !(1 << 0);
-                    }
-                    0x86 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 0);
-                    }
-                    0x87 => {
-                        self.registers.a &= !(1 << 0);
-                    }
-                    0x88 => {
-                        self.registers.b &= !(1 << 1);
-                    }
-                    0x89 => {
-                        self.registers.c &= !(1 << 1);
-                    }
-                    0x8A => {
-                        self.registers.d &= !(1 << 1);
-                    }
-                    0x8B => {
-                        self.registers.e &= !(1 << 1);
-                    }
-                    0x8C => {
-                        self.registers.h &= !(1 << 1);
-                    }
-                    0x8D => {
-                        self.registers.l &= !(1 << 1);
-                    }
-                    0x8E => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 1);
-                    }
-                    0x8F => {
-                        self.registers.a &= !(1 << 1);
-                    }
-                    0x90 => {
-                        self.registers.b &= !(1 << 2);
-                    }
-                    0x91 => {
-                        self.registers.c &= !(1 << 2);
-                    }
-                    0x92 => {
-                        self.registers.d &= !(1 << 2);
-                    }
-                    0x93 => {
-                        self.registers.e &= !(1 << 2);
-                    }
-                    0x94 => {
-                        self.registers.h &= !(1 << 2);
-                    }
-                    0x95 => {
-                        self.registers.l &= !(1 << 2);
-                    }
-                    0x96 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 2);
-                    }
-                    0x97 => {
-                        self.registers.a &= !(1 << 2);
-                    }
-                    0x98 => {
-                        self.registers.b &= !(1 << 3);
-                    }
-                    0x99 => {
-                        self.registers.c &= !(1 << 3);
-                    }
-                    0x9A => {
-                        self.registers.d &= !(1 << 3);
-                    }
-                    0x9B => {
-                        self.registers.e &= !(1 << 3);
-                    }
-                    0x9C => {
-                        self.registers.h &= !(1 << 3);
-                    }
-                    0x9D => {
-                        self.registers.l &= !(1 << 3);
-                    }
-                    0x9E => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 3);
-                    }
-                    0x9F => {
-                        self.registers.a &= !(1 << 3);
-                    }
-                    0xA0 => {
-                        self.registers.b &= !(1 << 4);
-                    }
-                    0xA1 => {
-                        self.registers.c &= !(1 << 4);
-                    }
-                    0xA2 => {
-                        self.registers.d &= !(1 << 4);
-                    }
-                    0xA3 => {
-                        self.registers.e &= !(1 << 4);
-                    }
-                    0xA4 => {
-                        self.registers.h &= !(1 << 4);
-                    }
-                    0xA5 => {
-                        self.registers.l &= !(1 << 4);
-                    }
-                    0xA6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 4);
-                    }
-                    0xA7 => {
-                        self.registers.a &= !(1 << 4);
-                    }
-                    0xA8 => {
-                        self.registers.b &= !(1 << 5);
-                    }
-                    0xA9 => {
-                        self.registers.c &= !(1 << 5);
-                    }
-                    0xAA => {
-                        self.registers.d &= !(1 << 5);
-                    }
-                    0xAB => {
-                        self.registers.e &= !(1 << 5);
-                    }
-                    0xAC => {
-                        self.registers.h &= !(1 << 5);
-                    }
-                    0xAD => {
-                        self.registers.l &= !(1 << 5);
-                    }
-                    0xAE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 5);
-                    }
-                    0xAF => {
-                        self.registers.a &= !(1 << 5);
-                    }
-                    0xB0 => {
-                        self.registers.b &= !(1 << 6);
-                    }
-                    0xB1 => {
-                        self.registers.c &= !(1 << 6);
-                    }
-                    0xB2 => {
-                        self.registers.d &= !(1 << 6);
-                    }
-                    0xB3 => {
-                        self.registers.e &= !(1 << 6);
-                    }
-                    0xB4 => {
-                        self.registers.h &= !(1 << 6);
-                    }
-                    0xB5 => {
-                        self.registers.l &= !(1 << 6);
-                    }
-                    0xB6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 6);
-                    }
-                    0xB7 => {
-                        self.registers.a &= !(1 << 6);
-                    }
-                    0xB8 => {
-                        self.registers.b &= !(1 << 7);
-                    }
-                    0xB9 => {
-                        self.registers.c &= !(1 << 7);
-                    }
-                    0xBA => {
-                        self.registers.d &= !(1 << 7);
-                    }
-                    0xBB => {
-                        self.registers.e &= !(1 << 7);
-                    }
-                    0xBC => {
-                        self.registers.h &= !(1 << 7);
-                    }
-                    0xBD => {
-                        self.registers.l &= !(1 << 7);
-                    }
-                    0xBE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] &= value & !(1 << 7);
-                    }
-                    0xBF => {
-                        self.registers.a &= !(1 << 7);
-                    }
-                    0xC0 => {
-                        self.registers.b |= 1 << 0;
-                    }
-                    0xC1 => {
-                        self.registers.c |= 1 << 0;
-                    }
-                    0xC2 => {
-                        self.registers.d |= 1 << 0;
-                    }
-                    0xC3 => {
-                        self.registers.e |= 1 << 0;
-                    }
-                    0xC4 => {
-                        self.registers.h |= 1 << 0;
-                    }
-                    0xC5 => {
-                        self.registers.l |= 1 << 0;
-                    }
-                    0xC6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 0;
-                    }
-                    0xC7 => {
-                        self.registers.a |= 1 << 0;
-                    }
-                    0xC8 => {
-                        self.registers.b |= 1 << 1;
-                    }
-                    0xC9 => {
-                        self.registers.c |= 1 << 1;
-                    }
-                    0xCA => {
-                        self.registers.d |= 1 << 1;
-                    }
-                    0xCB => {
-                        self.registers.e |= 1 << 1;
-                    }
-                    0xCC => {
-                        self.registers.h |= 1 << 1;
-                    }
-                    0xCD => {
-                        self.registers.l |= 1 << 1;
-                    }
-                    0xCE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 1;
-                    }
-                    0xCF => {
-                        self.registers.a |= 1 << 1;
-                    }
-                    0xD0 => {
-                        self.registers.b |= 1 << 2;
-                    }
-                    0xD1 => {
-                        self.registers.c |= 1 << 2;
-                    }
-                    0xD2 => {
-                        self.registers.d |= 1 << 2;
-                    }
-                    0xD3 => {
-                        self.registers.e |= 1 << 2;
-                    }
-                    0xD4 => {
-                        self.registers.h |= 1 << 2;
-                    }
-                    0xD5 => {
-                        self.registers.l |= 1 << 2;
-                    }
-                    0xD6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 2;
-                    }
-                    0xD7 => {
-                        self.registers.a |= 1 << 2;
-                    }
-                    0xD8 => {
-                        self.registers.b |= 1 << 3;
-                    }
-                    0xD9 => {
-                        self.registers.c |= 1 << 3;
-                    }
-                    0xDA => {
-                        self.registers.d |= 1 << 3;
-                    }
-                    0xDB => {
-                        self.registers.e |= 1 << 3;
-                    }
-                    0xDC => {
-                        self.registers.h |= 1 << 3;
-                    }
-                    0xDD => {
-                        self.registers.l |= 1 << 3;
-                    }
-                    0xDE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 3;
-                    }
-                    0xDF => {
-                        self.registers.a |= 1 << 3;
-                    }
-                    0xE0 => {
-                        self.registers.b |= 1 << 4;
-                    }
-                    0xE1 => {
-                        self.registers.c |= 1 << 4;
-                    }
-                    0xE2 => {
-                        self.registers.d |= 1 << 4;
-                    }
-                    0xE3 => {
-                        self.registers.e |= 1 << 4;
-                    }
-                    0xE4 => {
-                        self.registers.h |= 1 << 4;
-                    }
-                    0xE5 => {
-                        self.registers.l |= 1 << 4;
-                    }
-                    0xE6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 4;
-                    }
-                    0xE7 => {
-                        self.registers.a |= 1 << 4;
-                    }
-                    0xE8 => {
-                        self.registers.b |= 1 << 5;
-                    }
-                    0xE9 => {
-                        self.registers.c |= 1 << 5;
-                    }
-                    0xEA => {
-                        self.registers.d |= 1 << 5;
-                    }
-                    0xEB => {
-                        self.registers.e |= 1 << 5;
-                    }
-                    0xEC => {
-                        self.registers.h |= 1 << 5;
-                    }
-                    0xED => {
-                        self.registers.l |= 1 << 5;
-                    }
-                    0xEE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 5;
-                    }
-                    0xEF => {
-                        self.registers.a |= 1 << 5;
-                    }
-                    0xF0 => {
-                        self.registers.b |= 1 << 6;
-                    }
-                    0xF1 => {
-                        self.registers.c |= 1 << 6;
-                    }
-                    0xF2 => {
-                        self.registers.d |= 1 << 6;
-                    }
-                    0xF3 => {
-                        self.registers.e |= 1 << 6;
-                    }
-                    0xF4 => {
-                        self.registers.h |= 1 << 6;
-                    }
-                    0xF5 => {
-                        self.registers.l |= 1 << 6;
-                    }
-                    0xF6 => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 6;
-                    }
-                    0xF7 => {
-                        self.registers.a |= 1 << 6;
-                    }
-                    0xF8 => {
-                        self.registers.b |= 1 << 7;
-                    }
-                    0xF9 => {
-                        self.registers.c |= 1 << 7;
-                    }
-                    0xFA => {
-                        self.registers.d |= 1 << 7;
-                    }
-                    0xFB => {
-                        self.registers.e |= 1 << 7;
-                    }
-                    0xFC => {
-                        self.registers.h |= 1 << 7;
-                    }
-                    0xFD => {
-                        self.registers.l |= 1 << 7;
-                    }
-                    0xFE => {
-                        let value = self.work_ram[self.registers.get_hl() as usize];
-                        self.work_ram[self.registers.get_hl() as usize] |= value | 1 << 7;
-                    }
-                    0xFF => {
-                        self.registers.a |= 1 << 7;
+                0xCA => {
+                    let nn: u16 = self.read_immediate_short();
+                    if self.registers.f.get_flag(Flag::Z) {
+                        self.op_jp_nn(nn);
                     }
                 }
-            }
-            0xCC => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_call_nn(nn);
-            }
-            0xCD => {
-                let nn: u16 = self.read_immediate_short();
-                debug!("nn: 0x{:X}", nn);
-                self.op_push_stack(self.registers.pc);
-                debug!("Pushed 0x{:X} to the stack", self.registers.pc); // TODO may need to be pc + 2
-                self.registers.pc = nn;
-
-                //self.op_call_nn(nn);
-            }
-            0xCE => {
-                let value = self.work_ram[self.registers.pc as usize];
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-                );
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
-                );
-                self.registers.a = result;
-            }
-            0xCF => {
-                self.op_rst_address(0x08);
-            }
-            0xD0 => {
-                if !self.registers.f.get_flag(Flag::C) {
+                0xCB => {
+                    // Get the next byte and use it as the extended opcode
+                    let extended_opcode = self.read_immediate_byte();
+                    debug!("0xCB{:X}", extended_opcode);
+                    match extended_opcode {
+                        0x00 => {
+                            let mut value = self.registers.b;
+                            self.op_rlc(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x01 => {
+                            let mut value = self.registers.c;
+                            self.op_rlc(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x02 => {
+                            let mut value = self.registers.d;
+                            self.op_rlc(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x03 => {
+                            let mut value = self.registers.e;
+                            self.op_rlc(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x04 => {
+                            let mut value = self.registers.h;
+                            self.op_rlc(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x05 => {
+                            let mut value = self.registers.l;
+                            self.op_rlc(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x06 => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_rlc(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x07 => {
+                            let mut value = self.registers.a;
+                            self.op_rlc(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x08 => {
+                            let mut value = self.registers.b;
+                            self.op_rrc(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x09 => {
+                            let mut value = self.registers.c;
+                            self.op_rrc(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x0A => {
+                            let mut value = self.registers.d;
+                            self.op_rrc(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x0B => {
+                            let mut value = self.registers.e;
+                            self.op_rrc(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x0C => {
+                            let mut value = self.registers.h;
+                            self.op_rrc(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x0D => {
+                            let mut value = self.registers.l;
+                            self.op_rrc(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x0E => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_rrc(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x0F => {
+                            let mut value = self.registers.a;
+                            self.op_rrc(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x10 => {
+                            let mut value = self.registers.b;
+                            self.op_rl(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x11 => {
+                            let mut value = self.registers.c;
+                            self.op_rl(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x12 => {
+                            let mut value = self.registers.d;
+                            self.op_rl(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x13 => {
+                            let mut value = self.registers.e;
+                            self.op_rl(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x14 => {
+                            let mut value = self.registers.h;
+                            self.op_rl(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x15 => {
+                            let mut value = self.registers.l;
+                            self.op_rl(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x16 => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_rl(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x17 => {
+                            let mut value = self.registers.a;
+                            self.op_rl(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x18 => {
+                            let mut value = self.registers.b;
+                            self.op_rr(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x19 => {
+                            let mut value = self.registers.c;
+                            self.op_rr(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x1A => {
+                            let mut value = self.registers.d;
+                            self.op_rr(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x1B => {
+                            let mut value = self.registers.e;
+                            self.op_rr(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x1C => {
+                            let mut value = self.registers.h;
+                            self.op_rr(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x1D => {
+                            let mut value = self.registers.l;
+                            self.op_rr(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x1E => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_rr(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x1F => {
+                            let mut value = self.registers.a;
+                            self.op_rr(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x20 => {
+                            let mut value = self.registers.b;
+                            self.op_sla(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x21 => {
+                            let mut value = self.registers.c;
+                            self.op_sla(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x22 => {
+                            let mut value = self.registers.d;
+                            self.op_sla(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x23 => {
+                            let mut value = self.registers.e;
+                            self.op_sla(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x24 => {
+                            let mut value = self.registers.h;
+                            self.op_sla(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x25 => {
+                            let mut value = self.registers.l;
+                            self.op_sla(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x26 => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_sla(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x27 => {
+                            let mut value = self.registers.a;
+                            self.op_sla(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x28 => {
+                            let mut value = self.registers.b;
+                            self.op_sra(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x29 => {
+                            let mut value = self.registers.c;
+                            self.op_sra(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x2A => {
+                            let mut value = self.registers.d;
+                            self.op_sra(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x2B => {
+                            let mut value = self.registers.e;
+                            self.op_sra(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x2C => {
+                            let mut value = self.registers.h;
+                            self.op_sra(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x2D => {
+                            let mut value = self.registers.l;
+                            self.op_sra(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x2E => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_sra(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x2F => {
+                            let mut value = self.registers.a;
+                            self.op_sra(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x30 => {
+                            let mut value = self.registers.b;
+                            self.op_swap(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x31 => {
+                            let mut value = self.registers.c;
+                            self.op_swap(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x32 => {
+                            let mut value = self.registers.d;
+                            self.op_swap(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x33 => {
+                            let mut value = self.registers.e;
+                            self.op_swap(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x34 => {
+                            let mut value = self.registers.h;
+                            self.op_swap(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x35 => {
+                            let mut value = self.registers.l;
+                            self.op_swap(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x36 => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_swap(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x37 => {
+                            let mut value = self.registers.a;
+                            self.op_swap(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x38 => {
+                            let mut value = self.registers.b;
+                            self.op_srl(&mut value);
+                            self.registers.b = value;
+                        }
+                        0x39 => {
+                            let mut value = self.registers.c;
+                            self.op_srl(&mut value);
+                            self.registers.c = value;
+                        }
+                        0x3A => {
+                            let mut value = self.registers.d;
+                            self.op_srl(&mut value);
+                            self.registers.d = value;
+                        }
+                        0x3B => {
+                            let mut value = self.registers.e;
+                            self.op_srl(&mut value);
+                            self.registers.e = value;
+                        }
+                        0x3C => {
+                            let mut value = self.registers.h;
+                            self.op_srl(&mut value);
+                            self.registers.h = value;
+                        }
+                        0x3D => {
+                            let mut value = self.registers.l;
+                            self.op_srl(&mut value);
+                            self.registers.l = value;
+                        }
+                        0x3E => {
+                            let mut value = self.memory_bus.read_byte(self.registers.get_hl());
+                            self.op_srl(&mut value);
+                            self.memory_bus.write_byte(self.registers.get_hl(), value);
+                        }
+                        0x3F => {
+                            let mut value = self.registers.a;
+                            self.op_srl(&mut value);
+                            self.registers.a = value;
+                        }
+                        0x40 => {
+                            self.op_bit(0, self.registers.b);
+                        }
+                        0x41 => {
+                            self.op_bit(0, self.registers.c);
+                        }
+                        0x42 => {
+                            self.op_bit(0, self.registers.d);
+                        }
+                        0x43 => {
+                            self.op_bit(0, self.registers.e);
+                        }
+                        0x44 => {
+                            self.op_bit(0, self.registers.h);
+                        }
+                        0x45 => {
+                            self.op_bit(0, self.registers.l);
+                        }
+                        0x46 => {
+                            self.op_bit(0, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x47 => {
+                            self.op_bit(0, self.registers.a);
+                        }
+                        0x48 => {
+                            self.op_bit(1, self.registers.b);
+                        }
+                        0x49 => {
+                            self.op_bit(1, self.registers.c);
+                        }
+                        0x4A => {
+                            self.op_bit(1, self.registers.d);
+                        }
+                        0x4B => {
+                            self.op_bit(1, self.registers.e);
+                        }
+                        0x4C => {
+                            self.op_bit(1, self.registers.h);
+                        }
+                        0x4D => {
+                            self.op_bit(1, self.registers.l);
+                        }
+                        0x4E => {
+                            self.op_bit(1, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x4F => {
+                            self.op_bit(1, self.registers.a);
+                        }
+                        0x50 => {
+                            self.op_bit(2, self.registers.b);
+                        }
+                        0x51 => {
+                            self.op_bit(2, self.registers.c);
+                        }
+                        0x52 => {
+                            self.op_bit(2, self.registers.d);
+                        }
+                        0x53 => {
+                            self.op_bit(2, self.registers.e);
+                        }
+                        0x54 => {
+                            self.op_bit(2, self.registers.h);
+                        }
+                        0x55 => {
+                            self.op_bit(2, self.registers.l);
+                        }
+                        0x56 => {
+                            self.op_bit(2, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x57 => {
+                            self.op_bit(2, self.registers.a);
+                        }
+                        0x58 => {
+                            self.op_bit(3, self.registers.b);
+                        }
+                        0x59 => {
+                            self.op_bit(3, self.registers.c);
+                        }
+                        0x5A => {
+                            self.op_bit(3, self.registers.d);
+                        }
+                        0x5B => {
+                            self.op_bit(3, self.registers.e);
+                        }
+                        0x5C => {
+                            self.op_bit(3, self.registers.h);
+                        }
+                        0x5D => {
+                            self.op_bit(3, self.registers.l);
+                        }
+                        0x5E => {
+                            //self.op_bit(3, self.work_ram[self.registers.get_hl() as usize]);
+                            self.op_bit(3,
+                                        self.memory_bus.read_byte(self.registers.get_hl())
+                            );
+                        }
+                        0x5F => {
+                            self.op_bit(3, self.registers.a);
+                        }
+                        0x60 => {
+                            self.op_bit(4, self.registers.b);
+                        }
+                        0x61 => {
+                            self.op_bit(4, self.registers.c);
+                        }
+                        0x62 => {
+                            self.op_bit(4, self.registers.d);
+                        }
+                        0x63 => {
+                            self.op_bit(4, self.registers.e);
+                        }
+                        0x64 => {
+                            self.op_bit(4, self.registers.h);
+                        }
+                        0x65 => {
+                            self.op_bit(4, self.registers.l);
+                        }
+                        0x66 => {
+                            self.op_bit(4, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x67 => {
+                            self.op_bit(4, self.registers.a);
+                        }
+                        0x68 => {
+                            self.op_bit(5, self.registers.b);
+                        }
+                        0x69 => {
+                            self.op_bit(5, self.registers.c);
+                        }
+                        0x6A => {
+                            self.op_bit(5, self.registers.d);
+                        }
+                        0x6B => {
+                            self.op_bit(5, self.registers.e);
+                        }
+                        0x6C => {
+                            self.op_bit(5, self.registers.h);
+                        }
+                        0x6D => {
+                            self.op_bit(5, self.registers.l);
+                        }
+                        0x6E => {
+                            self.op_bit(5, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x6F => {
+                            self.op_bit(5, self.registers.a);
+                        }
+                        0x70 => {
+                            self.op_bit(6, self.registers.b);
+                        }
+                        0x71 => {
+                            self.op_bit(6, self.registers.c);
+                        }
+                        0x72 => {
+                            self.op_bit(6, self.registers.d);
+                        }
+                        0x73 => {
+                            self.op_bit(6, self.registers.e);
+                        }
+                        0x74 => {
+                            self.op_bit(6, self.registers.h);
+                        }
+                        0x75 => {
+                            self.op_bit(6, self.registers.l);
+                        }
+                        0x76 => {
+                            self.op_bit(6, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x77 => {
+                            self.op_bit(6, self.registers.a);
+                        }
+                        0x78 => {
+                            self.op_bit(7, self.registers.b);
+                        }
+                        0x79 => {
+                            self.op_bit(7, self.registers.c);
+                        }
+                        0x7A => {
+                            self.op_bit(7, self.registers.d);
+                        }
+                        0x7B => {
+                            self.op_bit(7, self.registers.e);
+                        }
+                        0x7C => {
+                            self.op_bit(7, self.registers.h);
+                        }
+                        0x7D => {
+                            self.op_bit(7, self.registers.l);
+                        }
+                        0x7E => {
+                            self.op_bit(7, self.memory_bus.read_byte(self.registers.get_hl()));
+                        }
+                        0x7F => {
+                            self.op_bit(7, self.registers.a);
+                        }
+                        0x80 => {
+                            self.registers.b &= !(1 << 0);
+                        }
+                        0x81 => {
+                            self.registers.c &= !(1 << 0);
+                        }
+                        0x82 => {
+                            self.registers.d &= !(1 << 0);
+                        }
+                        0x83 => {
+                            self.registers.e &= !(1 << 0);
+                        }
+                        0x84 => {
+                            self.registers.h &= !(1 << 0);
+                        }
+                        0x85 => {
+                            self.registers.l &= !(1 << 0);
+                        }
+                        0x86 => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 0);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0x87 => {
+                            self.registers.a &= !(1 << 0);
+                        }
+                        0x88 => {
+                            self.registers.b &= !(1 << 1);
+                        }
+                        0x89 => {
+                            self.registers.c &= !(1 << 1);
+                        }
+                        0x8A => {
+                            self.registers.d &= !(1 << 1);
+                        }
+                        0x8B => {
+                            self.registers.e &= !(1 << 1);
+                        }
+                        0x8C => {
+                            self.registers.h &= !(1 << 1);
+                        }
+                        0x8D => {
+                            self.registers.l &= !(1 << 1);
+                        }
+                        0x8E => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 1);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0x8F => {
+                            self.registers.a &= !(1 << 1);
+                        }
+                        0x90 => {
+                            self.registers.b &= !(1 << 2);
+                        }
+                        0x91 => {
+                            self.registers.c &= !(1 << 2);
+                        }
+                        0x92 => {
+                            self.registers.d &= !(1 << 2);
+                        }
+                        0x93 => {
+                            self.registers.e &= !(1 << 2);
+                        }
+                        0x94 => {
+                            self.registers.h &= !(1 << 2);
+                        }
+                        0x95 => {
+                            self.registers.l &= !(1 << 2);
+                        }
+                        0x96 => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 2);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0x97 => {
+                            self.registers.a &= !(1 << 2);
+                        }
+                        0x98 => {
+                            self.registers.b &= !(1 << 3);
+                        }
+                        0x99 => {
+                            self.registers.c &= !(1 << 3);
+                        }
+                        0x9A => {
+                            self.registers.d &= !(1 << 3);
+                        }
+                        0x9B => {
+                            self.registers.e &= !(1 << 3);
+                        }
+                        0x9C => {
+                            self.registers.h &= !(1 << 3);
+                        }
+                        0x9D => {
+                            self.registers.l &= !(1 << 3);
+                        }
+                        0x9E => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 3);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0x9F => {
+                            self.registers.a &= !(1 << 3);
+                        }
+                        0xA0 => {
+                            self.registers.b &= !(1 << 4);
+                        }
+                        0xA1 => {
+                            self.registers.c &= !(1 << 4);
+                        }
+                        0xA2 => {
+                            self.registers.d &= !(1 << 4);
+                        }
+                        0xA3 => {
+                            self.registers.e &= !(1 << 4);
+                        }
+                        0xA4 => {
+                            self.registers.h &= !(1 << 4);
+                        }
+                        0xA5 => {
+                            self.registers.l &= !(1 << 4);
+                        }
+                        0xA6 => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 4);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0xA7 => {
+                            self.registers.a &= !(1 << 4);
+                        }
+                        0xA8 => {
+                            self.registers.b &= !(1 << 5);
+                        }
+                        0xA9 => {
+                            self.registers.c &= !(1 << 5);
+                        }
+                        0xAA => {
+                            self.registers.d &= !(1 << 5);
+                        }
+                        0xAB => {
+                            self.registers.e &= !(1 << 5);
+                        }
+                        0xAC => {
+                            self.registers.h &= !(1 << 5);
+                        }
+                        0xAD => {
+                            self.registers.l &= !(1 << 5);
+                        }
+                        0xAE => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 5);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0xAF => {
+                            self.registers.a &= !(1 << 5);
+                        }
+                        0xB0 => {
+                            self.registers.b &= !(1 << 6);
+                        }
+                        0xB1 => {
+                            self.registers.c &= !(1 << 6);
+                        }
+                        0xB2 => {
+                            self.registers.d &= !(1 << 6);
+                        }
+                        0xB3 => {
+                            self.registers.e &= !(1 << 6);
+                        }
+                        0xB4 => {
+                            self.registers.h &= !(1 << 6);
+                        }
+                        0xB5 => {
+                            self.registers.l &= !(1 << 6);
+                        }
+                        0xB6 => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 6);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0xB7 => {
+                            self.registers.a &= !(1 << 6);
+                        }
+                        0xB8 => {
+                            self.registers.b &= !(1 << 7);
+                        }
+                        0xB9 => {
+                            self.registers.c &= !(1 << 7);
+                        }
+                        0xBA => {
+                            self.registers.d &= !(1 << 7);
+                        }
+                        0xBB => {
+                            self.registers.e &= !(1 << 7);
+                        }
+                        0xBC => {
+                            self.registers.h &= !(1 << 7);
+                        }
+                        0xBD => {
+                            self.registers.l &= !(1 << 7);
+                        }
+                        0xBE => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value & !(1 << 7);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0xBF => {
+                            self.registers.a &= !(1 << 7);
+                        }
+                        0xC0 => {
+                            self.registers.b |= 1 << 0;
+                        }
+                        0xC1 => {
+                            self.registers.c |= 1 << 0;
+                        }
+                        0xC2 => {
+                            self.registers.d |= 1 << 0;
+                        }
+                        0xC3 => {
+                            self.registers.e |= 1 << 0;
+                        }
+                        0xC4 => {
+                            self.registers.h |= 1 << 0;
+                        }
+                        0xC5 => {
+                            self.registers.l |= 1 << 0;
+                        }
+                        0xC6 => {
+                            let hl = self.registers.get_hl();
+                            let value = self.memory_bus.read_byte(hl);
+                            let result = value | (1 << 0);
+                            self.memory_bus.write_byte(hl, result);
+                        }
+                        0xC7 => {
+                            self.registers.a |= 1 << 0;
+                        }
+                        0xC8 => {
+                            self.registers.b |= 1 << 1;
+                        }
+                        0xC9 => {
+                            self.registers.c |= 1 << 1;
+                        }
+                        0xCA => {
+                            self.registers.d |= 1 << 1;
+                        }
+                        0xCB => {
+                            self.registers.e |= 1 << 1;
+                        }
+                        0xCC => {
+                            self.registers.h |= 1 << 1;
+                        }
+                        0xCD => {
+                            self.registers.l |= 1 << 1;
+                        }
+                        0xCE => {
+                            self.memory_bus.write_byte(self.registers.get_hl(), self.memory_bus.read_byte(self.registers.get_hl()) | 1 << 1);
+                        }
+                        0xCF => {
+                            self.registers.a |= 1 << 1;
+                        }
+                        0xD0 => {
+                            self.registers.b |= 1 << 2;
+                        }
+                        0xD1 => {
+                            self.registers.c |= 1 << 2;
+                        }
+                        0xD2 => {
+                            self.registers.d |= 1 << 2;
+                        }
+                        0xD3 => {
+                            self.registers.e |= 1 << 2;
+                        }
+                        0xD4 => {
+                            self.registers.h |= 1 << 2;
+                        }
+                        0xD5 => {
+                            self.registers.l |= 1 << 2;
+                        }
+                        0xD6 => {
+                            let value = self.memory_bus.read_byte(self.registers.get_hl());
+                            let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                            result |= value | 1 << 2;
+                            self.memory_bus.write_byte(self.registers.get_hl(), result);
+                        }
+                        0xD7 => {
+                            self.registers.a |= 1 << 2;
+                        }
+                        0xD8 => {
+                            self.registers.b |= 1 << 3;
+                        }
+                        0xD9 => {
+                            self.registers.c |= 1 << 3;
+                        }
+                        0xDA => {
+                            self.registers.d |= 1 << 3;
+                        }
+                        0xDB => {
+                            self.registers.e |= 1 << 3;
+                        }
+                        0xDC => {
+                            self.registers.h |= 1 << 3;
+                        }
+                        0xDD => {
+                            self.registers.l |= 1 << 3;
+                        }
+                        0xDE => {
+                            let value = self.memory_bus.read_byte(self.registers.get_hl());
+                            let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                            result |= value | 1 << 3;
+                            self.memory_bus.write_byte(self.registers.get_hl(), result);
+                        }
+                        0xDF => {
+                            self.registers.a |= 1 << 3;
+                        }
+                        0xE0 => {
+                            self.registers.b |= 1 << 4;
+                        }
+                        0xE1 => {
+                            self.registers.c |= 1 << 4;
+                        }
+                        0xE2 => {
+                            self.registers.d |= 1 << 4;
+                        }
+                        0xE3 => {
+                            self.registers.e |= 1 << 4;
+                        }
+                        0xE4 => {
+                            self.registers.h |= 1 << 4;
+                        }
+                        0xE5 => {
+                            self.registers.l |= 1 << 4;
+                        }
+                        0xE6 => {
+                            let value = self.memory_bus.read_byte(self.registers.get_hl());
+                            let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                            result |= value | 1 << 4;
+                            self.memory_bus.write_byte(self.registers.get_hl(), result);
+                        }
+                        0xE7 => {
+                            self.registers.a |= 1 << 4;
+                        }
+                        0xE8 => {
+                            self.registers.b |= 1 << 5;
+                        }
+                        0xE9 => {
+                            self.registers.c |= 1 << 5;
+                        }
+                        0xEA => {
+                            self.registers.d |= 1 << 5;
+                        }
+                        0xEB => {
+                            self.registers.e |= 1 << 5;
+                        }
+                        0xEC => {
+                            self.registers.h |= 1 << 5;
+                        }
+                        0xED => {
+                            self.registers.l |= 1 << 5;
+                        }
+                        0xEE => {
+                            let value = self.memory_bus.read_byte(self.registers.get_hl());
+                            let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                            result |= value | 1 << 5;
+                            self.memory_bus.write_byte(self.registers.get_hl(), result);
+                        }
+                        0xEF => {
+                            self.registers.a |= 1 << 5;
+                        }
+                        0xF0 => {
+                            self.registers.b |= 1 << 6;
+                        }
+                        0xF1 => {
+                            self.registers.c |= 1 << 6;
+                        }
+                        0xF2 => {
+                            self.registers.d |= 1 << 6;
+                        }
+                        0xF3 => {
+                            self.registers.e |= 1 << 6;
+                        }
+                        0xF4 => {
+                            self.registers.h |= 1 << 6;
+                        }
+                        0xF5 => {
+                            self.registers.l |= 1 << 6;
+                        }
+                        0xF6 => {
+                            let value = self.memory_bus.read_byte(self.registers.get_hl());
+                            let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                            result |= value | 1 << 6;
+                            self.memory_bus.write_byte(self.registers.get_hl(), result);
+                        }
+                        0xF7 => {
+                            self.registers.a |= 1 << 6;
+                        }
+                        0xF8 => {
+                            self.registers.b |= 1 << 7;
+                        }
+                        0xF9 => {
+                            self.registers.c |= 1 << 7;
+                        }
+                        0xFA => {
+                            self.registers.d |= 1 << 7;
+                        }
+                        0xFB => {
+                            self.registers.e |= 1 << 7;
+                        }
+                        0xFC => {
+                            self.registers.h |= 1 << 7;
+                        }
+                        0xFD => {
+                            self.registers.l |= 1 << 7;
+                        }
+                        0xFE => {
+                            let value = self.memory_bus.read_byte(self.registers.get_hl());
+                            let mut result = self.memory_bus.read_byte(self.registers.get_hl());
+                            result |= value | 1 << 7;
+                            self.memory_bus.write_byte(self.registers.get_hl(), result);
+                        }
+                        0xFF => {
+                            self.registers.a |= 1 << 7;
+                        }
+                        _ => {
+                            panic!("Unsupported opcode: 0xCB{:02X}", opcode);
+                        }
+                    }
+                }
+                0xCC => {
+                    let nn: u16 = self.read_immediate_short();
+                    if self.registers.f.get_flag(Flag::Z) {
+                        self.op_call_nn(nn);
+                    }
+                }
+                0xCD => {
+                    let nn: u16 = self.read_immediate_short();
+                    debug!("CALL {:04X}", nn);
+                    self.op_call_nn(nn);
+                }
+                0xCE => {
+                    let value = self.memory_bus.read_byte(self.registers.pc);
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
+                    );
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
+                    );
+                    self.registers.a = result;
+                }
+                0xCF => {
+                    self.op_rst_address(0x08);
+                }
+                0xD0 => {
+                    if !self.registers.f.get_flag(Flag::C) {
+                        self.op_ret();
+                    }
+                }
+                0xD1 => {
+                    let value = self.op_pop_stack();
+                    self.registers.set_de(value);
+                }
+                0xD2 => {
+                    let nn: u16 = self.read_immediate_short();
+                    if !self.registers.f.get_flag(Flag::C) {
+                        self.op_jp_nn(nn);
+                    }
+                }
+                0xD3 => {
+                    panic!("Unsupported opcode: 0xD3");
+                }
+                0xD4 => {
+                    let nn: u16 = self.read_immediate_short();
+                    if !self.registers.f.get_flag(Flag::C) {
+                        self.op_call_nn(nn);
+                    }
+                }
+                0xD5 => {
+                    self.op_push_stack(self.registers.get_de());
+                }
+                0xD6 => {
+                    let value = self.read_immediate_byte();
+                    let (result, overflow) = self.registers.a.overflowing_sub(value);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+                    self.registers.f.set_flag(Flag::C, overflow);
+                    self.registers.a = result;
+                }
+                0xD7 => {
+                    self.op_rst_address(0x10);
+                }
+                0xD8 => {
+                    if self.registers.f.get_flag(Flag::C) {
+                        self.op_ret();
+                    }
+                }
+                0xD9 => {
                     self.op_ret();
+                    self.op_ei();
                 }
-            }
-            0xD1 => {
-                //self.op_pop_rr(&mut self.registers.get_de());
-                let value = self.op_pop_stack();
-                self.registers.set_de(value);
-            }
-            0xD2 => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_jp_nn(nn);
-            }
-            0xD3 => {
-                panic!("Unsupported opcode: 0xD3");
-            }
-            0xD4 => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_call_nn(nn);
-            }
-            0xD5 => {
-                self.op_push_stack(self.registers.get_de());
-            }
-            0xD6 => {
-                let value = self.read_immediate_byte();
-                let (result, overflow) = self.registers.a.overflowing_sub(value);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(Flag::C, overflow); // Set the carry flag if there's a borrow out of the most significant bit
-                self.registers.a = result;
-            }
-            0xD7 => {
-                self.op_rst_address(0x10);
-            }
-            0xD8 => {
-                if self.registers.f.get_flag(Flag::C) {
-                    self.op_ret();
+                0xDA => {
+                    let nn: u16 = self.read_immediate_short();
+                    if self.registers.f.get_flag(Flag::C) {
+                        self.op_jp_nn(nn);
+                    }
                 }
-            }
-            0xD9 => {
-                self.op_ret();
-                self.op_ei();
-            }
-            0xDA => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_jp_nn(nn);
-            }
-            0xDB => {
-                panic!("Unsupported opcode: 0xDB");
-            }
-            0xDC => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_call_nn(nn);
-            }
-            0xDD => {
-                panic!("Unsupported opcode: 0xDD");
-            }
-            0xDE => {
-                let carry = if self.registers.f.get_flag(Flag::C) {
-                    1
-                } else {
-                    0
-                } as u8;
-                let result = self
-                    .registers
-                    .a
-                    .wrapping_sub(self.work_ram[self.registers.pc as usize]);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers.f.set_flag(
-                    Flag::H,
-                    (self.registers.a & 0x0F)
-                        < (self.work_ram[self.registers.pc as usize] & 0x0F) + carry,
-                ); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(
-                    Flag::C,
-                    (self.registers.a as u16)
-                        < (self.work_ram[self.registers.pc as usize] as u16) + (carry as u16),
-                ); // Set the carry flag if there's a borrow out of the most significant bit
-                   //self.registers.pc = self.registers.pc.wrapping_add(1);
-                self.registers.a = result;
-            }
-            0xDF => {
-                self.op_rst_address(0x18);
-            }
-            0xE0 => {
-                let value = self.read_immediate_byte();
-                let address = 0xFF00 + value as u16;
-                self.work_ram[address as usize] = self.registers.a;
-            }
-            0xE1 => {
-                let value = self.op_pop_stack();
-                self.registers.set_hl(value);
-            }
-            0xE2 => {
-                self.op_ldh_c_a();
-            }
-            0xE3 => {
-                panic!("Unsupported opcode: 0xE3");
-            }
-            0xE4 => {
-                panic!("Unsupported opcode: 0xE4");
-            }
-            0xE5 => {
-                self.op_push_stack(self.registers.get_hl());
-            }
-            0xE6 => {
-                let value = self.read_immediate_byte();
-                let result = self.registers.a & value;
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true);
-                self.registers.f.set_flag(Flag::C, false);
-                self.registers.a = result;
-            }
-            0xE7 => {
-                self.op_rst_address(0x20);
-            }
-            0xE8 => {
-                let value = self.work_ram[self.registers.pc as usize] as i16;
-                let sp = self.registers.sp as i16;
-                let result = sp.wrapping_add(value);
-                self.registers.f.set_flag(Flag::Z, false);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (sp & 0x0F) + (value & 0x0F) > 0x0F);
-                self.registers
-                    .f
-                    .set_flag(Flag::C, (sp as i32) + (value as i32) > 0xFF);
-                self.registers.sp = result as u16;
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-            }
-            0xE9 => {
-                self.op_jp_hl();
-            }
-            0xEA => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_ld_nn_a(nn);
-            }
-            0xEB => {
-                panic!("Unsupported opcode: 0xEB");
-            }
-            0xEC => {
-                panic!("Unsupported opcode: 0xEC");
-            }
-            0xED => {
-                panic!("Unsupported opcode: 0xED");
-            }
-            0xEE => {
-                let value = self.read_immediate_byte();
-                let result = self.registers.a ^ value;
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, false);
-                self.registers.f.set_flag(Flag::C, false);
-                self.registers.a = result;
-            }
-            0xEF => {
-                self.op_rst_address(0x28);
-            }
-            0xF0 => {
-                let value = self.read_immediate_byte();
-                self.op_ldh_a_n8(value);
-            }
-            0xF1 => {
-                let value = self.op_pop_stack();
-                self.registers.set_af(value);
-            }
-            0xF2 => {
-                self.op_ldh_a_c();
-            }
-            0xF3 => {
-                self.op_di();
-            }
-            0xF4 => {
-                panic!("Unsupported opcode: 0xF4");
-            }
-            0xF5 => {
-                self.op_push_stack(self.registers.get_af());
-            }
-            0xF6 => {
-                let value = self.read_immediate_byte();
-                let result = self.registers.a | value;
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, false);
-                self.registers.f.set_flag(Flag::H, true);
-                self.registers.f.set_flag(Flag::C, false);
-
-                self.registers.a = result;
-            }
-            0xF7 => {
-                self.op_rst_address(0x30);
-            }
-            0xF8 => {
-                let value = self.read_immediate_byte();
-                let result = ((self.registers.sp as i16) + (value as i8 as i16)) as u16;
-
-                self.registers.set_hl(result);
-            }
-            0xF9 => {
-                self.op_ld_sp_hl();
-            }
-            0xFA => {
-                let nn: u16 = self.read_immediate_short();
-                self.op_ld_a_nn(nn);
-            }
-            0xFB => {
-                self.op_ei();
-            }
-            0xFC => {
-                panic!("Unsupported opcode: 0xFC");
-            }
-            0xFD => {
-                panic!("Unsupported opcode: 0xFD");
-            }
-            0xFE => {
-                let value = self.read_immediate_byte();
-                let result = self.registers.a.wrapping_sub(value);
-                self.registers.f.set_flag(Flag::Z, result == 0);
-                self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                self.registers
-                    .f
-                    .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
-            }
-            0xFF => {
-                self.op_rst_address(0x38);
+                0xDB => {
+                    panic!("Unsupported opcode: 0xDB");
+                }
+                0xDC => {
+                    let nn: u16 = self.read_immediate_short();
+                    if self.registers.f.get_flag(Flag::C) {
+                        self.op_call_nn(nn);
+                    }
+                }
+                0xDD => {
+                    panic!("Unsupported opcode: 0xDD");
+                }
+                0xDE => {
+                    let carry = if self.registers.f.get_flag(Flag::C) {
+                        1
+                    } else {
+                        0
+                    } as u8;
+                    let value = self.memory_bus.read_byte(self.registers.pc);
+                    // Do not manually increment self.registers.pc here as read_byte already increments it
+                    let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
+                    self.registers.f.set_flag(
+                        Flag::H,
+                        (self.registers.a & 0x0F) < (value & 0x0F) + carry,
+                    ); // Set the half-carry flag if there's a borrow from bit 4
+                    self.registers.f.set_flag(
+                        Flag::C,
+                        (self.registers.a as u16) < (value as u16) + (carry as u16),
+                    ); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.registers.a = result;
+                }
+                0xDF => {
+                    self.op_rst_address(0x18);
+                }
+                0xE0 => {
+                    let offset = self.read_immediate_byte() as u16;
+                    let address = 0xFF00 + offset;
+                    debug!("LDH (0xFF00 + {:02X}), A", offset);
+                    self.memory_bus.write_byte(address, self.registers.a);
+                }
+                0xE1 => {
+                    let value = self.op_pop_stack();
+                    self.registers.set_hl(value);
+                }
+                0xE2 => {
+                    let address = 0xFF00 | self.registers.c as u16;
+                    self.memory_bus.write_byte(address, self.registers.a);
+                }
+                0xE3 => {
+                    panic!("Unsupported opcode: 0xE3");
+                }
+                0xE4 => {
+                    panic!("Unsupported opcode: 0xE4");
+                }
+                0xE5 => {
+                    self.op_push_stack(self.registers.get_hl());
+                }
+                0xE6 => {
+                    let value = self.read_immediate_byte();
+                    let result = self.registers.a & value;
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, true);
+                    self.registers.f.set_flag(Flag::C, false);
+                    self.registers.a = result;
+                }
+                0xE7 => {
+                    self.op_rst_address(0x20);
+                }
+                0xE8 => {
+                    let value = self.read_immediate_byte() as i16;
+                    let sp = self.registers.sp as i16;
+                    let result = sp.wrapping_add(value);
+                    self.registers.f.set_flag(Flag::Z, false);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result) & 0x10) == 0x10);
+                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result) & 0x100) == 0x100);
+                    self.registers.sp = result as u16;
+                }
+                0xE9 => {
+                    self.registers.pc = self.registers.get_hl();
+                }
+                0xEA => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.memory_bus.write_byte(nn, self.registers.a);
+                }
+                0xEB => {
+                    panic!("Unsupported opcode: 0xEB");
+                }
+                0xEC => {
+                    //panic!("Unsupported opcode: 0xEC");
+                    error!("Unsupported opcode: 0xEC");
+                }
+                0xED => {
+                    //panic!("Unsupported opcode: 0xED");
+                    error!("Unsupported opcode: 0xED");
+                }
+                0xEE => {
+                    let value = self.read_immediate_byte();
+                    let result = self.registers.a ^ value;
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                    self.registers.a = result;
+                }
+                0xEF => {
+                    self.op_rst_address(0x28);
+                }
+                0xF0 => {
+                    let value = self.read_immediate_byte();
+                    let address = 0xFF00 + value as u16;
+                    self.registers.a = self.memory_bus.read_byte(address);
+                }
+                0xF1 => {
+                    let value = self.op_pop_stack();
+                    self.registers.set_af(value & 0xFFF0);
+                }
+                0xF2 => {
+                    let address = 0xFF00 | self.registers.c as u16;
+                    self.registers.a = self.memory_bus.read_byte(address);
+                }
+                0xF3 => {
+                    self.op_di();
+                }
+                0xF4 => {
+                    panic!("Unsupported opcode: 0xF4");
+                }
+                0xF5 => {
+                    self.op_push_stack(self.registers.get_af());
+                }
+                0xF6 => {
+                    let value = self.read_immediate_byte();
+                    let result = self.registers.a | value;
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, false);
+                    self.registers.f.set_flag(Flag::C, false);
+                    self.registers.a = result;
+                }
+                0xF7 => {
+                    self.op_rst_address(0x30);
+                }
+                0xF8 => {
+                    let value = self.read_immediate_byte() as i8 as i16;
+                    let sp = self.registers.sp as i16;
+                    let result = sp.wrapping_add(value) as u16;
+                    self.registers.set_hl(result);
+                    self.registers.f.set_flag(Flag::Z, false);
+                    self.registers.f.set_flag(Flag::N, false);
+                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result as i16) & 0x10) == 0x10);
+                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result as i16) & 0x100) == 0x100);
+                }
+                0xF9 => {
+                    self.registers.sp = self.registers.get_hl();
+                }
+                0xFA => {
+                    let nn: u16 = self.read_immediate_short();
+                    self.registers.a = self.memory_bus.read_byte(nn);
+                }
+                0xFB => {
+                    self.op_ei();
+                }
+                0xFC => {
+                    panic!("Unsupported opcode: 0xFC");
+                }
+                0xFD => {
+                    panic!("Unsupported opcode: 0xFD");
+                }
+                0xFE => {
+                    let value = self.read_immediate_byte();
+                    let result = self.registers.a.wrapping_sub(value);
+                    self.registers.f.set_flag(Flag::Z, result == 0);
+                    self.registers.f.set_flag(Flag::N, true);
+                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+                    self.registers.f.set_flag(Flag::C, self.registers.a < value);
+                }
+                0xFF => {
+                    self.op_rst_address(0x0038);
+                }
+                _ => {
+                    panic!("Unsupported opcode: {:X}", opcode);
+                }
             }
         }
+        else {
+            info!("CPU halted");
+            self.check_interrupts();
+            
+        }
+
+        
+
     }
 
     /*
@@ -2870,9 +2928,9 @@ impl CPU {
      *   Read the immediate 16-bit value from memory for the current program counter and program counter + 1.
      */
     fn read_immediate_short(&mut self) -> u16 {
-        let lsb = self.work_ram[self.registers.pc as usize];
+        let lsb = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
-        let msb = self.work_ram[self.registers.pc as usize];
+        let msb = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
         (msb as u16) << 8 | lsb as u16
     }
@@ -2881,7 +2939,7 @@ impl CPU {
      *   Read the immediate 8-bit value from memory for the current program counter.
      */
     fn read_immediate_byte(&mut self) -> u8 {
-        let value = self.work_ram[self.registers.pc as usize];
+        let value = self.memory_bus.read_byte(self.registers.pc);
         self.registers.pc = self.registers.pc.wrapping_add(1);
         value
     }
@@ -2890,10 +2948,26 @@ impl CPU {
      *   Write the immediate 16-bit value to memory.
      */
     fn write_immediate_short(&mut self, address: u16, value: u16) {
+        debug!("write immediate short address {:X} value {:X}", address, value);
         let lsb = (value & 0x00FF) as u8;
-        let msb = (address >> 8) as u8;
-        self.work_ram[address as usize] = lsb;
-        self.work_ram[address.wrapping_add(1) as usize] = msb;
+        let msb = (value >> 8) as u8;
+        self.memory_bus.write_byte(address, lsb);
+        self.memory_bus.write_byte(address.wrapping_add(1), msb);
+        /*match address {
+            0x0000..=0x7FFF  => {
+                let lsb = (value & 0x00FF) as u8;
+                let msb = (value >> 8) as u8;
+                self.memory_bus.write_byte(address, lsb);
+                self.memory_bus.write_byte(address.wrapping_add(1), msb);
+            },
+            0x8000..=0x9FFF => {
+                self.gpu.write_short(address, value);
+            },
+            _ => {
+                panic!("Unsupported address: {:X}", address);
+
+            }
+        }*/
     }
 
     /*
@@ -2914,68 +2988,6 @@ impl CPU {
     }
 
     /*
-     *   LD A, (nn)
-     *   Load to the 8-bit A register, data from the absolute address specified by the 16-bit operand nn.
-     */
-    fn op_ld_a_nn(&mut self, address: u16) {
-        debug!("op_ld_a_nn");
-        self.registers.a = self.work_ram[address as usize];
-    }
-    /*
-     *    LD (nn), A
-     *    Load to the absolute address specified by the 16-bit operand nn, data from the 8-bit A register.
-     */
-    fn op_ld_nn_a(&mut self, address: u16) {
-        debug!("op_ld_nn_a");
-        self.work_ram[address as usize] = self.registers.a;
-    }
-    /*
-     *   LDH A, (C)
-     *   Load to the 8-bit A register, data from the address specified by the 8-bit C register. The full 16-bit absolute
-     *   address is obtained by setting the most significant byte to 0xFF and the least significant byte to the value of C,
-     *   so the possible range is 0xFF00-0xFFFF.
-     */
-    //  TODO - Check this is setting the upper and lower bits correctly
-    fn op_ldh_a_c(&mut self) {
-        debug!("op_ldh_a_c");
-        let address = 0xFF00 | self.registers.c as u16;
-        self.registers.a = self.work_ram[address as usize];
-    }
-
-    /*
-     *   LDH (C), A
-     *   Load to the address specified by the 8-bit C register, data from the 8-bit A register. The full 16-bit absolute
-     *   address is obtained by setting the most significant byte to 0xFF and the least significant byte to the value of C,
-     *   so the possible range is 0xFF00-0xFFFF.
-     */
-    fn op_ldh_c_a(&mut self) {
-        debug!("op_ldh_c_a");
-        let address = 0xFF00 | self.registers.c as u16;
-        self.work_ram[address as usize] = self.registers.a;
-    }
-
-    /*
-     *   LDH A, (n)
-     *   Load to the 8-bit A register, data from the address specified by the 8-bit immediate data n. The full 16-bit
-     *   absolute address is obtained by setting the most significant byte to 0xFF and the least significant byte to the
-     *   value of n, so the possible range is 0xFF00-0xFFFF.
-     */
-    fn op_ldh_a_n8(&mut self, value: u8) {
-        debug!("op_ldh_a_n8");
-        let address = 0xFF00 | value as u16;
-        self.registers.a = self.work_ram[address as usize];
-    }
-
-    /*
-     *   LD SP, HL
-     *   Load to the 16-bit SP register, data from the 16-bit HL register.
-     */
-    fn op_ld_sp_hl(&mut self) {
-        debug!("op_ld_sp_hl");
-        self.registers.sp = self.registers.get_hl();
-    }
-
-    /*
      *   JP nn
      *   Unconditional jump to the absolute address specified by the 16-bit operand nn.
      */
@@ -2985,40 +2997,25 @@ impl CPU {
     }
 
     /*
-     *   JP HL
-     *   Unconditional jump to the absolute address specified by the 16-bit register HL.
-     */
-    fn op_jp_hl(&mut self) {
-        debug!("op_jp_hl");
-        self.registers.pc = self.registers.get_hl();
-    }
-
-    /*
      *   JR e
      *   Unconditional jump to the relative address specified by the signed 8-bit operand e.
      */
-    fn op_jr_e(&mut self, offset: i8) {
-        debug!("op_jr_e");
+    /*fn op_jr_e(&mut self, offset: i8) {
+        debug!(
+            "Jumping to 0x{:04X}",
+            self.registers.pc.wrapping_add(offset as u16)
+        );
         self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
+    }*/
+    fn op_jr_e(&mut self, offset: i8) {
+        debug!("Jumping to 0x{:04X}", (self.registers.pc as i16).wrapping_add(offset as i16) as u16);
+        self.registers.pc = (self.registers.pc as i16).wrapping_add(offset as i16) as u16;
     }
-
-    /*
-     *   JR cc, e
-     *   Conditional jump to the relative address specified by the signed 8-bit operand e, depending on the condition cc.
-     */
-    // TODO condition likely incorrect
-    fn op_jr_cc_e(&mut self, condition: bool, offset: i8) {
-        debug!("op_jr_cc_e");
-        if condition {
-            self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
-        }
-    }
-
+    
     /*
      *   CALL nn
      *   Unconditional function call to the absolute address specified by the 16-bit operand nn.
      */
-    // TODO logic likely incorrect
     fn op_call_nn(&mut self, address: u16) {
         debug!("op_call_nn");
         self.op_push_stack(self.registers.pc);
@@ -3031,8 +3028,8 @@ impl CPU {
      */
     fn op_ret(&mut self) {
         debug!("op_ret");
-        //unimplemented!("op_ret");
-        self.registers.pc = self.op_pop_stack();
+        let address = self.op_pop_stack();
+        self.registers.pc = address;
     }
 
     /*
@@ -3041,18 +3038,60 @@ impl CPU {
      *   DI
      *   Disables interrupt handling by setting IME=0 and cancelling any scheduled effects of the EI instruction if any.
      */
+    
+    fn check_interrupts(&mut self) {
+        if self.interrupt_master_enable {
+            let interrupts = self.interrupt_enable_register & self.interrupt_flags;
+            if interrupts != 0 {
+                self.halted = false;
+                self.service_interrupt(interrupts);
+            }
+        }
+    }
+    
+    fn service_interrupt(&mut self, interrupts: u8) {
+        if interrupts & 0x01 != 0 {
+            self.interrupt_flags &= !0x01;
+            self.op_rst_address(0x40);
+        }
+        if interrupts & 0x02 != 0 {
+            self.interrupt_flags &= !0x02;
+            self.op_rst_address(0x48);
+        }
+        if interrupts & 0x04 != 0 {
+            self.interrupt_flags &= !0x04;
+            self.op_rst_address(0x50);
+        }
+        if interrupts & 0x08 != 0 {
+            self.interrupt_flags &= !0x08;
+            self.op_rst_address(0x58);
+        }
+        if interrupts & 0x10 != 0 {
+            self.interrupt_flags &= !0x10;
+            self.op_rst_address(0x60);
+        }
+    }
+    
+    fn handle_interrupt(&mut self, address: u16) {
+        self.op_push_stack(self.registers.pc);
+        self.registers.pc = address;
+        self.interrupt_master_enable = false;
+    }
 
     fn op_halt(&mut self) {
         debug!("op_halt");
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+        //self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        self.halted = true;
     }
     fn op_stop(&mut self) {
         debug!("op_stop");
-        self.work_ram[INTERRUPT_ENABLE_REGISTER as usize] = 0;
+        self.halted = true;
+        //self.memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
+        
     }
     fn op_di(&mut self) {
         debug!("op_di");
-        self.interupt = false;
+        self.interrupt_master_enable = false;
     }
 
     /*
@@ -3061,7 +3100,7 @@ impl CPU {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.interupt = true;
+        self.interrupt_master_enable = true;
     }
 
     /*
@@ -3121,13 +3160,12 @@ impl CPU {
 
     // TODO add detailed description
     fn op_sla(&mut self, register: &mut u8) {
-        debug!("op_sla");
-        let carry = *register & 0x80 != 0;
+        let carry = *register >> 7;
         *register <<= 1;
         self.registers.f.set_flag(Flag::Z, *register == 0);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, false);
-        self.registers.f.set_flag(Flag::C, carry);
+        self.registers.f.set_flag(Flag::C, carry == 1);
     }
 
     // TODO add detailed description
@@ -3165,9 +3203,7 @@ impl CPU {
     // TODO add detailed description
     fn op_bit(&mut self, bit: u8, register: u8) {
         debug!("op_bit");
-        self.registers
-            .f
-            .set_flag(Flag::Z, (register & (1 << bit)) == 0);
+        self.registers.f.set_flag(Flag::Z, (register & (1 << bit)) == 0);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, true);
     }
@@ -3181,25 +3217,17 @@ impl CPU {
         self.registers.pc = address;
     }
 
-    fn op_push_stack(&mut self, address: u16) {
+    pub fn op_push_stack(&mut self, address: u16) {
         debug!("op_push_stack");
-        /*let sp = self.registers.sp;
-        self.work_ram[sp as usize] = ((address >> 8) & 0xFF) as u8; // High byte
-        self.work_ram[(sp - 1) as usize] = (address & 0xFF) as u8; // Low byte
-        self.registers.sp -= 2; // Decrement stack pointer*/
-        self.call_stack.push(address);
-        //TODO with this logic stack pointer isn't required?
+        self.registers.sp = self.registers.sp.wrapping_sub(2);
+        self.memory_bus.write_short(self.registers.sp, address);
     }
 
     fn op_pop_stack(&mut self) -> u16 {
         debug!("op_pop_stack");
-        /*let sp = self.registers.sp;
-        let msb = self.work_ram[sp as usize];
-        let lsb = self.work_ram[(sp + 1) as usize];
-        let value = (msb as u16) << 8 | lsb as u16;
-        value*/
-        //TODO with this logic stack pointer isn't required
-        self.call_stack.pop().expect("op_pop_stack stack underflow")
+        let value = self.memory_bus.read_short(self.registers.sp);
+        self.registers.sp = self.registers.sp.wrapping_add(2);
+        value
     }
 
     fn wait_for_input(&mut self) {
@@ -3228,10 +3256,15 @@ impl CPU {
         }
     }
 
-    fn print_debug(&self) {
-        if self.work_ram[0xFF02] == 0x81 {
-            info!("{}", self.work_ram[0xFF01] as char);
-            panic!("0x81");
+    fn debug_update(&mut self) {
+        if self.memory_bus.read_byte(0xFF02) == 0x81 {
+            self.rom_debug.add_char(self.memory_bus.read_byte(0xFF01) as char);
+            self.memory_bus.write_byte(0xFF02, 0);
         }
     }
+
+    fn debug_print(&mut self) {
+        self.rom_debug.print();
+    }
+
 }

@@ -50,7 +50,7 @@ pub struct CPU<'a> {
     video_ram: [u16; 8192],
     //interrupt_enable_register: u8,
     gpu: GPU,
-    pub memory_bus: MemoryBus,
+    pub memory_bus: &'a mut MemoryBus,
     //pub call_stack: Vec<u16>,
     pub halted: bool,
     stopped: bool,

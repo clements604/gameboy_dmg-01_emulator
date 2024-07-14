@@ -24,7 +24,7 @@ fn main() {
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
         //.target(env_logger::Target::Pipe(Box::new(file)))
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .is_test(false)
         .try_init();
 

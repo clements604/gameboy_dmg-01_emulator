@@ -55,7 +55,6 @@ pub struct CPU<'a> {
     pub halted: bool,
     stopped: bool,
     pub interrupt_master_enable: bool,
-    enable_ime: bool,
     pub interrupt_enable_register: u8,
     pub interrupt_flags: u8,
     //interrupts: Interrupts,
@@ -258,7 +257,6 @@ impl<'a> CPU<'a> {
             halted: false,
             stopped: false,
             interrupt_master_enable: false,
-            enable_ime: false,
             interrupt_enable_register: 0,
             rom_debug: rom_debug::rom_debug::new(),
             //interrupts: Interrupts::new(),
@@ -2910,21 +2908,11 @@ impl<'a> CPU<'a> {
         }
         else {
             info!("CPU halted");
-
-            if self.interrupt_flags > 0x0 {
-                info!("CPU waking up");
-                self.halted = false;
-            }
+            self.check_interrupts();
+            
         }
 
-        if self.interrupt_master_enable {
-            handle_interrupts(self);
-            self.enable_ime = false;
-        }
-
-        if self.enable_ime {
-            self.interrupt_master_enable = true;
-        }
+        
 
     }
 
@@ -3050,6 +3038,45 @@ impl<'a> CPU<'a> {
      *   DI
      *   Disables interrupt handling by setting IME=0 and cancelling any scheduled effects of the EI instruction if any.
      */
+    
+    fn check_interrupts(&mut self) {
+        if self.interrupt_master_enable {
+            let interrupts = self.interrupt_enable_register & self.interrupt_flags;
+            if interrupts != 0 {
+                self.halted = false;
+                self.service_interrupt(interrupts);
+            }
+        }
+    }
+    
+    fn service_interrupt(&mut self, interrupts: u8) {
+        if interrupts & 0x01 != 0 {
+            self.interrupt_flags &= !0x01;
+            self.op_rst_address(0x40);
+        }
+        if interrupts & 0x02 != 0 {
+            self.interrupt_flags &= !0x02;
+            self.op_rst_address(0x48);
+        }
+        if interrupts & 0x04 != 0 {
+            self.interrupt_flags &= !0x04;
+            self.op_rst_address(0x50);
+        }
+        if interrupts & 0x08 != 0 {
+            self.interrupt_flags &= !0x08;
+            self.op_rst_address(0x58);
+        }
+        if interrupts & 0x10 != 0 {
+            self.interrupt_flags &= !0x10;
+            self.op_rst_address(0x60);
+        }
+    }
+    
+    fn handle_interrupt(&mut self, address: u16) {
+        self.op_push_stack(self.registers.pc);
+        self.registers.pc = address;
+        self.interrupt_master_enable = false;
+    }
 
     fn op_halt(&mut self) {
         debug!("op_halt");
@@ -3073,7 +3100,7 @@ impl<'a> CPU<'a> {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.enable_ime = true;
+        self.interrupt_master_enable = true;
     }
 
     /*

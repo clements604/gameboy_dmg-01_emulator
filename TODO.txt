@@ -1,0 +1,5 @@
+C229, C22D, C2231 are setting interrupt and timers.
+
+Halted howto at 21:33, part 9
+
+0xF0 is likely incorrect

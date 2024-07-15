@@ -1,5 +1,5 @@
 use log::{debug, error, info};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::{self, Read};
 use std::{error, fmt, result};
@@ -279,6 +279,8 @@ impl<'a> CPU<'a> {
      */
     pub fn cycle(&mut self) {
         debug!("##################################################");
+        
+        self.gameboy_doctor_output_log();
 
         if !self.halted {
 
@@ -3265,6 +3267,35 @@ impl<'a> CPU<'a> {
 
     fn debug_print(&mut self) {
         self.rom_debug.print();
+    }
+
+    fn gameboy_doctor_output_log(&mut self) {
+        // create or open (append mode) the log file
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("gameboy_doctor_output.log")
+            .unwrap();
+
+        // write line to file
+        writeln!(file, "A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:02X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}",
+                 self.registers.a,
+                 u8::from(self.registers.f),
+                 self.registers.b,
+                 self.registers.c,
+                 self.registers.d,
+                 self.registers.e,
+                 self.registers.h,
+                 self.registers.l,
+                 self.registers.sp,
+                 self.registers.pc,
+                 self.memory_bus.read_byte(self.registers.pc),
+                 self.memory_bus.read_byte(self.registers.pc.wrapping_add(1)),
+                 self.memory_bus.read_byte(self.registers.pc.wrapping_add(2)),
+                 self.memory_bus.read_byte(self.registers.pc.wrapping_add(3)),)
+            .unwrap();
+        // close file
+        file.flush().unwrap();
     }
 
 }

@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use sdl2::surface;
 
-const SCALE_FACTOR: u32 = 1;
+const SCALE_FACTOR: u32 = 2;
 
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
@@ -133,17 +133,16 @@ impl Display /*<'a>*/ {
 
         // Debug window start
         let debug_window = video_subsystem
-            .window("Tile debugger", (16 * 8 * 1), (32 * 8 * 1)) // TODO scale hardcoded as 1
+            .window("Tile debugger", (16 * 8 * SCALE_FACTOR), (32 * 8 * SCALE_FACTOR)) 
             .position_centered()
             .build()
             .unwrap();
 
         let debug_renderer = debug_window.into_canvas().build().unwrap();
-
-        let scale = 1; // Replace with your actual scale value
+        
         let debug_screen = sdl2::surface::Surface::new(
-            (16 * 8 * scale) + (16 * scale),
-            (32 * 8 * scale) + (64 * scale),
+            (16 * 8 * SCALE_FACTOR) + (16 * SCALE_FACTOR),
+            (32 * 8 * SCALE_FACTOR) + (64 * SCALE_FACTOR),
             sdl2::pixels::PixelFormatEnum::ARGB8888,
         )
         .unwrap();
@@ -238,12 +237,12 @@ impl Display /*<'a>*/ {
                         tile_number, x, y
                     );*/
 
-                    let x_coord = x_draw + (x * 1); // TODO: scale hardcoded as 1
-                    let y_coord = y_draw + (y * 1); // TODO: scale hardcoded as 1
+                    let x_coord = x_draw + (x * SCALE_FACTOR) as i32;
+                    let y_coord = y_draw + (y * SCALE_FACTOR) as i32;
 
                     let mut rectangle = sdl2::rect::Rect::new(
-                        x_coord, y_coord, 1, // TODO: scale hardcoded as 1
-                        1, // TODO: scale hardcoded as 1
+                        x_coord, y_coord, SCALE_FACTOR,
+                        SCALE_FACTOR,
                     );
 
                     //let mut rectangle = sdl2::rect::Rect::new(x_draw, y_draw, 8, 8);
@@ -258,8 +257,8 @@ impl Display /*<'a>*/ {
                                 as u16,
                         );
                         for bit in (0..=7).rev() {
-                            let hi = !!(b1 & (1 << bit)) << 1; // TODO: scale hardcoded as 1
-                            let lo = !!(b2 & (1 << bit)); // TODO: scale hardcoded as 1
+                            let hi = !!(b1 & (1 << bit)) << 1;
+                            let lo = !!(b2 & (1 << bit));
                                                           //debug!("hi: {:X}, lo: {:X}", hi, lo);
                             let colour = hi | lo;
                             //debug!("colour: {:X}", colour);
@@ -279,19 +278,19 @@ impl Display /*<'a>*/ {
                                 1,
                             );*/
                             //error!("x_coord: {}, y_coord: {}", x_coord + ((7 - bit) * 1), y_coord + (tile_y / 2 * 1) as i32);
-                            rectangle.set_x(x_coord + ((7 - bit) * 1)); // TODO: scale hardcoded as 1
-                            rectangle.set_y(y_coord + (tile_y / 2 * 1) as i32); // TODO: scale hardcoded as 1
-                            rectangle.set_width(1); // TODO: scale hardcoded as 1
-                            rectangle.set_height(1); // TODO: scale hardcoded as 1
+                            rectangle.set_x(x_coord + ((7 - bit) * SCALE_FACTOR) as i32);
+                            rectangle.set_y(y_coord + (tile_y / 2 * SCALE_FACTOR) as i32);
+                            rectangle.set_width(SCALE_FACTOR);
+                            rectangle.set_height(SCALE_FACTOR);
 
                             surface.fill_rect(rectangle, rgb_color).unwrap();
                         }
                     }
 
-                    x_draw += 8 * 1; // TODO: scale hardcoded as 1
+                    x_draw += (8 * SCALE_FACTOR) as i32;
                     tile_number += 1;
                 }
-                y_draw += 8 * 1; // TODO: scale hardcoded as 1
+                y_draw += (8 * SCALE_FACTOR) as i32;
                 x_draw = 0;
             }
 

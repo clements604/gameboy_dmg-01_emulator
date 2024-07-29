@@ -1,11 +1,12 @@
 use crate::CPU::CPU;
 
+#[derive(Debug)]
 pub enum Interrupt {
-    VBlank,
-    LCDStat,
-    Timer,
-    Serial,
-    Joypad,
+    VBLANK,
+    LCDSTAT,
+    TIMER,
+    SERIAL,
+    JOYPAD,
 }
 /*
 pub struct Interrupts {
@@ -23,7 +24,7 @@ impl Interrupts{
         }
     }*/
 
-pub fn check_interrupts(cpu: &mut CPU, interrupt: Interrupt) -> bool {
+/*pub fn check_interrupts(cpu: &mut CPU, interrupt: Interrupt) -> bool {
     let interrupt_flag = match interrupt {
         Interrupt::VBlank => 0x1,
         Interrupt::LCDStat => 0x2,
@@ -39,9 +40,9 @@ pub fn check_interrupts(cpu: &mut CPU, interrupt: Interrupt) -> bool {
         return true;
     }
     false
-}
+}*/
 
-pub fn handle_interrupt(cpu: &mut CPU, interrupt: Interrupt) {
+/*pub fn handle_interrupt(cpu: &mut CPU, interrupt: Interrupt) {
     cpu.op_push_stack(cpu.registers.pc);
     cpu.registers.pc = match interrupt {
         Interrupt::VBlank => 0x40,
@@ -50,9 +51,9 @@ pub fn handle_interrupt(cpu: &mut CPU, interrupt: Interrupt) {
         Interrupt::Serial => 0x58,
         Interrupt::Joypad => 0x60,
     };
-}
+}*/
 
-pub fn handle_interrupts(cpu: &mut CPU) {
+/*pub fn handle_interrupts(cpu: &mut CPU) {
     if cpu.interrupt_master_enable {
         if check_interrupts(cpu, Interrupt::VBlank) {
             return;
@@ -70,6 +71,6 @@ pub fn handle_interrupts(cpu: &mut CPU) {
             return;
         }
     }
-}
+}*/
 
 

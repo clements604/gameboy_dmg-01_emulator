@@ -4,6 +4,7 @@
 
 - Guide to follow
   https://rylev.github.io/DMG-01/public/book/introduction.html
+- https://emudev.de/gameboy-emulator/testing-our-cpu/
 
 - Guide author presentation
   https://www.youtube.com/watch?v=B7seNuQncvU
@@ -18,11 +19,19 @@
   https://imrannazar.com/series/gameboy-emulation-in-javascript
 
 - Gameboy development documentation
-  https://bgb.bircd.org/pandocs.htm
+  - https://gbdev.io/pandocs/OAM.html
+  - https://bgb.bircd.org/pandocs.htm
 
 # gameboy_dmg-01_emulator
 
 ## References
+
+#### Git repos -- emulators:
+- https://lib.rs/crates/gameboy
+- https://github.com/rylev/DMG-01/blob/master/lib-dmg-01/src/gpu.rs
+- https://github.com/plorefice/gib/blob/master/src/ui/mod.rs
+- https://github.com/ThomasRinsma/dromaius/blob/4e40e157511a5ce3d85f8438018e657faa714f00/src/cpu.cc#L213
+- https://github.com/rockytriton/LLD_gbemu
 
 #### ROM header information
 
@@ -36,6 +45,13 @@
 #### Test ROMS
 
 - https://github.com/retrio/gb-test-roms
+- https://github.com/retrio/gb-test-roms/blob/master/cpu_instrs/source/07-jr%2Cjp%2Ccall%2Cret%2Crst.s
+
+#### OAM documentation
+- https://hacktix.github.io/GBEDG/ppu/#oam-memory
+
+#### Opcodes
+- https://pastraiser.com/cpu/gameboy/gameboy_opcodes.html
 
 ## Glossary
 

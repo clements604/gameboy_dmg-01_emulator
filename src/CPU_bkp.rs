@@ -287,11 +287,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         if !self.halted {
 
             debug!("Fetch");
-
+    
             //debug!("{:?}", self.registers);
-
+    
             let opcode = self.memory_bus.borrow().read_byte(self.registers.pc);
-
+    
             debug!("PC [0x{:X}]", self.registers.pc);
             debug!("Opcode [0x{:X}]", opcode);
             //debug!("{}", self.registers);
@@ -302,15 +302,15 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 info!("{}", self.registers);
                 panic!("hello [0x{:X}]", self.registers.pc);
             }*/
-
+    
             self.registers.pc = self.registers.pc.wrapping_add(1);
-
+    
             self.debug_update();
             self.debug_print();
-
+    
             debug!("Decode & Execute");
 
-
+        
             match opcode {
                 0x00 => {
                     self.op_nop();
@@ -1230,7 +1230,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16));
+                    self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16)); 
                     self.registers.a = result;
                 }
                 0x99 => {
@@ -2484,10 +2484,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                             self.registers.l |= 1 << 1;
                         }
                         0xCE => {
-                            let hl = self.registers.get_hl();
-                            let value = self.memory_bus.borrow().read_byte(hl);
-                            let result = value | (1 << 1);
-                            self.memory_bus.borrow_mut().write_byte(hl, result);
+                            self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.memory_bus.borrow().read_byte(self.registers.get_hl()) | 1 << 1);
                         }
                         0xCF => {
                             self.registers.a |= 1 << 1;
@@ -2940,7 +2937,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
 
         }
 
-
+        
 
     }
 
@@ -3043,7 +3040,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         debug!("Jumping to 0x{:04X}", address);
         self.registers.pc = address as u16;
     }
-
+    
     /*
      *   CALL nn
      *   Unconditional function call to the absolute address specified by the 16-bit operand nn.
@@ -3070,7 +3067,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      *   DI
      *   Disables interrupt handling by setting IME=0 and cancelling any scheduled effects of the EI instruction if any.
      */
-
+    
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
         debug!("set_interrupt {:?}", interrupt);
         match interrupt {
@@ -3090,7 +3087,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             }
         }
     }
-
+    
     fn service_interrupt(&mut self, interrupts: u8) {
         if interrupts & 0x01 != 0 {
             self.interrupt_flags &= !0x01;
@@ -3113,7 +3110,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             self.op_rst_address(0x60);
         }
     }
-
+    
     fn handle_interrupt(&mut self, address: u16) {
         self.op_push_stack(self.registers.pc);
         self.registers.pc = address;
@@ -3129,7 +3126,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         debug!("op_stop");
         self.halted = true;
         //self.memory_bus.borrow_mut().write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
-
+        
     }
     fn op_di(&mut self) {
         debug!("op_di");

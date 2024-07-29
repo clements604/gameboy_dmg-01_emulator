@@ -1,16 +1,33 @@
-use log::debug;
+use std::cell::RefCell;
+use crate::interupts;
+use crate::interupts::Interrupt;
+use crate::CPU::{Flag, FlagsRegister, CPU};
+use log::{debug, error};
+use std::fmt;
+use std::rc::Rc;
+use crate::memory_bus::MemoryBus;
+
+const TILE_START: u16 = 0x8000;
+const TILE_END: u16 = 0x97FF;
+
 
 pub struct Ppu {
     oam_ram: [u8; 0xA0],
-    vram: [u8; 0x2000],
+    pub vram: [u8; 0x2000],
+    pub ly: u8, // LY register
+    pub lyc: u8,
+    pub mode: u8,
+    cycles: u16,
+    stat: u8, // STAT register
 }
 #[derive(Debug, Clone, Copy)]
 pub struct OamEntry {
     y: u8,
     x: u8,
     tile_number: u8,
-    flags: u8,
+    flags: OAMFlags,
     //TODO make each flag its own bit variable
+
     /*
     FLAGS:
         Bit 7 - Priority: 0 = No, 1 = BG and Window colors 1–3 are drawn over this OBJ
@@ -22,102 +39,206 @@ pub struct OamEntry {
      */
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum OamFlag {
+    PRIORITY,
+    Y_FLIP,
+    X_FLIP,
+    DMG_PALETTE,
+    BANK,
+    CGB_PALETTE,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OAMFlags {
+    priority: bool,
+    y_flip: bool,
+    x_flip: bool,
+    dmg_palette: bool,
+    bank: bool,
+    cgb_palette: u8,
+}
+
+impl fmt::Display for OAMFlags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Priority: {}, Y Flip: {}, X Flip: {}, DMG Palette: {}, Bank: {}, CGB Palette: {}",
+            if self.priority { "1" } else { "0" },
+            if self.y_flip { "1" } else { "0" },
+            if self.x_flip { "1" } else { "0" },
+            if self.dmg_palette { "1" } else { "0" },
+            if self.bank { "1" } else { "0" },
+            self.cgb_palette
+        )
+    }
+}
+
+impl std::convert::From<OAMFlags> for u8 {
+    fn from(flag: OAMFlags) -> u8 {
+        (if flag.priority { 1 } else { 0 } << 7)
+            | (if flag.y_flip { 1 } else { 0 } << 6)
+            | (if flag.x_flip { 1 } else { 0 } << 5)
+            | (if flag.dmg_palette { 1 } else { 0 } << 4)
+            | (if flag.bank { 1 } else { 0 } << 3)
+            | flag.cgb_palette
+    }
+}
+
+impl std::convert::From<u8> for OAMFlags {
+    fn from(byte: u8) -> Self {
+        let priority = byte & 0b1000_0000 != 0;
+        let y_flip = byte & 0b0100_0000 != 0;
+        let x_flip = byte & 0b0010_0000 != 0;
+        let dmg_palette = byte & 0b0001_0000 != 0;
+        let bank = byte & 0b0000_1000 != 0;
+        let cgb_palette = byte & 0b0000_0111;
+        OAMFlags {
+            priority,
+            y_flip,
+            x_flip,
+            dmg_palette,
+            bank,
+            cgb_palette,
+        }
+    }
+}
+impl OAMFlags {
+    pub fn new() -> Self {
+        OAMFlags {
+            priority: false,
+            y_flip: false,
+            x_flip: false,
+            dmg_palette: false,
+            bank: false,
+            cgb_palette: 0,
+        }
+    }
+
+    pub fn get_flag(&self, flag: OamFlag) -> bool {
+        match flag {
+            OamFlag::PRIORITY => self.priority,
+            OamFlag::Y_FLIP => self.y_flip,
+            OamFlag::X_FLIP => self.x_flip,
+            OamFlag::DMG_PALETTE => self.dmg_palette,
+            OamFlag::BANK => self.bank,
+            OamFlag::CGB_PALETTE => self.cgb_palette != 0,
+        }
+    }
+
+    pub fn set_flag(&mut self, flag: OamFlag, value: bool) {
+        match flag {
+            OamFlag::PRIORITY => self.priority = value,
+            OamFlag::Y_FLIP => self.y_flip = value,
+            OamFlag::X_FLIP => self.x_flip = value,
+            OamFlag::DMG_PALETTE => self.dmg_palette = value,
+            OamFlag::BANK => self.bank = value,
+            OamFlag::CGB_PALETTE => self.cgb_palette = value as u8,
+        }
+    }
+}
+
 impl OamEntry {
     pub fn new() -> OamEntry {
         OamEntry {
             y: 0,
             x: 0,
             tile_number: 0,
-            flags: 0,
+            flags: OAMFlags::from(0),
         }
     }
 
-    fn to_bytes(&self) -> [u8; 4] {
-        [self.y, self.x, self.tile_number, self.flags]
-    }
-
-    fn from_bytes(bytes: [u8; 4]) -> Self {
-        OamEntry {
-            y: bytes[0],
-            x: bytes[1],
-            tile_number: bytes[2],
-            flags: bytes[3],
-        }
-    }
-
-    fn get_bg_priority(&self) -> bool {
-        self.flags & 0b1000_0000 != 0
-    }
-    fn set_bg_priority(&mut self, value: bool) {
-        if value {
-            self.flags |= 0b1000_0000;
-        } else {
-            self.flags &= 0b0111_1111;
-        }
-    }
-
-    fn get_y_flip(&self) -> bool {
-        self.flags & 0b0100_0000 != 0
-    }
-    fn set_y_flip(&mut self, value: bool) {
-        if value {
-            self.flags |= 0b0100_0000;
-        } else {
-            self.flags &= 0b1011_1111;
-        }
-    }
-
-    fn get_x_flip(&self) -> bool {
-        self.flags & 0b0010_0000 != 0
-    }
-    fn set_x_flip(&mut self, value: bool) {
-        if value {
-            self.flags |= 0b0010_0000;
-        } else {
-            self.flags &= 0b1101_1111;
-        }
-    }
-
-    fn get_dmg_palette(&self) -> bool {
-        self.flags & 0b0001_0000 != 0
-    }
-    fn set_dmg_palette(&mut self, value: bool) {
-        if value {
-            self.flags |= 0b0001_0000;
-        } else {
-            self.flags &= 0b1110_1111;
-        }
-    }
-
-    fn get_bank(&self) -> bool {
-        self.flags & 0b0000_1000 != 0
-    }
-    fn set_bank(&mut self, value: bool) {
-        if value {
-            self.flags |= 0b0000_1000;
-        } else {
-            self.flags &= 0b1111_0111;
-        }
-    }
-
-    fn get_cgb_palette(&self) -> u8 {
-        self.flags & 0b0000_0111
-    }
-    fn set_cgb_palette(&mut self, value: u8) {
-        self.flags &= 0b1111_1000;
-        self.flags |= value & 0b0000_0111;
-    }
 }
 impl Ppu {
     pub fn new() -> Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
-            vram: [0; 0x2000],
+            vram: [0x0000; 0x2000],
+            ly: 0,
+            lyc: 0,
+            mode: 0,
+            cycles: 0,
+            stat: 0,
+        }
+    }
+    pub fn step(&mut self, cpu: &mut CPU, cycles: u16) {
+        debug!("PPU step: {:#X}", cycles);
+        self.cycles = self.cycles + cycles;
+
+        match self.mode {
+            0 => {
+                // H-Blank
+                if self.cycles >= 204 {
+                    self.cycles -= 204;
+
+                    // Check LY == LYC and set coincidence flag
+                    if self.ly == self.lyc {
+                        self.stat |= 0x04; // Set the coincidence flag
+                                           // If the LYC=LY interrupt is enabled, trigger it
+                        if self.stat & 0x40 != 0 {
+                            self.trigger_interrupt(cpu, Interrupt::LCDSTAT);
+                        }
+                    } else {
+                        self.stat &= !0x04; // Clear the coincidence flag
+                    }
+
+                    self.ly += 1; // Increment LY
+
+                    if self.ly == 144 {
+                        self.mode = 1; // Switch to V-Blank
+                        self.trigger_interrupt(cpu, Interrupt::VBLANK);
+                    } else {
+                        self.mode = 2; // Switch to OAM Search for next scanline
+                    }
+                }
+            }
+            1 => {
+                debug!("V-Blank mode");
+                if self.cycles >= 456 {
+                    self.cycles -= 456;
+
+                    // Check LY == LYC and set coincidence flag
+                    if self.ly == self.lyc {
+                        self.stat |= 0x04; // Set the coincidence flag
+                                           // If the LYC=LY interrupt is enabled, trigger it
+                        if self.stat & 0x40 != 0 {
+                            // Trigger the LYC=LY interrupt
+                            self.trigger_interrupt(cpu, interupts::Interrupt::LCDSTAT);
+                        }
+                    } else {
+                        self.stat &= !0x04; // Clear the coincidence flag
+                    }
+
+                    self.ly += 1; // Increment LY
+
+                    if self.ly > 153 {
+                        self.ly = 0;
+                        self.mode = 2;
+                    }
+                }
+            }
+            2 => {
+                debug!("OAM read mode");
+                if self.cycles >= 80 {
+                    self.cycles -= 80;
+                    self.mode = 3; // Switch to LCD Transfer mode
+                }
+            }
+            3 => {
+                debug!("LCD transfer mode");
+                if self.cycles >= 172 {
+                    self.cycles -= 172;
+                    self.mode = 0; // Switch to H-Blank mode
+                }
+            }
+            _ => {
+                panic!("Invalid PPU mode: {:#X}", self.mode);
+            }
         }
     }
 
     pub fn oam_read(&self, address: u16) -> u8 {
-        debug!("OAM read at address: {:#X}", address);
+        //debug!("OAM read at address: {:#X}", address);
         /*if address < 0xFE00 || address >= 0xFEA0 {
             panic!("Attempt to read from invalid OAM address: {:#X}", address);
         }*/
@@ -125,7 +246,7 @@ impl Ppu {
     }
 
     pub fn oam_write(&mut self, address: u16, value: u8) {
-        debug!("OAM write at address: {:#X}", address);
+        //debug!("OAM write at address: {:#X}", address);
         /*if address < 0xFE00 || address >= 0xFEA0 {
             panic!("Attempt to write to invalid OAM address: {:#X}", address);
         }*/
@@ -134,14 +255,121 @@ impl Ppu {
     }
 
     pub fn vram_read(&self, address: u16) -> u8 {
-        debug!("VRAM read at address: {:#X}", address);
+        //debug!("VRAM read at address: {:#X}", address);
         self.vram[(address - 0x8000) as usize]
     }
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
-        debug!("VRAM write at address: {:#X}", address);
+        debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
         self.vram[(address - 0x8000) as usize] = value;
-        //debug!("VRAM data: {:?}", self.vram);
+        debug!("VRAM data: {:?}", self.vram);
     }
 
+    fn trigger_interrupt(&mut self, cpu: &mut CPU, interrupt: interupts::Interrupt) {
+        debug!("Triggering interrupt: {:?}", interrupt);
+        match interrupt {
+            interupts::Interrupt::VBLANK => {
+                cpu.trigger_interrupt(interupts::Interrupt::VBLANK);
+            }
+            interupts::Interrupt::LCDSTAT => {
+                cpu.trigger_interrupt(interupts::Interrupt::LCDSTAT);
+            }
+            _ => {
+                panic!("Invalid interrupt: {:?}", interrupt);
+            }
+        }
+    }
+    
+    
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{memory_bus, rom};
+
+    #[test]
+    fn test_hblank_cycles() {
+        let rom = rom::ROM::new(vec![0; 0x8000]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
+        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
+        let mut ppu = Ppu::new();
+        ppu.mode = 0;
+        ppu.step(&mut cpu, 1);
+        assert_eq!(ppu.cycles, 1);
+
+        ppu.step(&mut cpu, 203);
+        assert_eq!(ppu.cycles, 0);
+    }
+
+    #[test]
+    fn test_vblank_cycles() {
+        let rom = rom::ROM::new(vec![0; 0x8000]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
+        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
+        let mut ppu = Ppu::new();
+        ppu.mode = 1;
+        ppu.step(&mut cpu, 1);
+        assert_eq!(ppu.cycles, 1);
+        ppu.step(&mut cpu, 455);
+        assert_eq!(ppu.cycles, 0);
+    }
+
+    #[test]
+    fn test_oam_cycles() {
+        let rom = rom::ROM::new(vec![0; 0x8000]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
+        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
+        let mut ppu = Ppu::new();
+        ppu.mode = 2;
+        ppu.step(&mut cpu, 1);
+        assert_eq!(ppu.cycles, 1);
+        ppu.step(&mut cpu, 79);
+        assert_eq!(ppu.cycles, 0);
+    }
+
+    #[test]
+    fn test_lcd_cycles() {
+        let rom = rom::ROM::new(vec![0; 0x8000]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
+        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
+        let mut ppu = Ppu::new();
+        ppu.mode = 3;
+        ppu.step(&mut cpu, 1);
+        assert_eq!(ppu.cycles, 1);
+        ppu.step(&mut cpu, 171);
+        assert_eq!(ppu.cycles, 0);
+    }
+
+    #[test]
+    fn test_lyc_ly_interrupt() {
+        let rom = rom::ROM::new(vec![0; 0x8000]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
+        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
+        let mut ppu = Ppu::new();
+        // Case 1: LY matches LYC, interrupt should trigger
+        ppu.ly = 100;
+        ppu.lyc = 100;
+        ppu.stat = 0x40; // LYC=LY interrupt enabled
+        ppu.mode = 0; // H-Blank mode
+        ppu.step(&mut cpu, 204); // Simulate step to the end of H-Blank
+        assert_eq!(ppu.stat & 0x04, 0x04); // Coincidence flag set
+                                           // Ensure interrupt was triggered (additional logic needed for full test)
+
+        // Reset PPU state
+        ppu.ly = 0;
+        ppu.lyc = 0;
+        ppu.stat = 0;
+        ppu.mode = 0;
+        ppu.cycles = 0;
+
+        // Case 2: LY does not match LYC, interrupt should not trigger
+        ppu.ly = 100;
+        ppu.lyc = 101;
+        ppu.stat = 0x40; // LYC=LY interrupt enabled
+        ppu.mode = 0; // H-Blank mode
+        ppu.step(&mut cpu, 204); // Simulate step to the end of H-Blank
+        assert_eq!(ppu.stat & 0x04, 0x00); // Coincidence flag not set
+                                           // Ensure interrupt was not triggered (additional logic needed for full test)
+    }
 }

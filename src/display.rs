@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use sdl2::surface;
 
-const SCALE_FACTOR: u32 = 2;
+const SCALE_FACTOR: u32 = 4;
 
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
@@ -196,6 +196,7 @@ impl Display /*<'a>*/ {
     }
     fn update_debug_window(&mut self) {
         if let Some(renderer) = self.debug_renderer.as_mut() {
+            //renderer.clear();//FIXME possibly unneeded and may cause bugs
             let surface = self.debug_screen.as_mut().unwrap();
             
             //error!("{:?}", self.memory_bus.borrow().ppu.vram);
@@ -248,20 +249,19 @@ impl Display /*<'a>*/ {
                     //let mut rectangle = sdl2::rect::Rect::new(x_draw, y_draw, 8, 8);
                     for tile_y in (0..=15).step_by(2) {
                         //debug!("address: {:4X}", address);
-                        let b1 = self.memory_bus.borrow_mut().read_byte(
-                            (start_address as u32 + (tile_number as u32 * 16) + tile_y as u32)
+                        let b1 = self.memory_bus.borrow().read_byte(
+                            (start_address as u16 + (tile_number as u16 * 16) + tile_y as u16)
                                 as u16,
                         );
-                        let b2 = self.memory_bus.borrow_mut().read_byte(
-                            (start_address as u32 + (tile_number as u32 * 16) + tile_y as u32 + 1)
+                        let b2 = self.memory_bus.borrow().read_byte(
+                            (start_address as u16 + (tile_number as u16 * 16) + tile_y as u16 + 1)
                                 as u16,
                         );
                         for bit in (0..=7).rev() {
-                            let hi = !!(b1 & (1 << bit)) << 1;
-                            let lo = !!(b2 & (1 << bit));
+                            let hi = (b1 & (1 << bit)) >> bit << 1;
+                            let lo = (b2 & (1 << bit)) >> bit;
                                                           //debug!("hi: {:X}, lo: {:X}", hi, lo);
                             let colour = hi | lo;
-                            //debug!("colour: {:X}", colour);
                             let rgb_color = match colour {
                                 0 => Color::RGB(255, 255, 255), // White
                                 1 => Color::RGB(192, 192, 192), // Light Gray

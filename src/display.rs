@@ -15,6 +15,7 @@ use std::rc::Rc;
 use sdl2::surface;
 
 const SCALE_FACTOR: u32 = 4;
+const B_W_TOGGLE: bool = false;
 
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
@@ -133,7 +134,7 @@ impl Display /*<'a>*/ {
 
         // Debug window start
         let debug_window = video_subsystem
-            .window("Tile debugger", (16 * 8 * SCALE_FACTOR), (32 * 8 * SCALE_FACTOR)) 
+            .window("Tile debugger", 16 * 8 * SCALE_FACTOR, 32 * 8 * SCALE_FACTOR) 
             .position_centered()
             .build()
             .unwrap();
@@ -215,10 +216,10 @@ impl Display /*<'a>*/ {
             );*/
 
             let (width, height) = renderer.window().drawable_size();
-
+            //FIXME this does nothing!
             let rectangle = Rect::new(0, 0, width, height);
-            renderer.set_draw_color(Color::RGB(96, 96, 96));
-            renderer.fill_rect(rectangle).unwrap();
+            renderer.set_draw_color(Color::RGB(17, 17, 17));
+            surface.fill_rect(rectangle, Color::RGB(17, 17, 17)).unwrap();
 
             let start_address = 0x8000;
             let mut x_draw = 0;
@@ -263,9 +264,15 @@ impl Display /*<'a>*/ {
                                                           //debug!("hi: {:X}, lo: {:X}", hi, lo);
                             let colour = hi | lo;
                             let rgb_color = match colour {
+                                
                                 0 => Color::RGB(255, 255, 255), // White
                                 1 => Color::RGB(192, 192, 192), // Light Gray
                                 2 => Color::RGB(96, 96, 96),    // Dark Gray
+                                /*
+                                    0 => Color::RGB(232, 252, 204), // White
+                                    1 => Color::RGB(84, 140, 112), // Light Gray
+                                    2 => Color::RGB(20, 44, 56),    // Dark Gray
+                                */
                                 3 => Color::RGB(0, 0, 0),       // Black
                                 _ => Color::RGB(255, 0, 0),     // Red (error case)
                             };

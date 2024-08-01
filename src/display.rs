@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use sdl2::surface;
 
-const SCALE_FACTOR: u32 = 4;
+const SCALE_FACTOR: u32 = 3;
 const B_W_TOGGLE: bool = false;
 
 pub const SCREEN_WIDTH: usize = 160;
@@ -134,7 +134,8 @@ impl Display /*<'a>*/ {
 
         // Debug window start
         let debug_window = video_subsystem
-            .window("Tile debugger", 16 * 8 * SCALE_FACTOR, 32 * 8 * SCALE_FACTOR) 
+            //.window("Tile debugger", 16 * 8 * SCALE_FACTOR, 32 * 8 * SCALE_FACTOR)
+            .window("Tile debugger", (16 * 8 * SCALE_FACTOR) + (16 * SCALE_FACTOR), (32 * 8 * SCALE_FACTOR) + (64 * SCALE_FACTOR))
             .position_centered()
             .build()
             .unwrap();
@@ -147,6 +148,7 @@ impl Display /*<'a>*/ {
             sdl2::pixels::PixelFormatEnum::ARGB8888,
         )
         .unwrap();
+        
 
         Display {
             memory_bus: memory_bus,
@@ -199,7 +201,7 @@ impl Display /*<'a>*/ {
         if let Some(renderer) = self.debug_renderer.as_mut() {
             //renderer.clear();//FIXME possibly unneeded and may cause bugs
             let surface = self.debug_screen.as_mut().unwrap();
-            
+
             //error!("{:?}", self.memory_bus.borrow().ppu.vram);
             //renderer.clear();
             //renderer.present();
@@ -249,6 +251,7 @@ impl Display /*<'a>*/ {
 
                     //let mut rectangle = sdl2::rect::Rect::new(x_draw, y_draw, 8, 8);
                     for tile_y in (0..=15).step_by(2) {
+
                         //debug!("address: {:4X}", address);
                         let b1 = self.memory_bus.borrow().read_byte(
                             (start_address as u16 + (tile_number as u16 * 16) + tile_y as u16)

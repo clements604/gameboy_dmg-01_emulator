@@ -327,6 +327,14 @@ impl Display /*<'a>*/ {
             //self.debug_renderer.as_mut().present();
         }
     }
+    
+    pub fn get_ticks(&self) -> u32 {
+        // Get number of ticks for the main window
+        self.sdl_context.timer().unwrap().ticks()
+    }
+    pub fn delay(&self, ms: u32) {
+        self.sdl_context.timer().unwrap().delay(ms);
+    }
 
     /*fn display_tile(&self, start_location: u16, tile_number: u16, x: i32, y: i32) {
         debug!(

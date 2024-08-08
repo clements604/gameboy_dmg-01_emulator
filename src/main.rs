@@ -7,6 +7,8 @@ mod ppu;
 mod rom_debug;
 mod dmg_io;
 mod interupts;
+mod dma;
+mod lcd;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -20,6 +22,82 @@ use std::io::{self, Read};
 use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
+use sdl2::EventPump;
+
+struct Emulator {
+    ticks: u64,
+    cpu: Rc<RefCell<CPU::CPU>>,
+    ppu: Rc<RefCell<ppu::Ppu>>,
+    memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
+    dma: Rc<RefCell<dma::Dma>>,
+    display: Rc<RefCell<display::Display>>,
+    event_pump: EventPump,
+    previous_frame: u32,
+}
+
+impl Emulator {
+    pub fn new(boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
+        
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
+
+        let display = Rc::new(RefCell::new(display::Display::new(
+            &String::from("RustGB"),
+            Rc::clone(&memory_bus),
+            display::SCREEN_WIDTH as u32,
+            display::SCREEN_HEIGHT as u32,
+        )));
+        let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();
+        
+        let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
+        
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(dma.clone(), cpu.clone(), lcd.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+        
+        
+
+        Emulator {
+            ticks: 0,
+            cpu,
+            ppu,
+            memory_bus,
+            display,
+            event_pump,
+            dma,
+            previous_frame: 0,
+        }
+    }
+    
+    fn cycle(&mut self) {
+        for event in self.event_pump.poll_iter() {
+            match event {
+                sdl2::event::Event::Quit { .. } => break,
+                _ => {}
+            }
+        }
+        let cpu_cycles = self.cpu.borrow_mut().cycle();
+
+        for cycles in 0..cpu_cycles {
+            for _ in 0..4 {
+                self.ticks += 1;
+                //self.timer.timer_tick();
+                self.ppu.borrow_mut().step(cycles);
+            }
+        }
+        self.dma.borrow_mut().dma_tick();
+
+        if self.previous_frame != self.ppu.borrow().current_frame {
+            self.display.borrow_mut().ui_update();
+            self.previous_frame = self.ppu.borrow().current_frame;
+        }
+    }
+    
+}
 
 fn main() {
     // Open the log file
@@ -31,10 +109,7 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let mut cycle_count = 0;
-    let mut ppu_cycles: u16 = 0;
-    
-    //let boot_rom = load_boot_rom(String::from("roms/boot/dmg0_boot.bin"));
+    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
     let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
@@ -57,57 +132,22 @@ fn main() {
 
     let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
 
-    let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
+    /*let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
     let mut cpu = CPU::CPU::new(Rc::clone(&memory_bus));
-    let mut ppu = ppu::Ppu::new();
+    let mut ppu = ppu::Ppu::new();*/
 
-    let mut display = display::Display::new(
-        &String::from("RustGB"),
-        Rc::clone(&memory_bus),
-        display::SCREEN_WIDTH as u32,
-        display::SCREEN_HEIGHT as u32,
-    );
-    let mut event_pump = display.sdl_context.event_pump().unwrap();
-    
-    //TODO make the program counter start dependant on boot rom presence
-    //cpu.registers.pc = 0x0000;
-    //cpu.registers.a = 0x0;
-    //cpu.registers.b = 0x0;
-    //cpu.registers.c = 0x0;
-    //cpu.registers.d = 0x0;
-    //cpu.registers.e = 0x0;
-    //cpu.registers.f.set_flag(Flag::N, false);
-    //cpu.registers.f.set_flag(Flag::Z, false);
-    //cpu.registers.f.set_flag(Flag::H, false);
-    //cpu.registers.f.set_flag(Flag::C, false);
-    //cpu.registers.h = 0x0;
-    //cpu.registers.l = 0x0;
-    //cpu.registers.sp = 0xFFFE;
-    
-    /*for i in 0..0x100 {
-        debug!("{:#X}: {:#X}", i, memory_bus.read_byte(i));
-    }*/
-
+let mut emulator = Emulator::new(boot_rom, &rom);
     
     loop {
-        cycle_count += 1;
-        debug!("Cycle: {}", cycle_count);
-
-        if cpu.registers.pc == 0xC73A { 
-            //error!("{}", cpu.registers);
-            //break;
-        }
-        //error!("{}", cpu.registers);
-
-        cpu.cycle();
-        ppu.step(&mut cpu, ppu_cycles);
-        display.ui_update();
-        //sleep for 2 seconds
-        //std::thread::sleep(std::time::Duration::from_secs(2));
+        emulator.cycle();
+        //emulator.display.ui_update();
     }
 
 }
-pub fn load_rom(file_path: String) -> ROM {
+
+
+
+fn load_rom(file_path: String) -> ROM {
     debug!("Loading ROM: {}", file_path);
     let mut file = File::open(file_path).expect("ROM file not found");
     let mut buffer: Vec<u8> = Vec::new();

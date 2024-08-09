@@ -203,7 +203,7 @@ impl Ppu {
             self.stat &= !0x04;
         }
     }
-    pub fn step(&mut self, cycles: u16) {
+    pub fn tick(&mut self, cycles: u16) {
         self.line_ticks += 1;
 
         match self.mode {

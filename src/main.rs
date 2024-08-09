@@ -9,6 +9,7 @@ mod dmg_io;
 mod interupts;
 mod dma;
 mod lcd;
+mod timer;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -23,6 +24,7 @@ use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
 use sdl2::EventPump;
+use crate::timer::Timer;
 
 struct Emulator {
     ticks: u64,
@@ -31,6 +33,7 @@ struct Emulator {
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     dma: Rc<RefCell<dma::Dma>>,
     display: Rc<RefCell<display::Display>>,
+    timer: Timer,
     event_pump: EventPump,
     previous_frame: u32,
 }
@@ -50,6 +53,7 @@ impl Emulator {
         
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
         
+        let timer = Timer::new(Rc::clone(&cpu));
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
         let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
@@ -67,6 +71,7 @@ impl Emulator {
             ppu,
             memory_bus,
             display,
+            timer,
             event_pump,
             dma,
             previous_frame: 0,
@@ -85,8 +90,8 @@ impl Emulator {
         for cycles in 0..cpu_cycles {
             for _ in 0..4 {
                 self.ticks += 1;
-                //self.timer.timer_tick();
-                self.ppu.borrow_mut().step(cycles);
+                self.timer.tick();
+                self.ppu.borrow_mut().tick(cycles);
             }
         }
         self.dma.borrow_mut().dma_tick();
@@ -113,6 +118,7 @@ fn main() {
     let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
+    //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/

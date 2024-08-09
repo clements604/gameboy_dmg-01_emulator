@@ -40,7 +40,7 @@ struct Emulator {
 
 impl Emulator {
     pub fn new(boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
-        
+
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
 
         let display = Rc::new(RefCell::new(display::Display::new(
@@ -52,7 +52,7 @@ impl Emulator {
         let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();
         
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
-        
+
         let timer = Timer::new(Rc::clone(&cpu));
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
@@ -63,7 +63,7 @@ impl Emulator {
         memory_bus.borrow_mut().ppu = Some(ppu.clone());
         memory_bus.borrow_mut().cpu = Some(cpu.clone());
         
-        
+
 
         Emulator {
             ticks: 0,
@@ -86,6 +86,14 @@ impl Emulator {
             }
         }
         let cpu_cycles = self.cpu.borrow_mut().cycle();
+        if self.cpu.borrow().interrupt_master_enable {
+            //self.cpu.borrow_mut().check_interrupts();
+            self.cpu.borrow_mut().check_interrupts();
+            self.cpu.borrow_mut().enabling_ime = false;
+        }
+        if self.cpu.borrow().enabling_ime {
+            self.cpu.borrow_mut().interrupt_master_enable = true;
+        }
 
         for cycles in 0..cpu_cycles {
             for _ in 0..4 {
@@ -133,7 +141,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/08-misc instrs.gb")); // TODO no test rom output
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // TODO never finishes
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // TODO never finishes 211211211211211211211211211211211211211211211211211
-    //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // TODO was passed, now never finishes
     //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
 
     let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU

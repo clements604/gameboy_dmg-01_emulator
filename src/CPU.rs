@@ -57,8 +57,9 @@ pub struct CPU/*<'a>*/ {
     pub halted: bool,
     stopped: bool,
     pub interrupt_master_enable: bool,
+    pub enabling_ime: bool,
     //pub interrupt_enable_register: u8,
-    pub interrupt_flags: u8,
+    //pub interrupt_flags: u8,
     //interrupts: Interrupts,
     rom_debug: rom_debug::rom_debug,
 }
@@ -259,10 +260,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             halted: false,
             stopped: false,
             interrupt_master_enable: false,
+            enabling_ime: false,
             //interrupt_enable_register: 0,
             rom_debug: rom_debug::rom_debug::new(),
             //interrupts: Interrupts::new(),
-            interrupt_flags: 0,
+            //interrupt_flags: 0,
         }
     }
 
@@ -279,10 +281,10 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     /*
      *   CPU cycle - fetch, decode, execute
      */
-    pub fn cycle(&mut self) {
+    pub fn cycle(&mut self) -> u16 {
         debug!("##################################################");
 
-        self.gameboy_doctor_output_log();
+        //self.gameboy_doctor_output_log();
 
         if !self.halted {
 
@@ -314,17 +316,21 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             match opcode {
                 0x00 => {
                     self.op_nop();
+                    4
                 }
                 0x01 => {
                     let nn: u16 = self.read_immediate_short();
                     self.registers.set_bc(nn);
+                    12
                 }
                 0x02 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_bc(), self.registers.a);
+                    8
                 }
                 0x03 => {
                     self.registers
                         .set_bc(self.registers.get_bc().wrapping_add(1));
+                    8
                 }
                 0x04 => {
                     let old_value = self.registers.b;
@@ -332,6 +338,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x05 => {
                     let old_value = self.registers.b;
@@ -339,10 +346,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x06 => {
                     let value = self.read_immediate_byte();
                     self.registers.b = value;
+                    8
                 }
                 0x07 => {
                     let a = self.registers.a;
@@ -352,10 +361,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, false); // The Z flag is not affected
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
+                    4
                 }
                 0x08 => {
                     let nn: u16 = self.read_immediate_short();
                     self.write_immediate_short(nn, self.registers.sp);
+                    20
                 }
                 0x09 => {
                     let hl = self.registers.get_hl();
@@ -367,12 +378,15 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         .f
                         .set_flag(Flag::H, (hl & 0x0FFF) + (bc & 0x0FFF) > 0x0FFF);
                     self.registers.f.set_flag(Flag::C, carry);
+                    8
                 }
                 0x0A => {
                     self.registers.a = self.memory_bus.borrow().read_byte(self.registers.get_bc());
+                    8
                 }
                 0x0B => {
                     self.registers.set_bc(self.registers.get_bc().wrapping_sub(1));
+                    8
                 }
                 0x0C => {
                     let old_value = self.registers.c;
@@ -380,6 +394,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                    4
                 }
                 0x0D => {
                     let old_value = self.registers.c;
@@ -387,10 +402,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x0E => {
                     let value = self.read_immediate_byte();
                     self.registers.c = value;
+                    8
                 }
                 0x0F => {
                     let a = self.registers.a;
@@ -400,21 +417,26 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
+                    4
                 }
                 0x10 => {
                     // TODO - Implement STOP
                     debug!("CPU stopped");
                     self.stopped = true;
+                    4
                 }
                 0x11 => {
                     let nn: u16 = self.read_immediate_short();
                     self.registers.set_de(nn);
+                    12
                 }
                 0x12 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_de(), self.registers.a);
+                    8
                 }
                 0x13 => {
                     self.registers.set_de(self.registers.get_de().wrapping_add(1));
+                    8
                 }
                 0x14 => {
                     let old_value = self.registers.d;
@@ -422,6 +444,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                    4
                 }
                 0x15 => {
                     let old_value = self.registers.d;
@@ -429,10 +452,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x16 => {
                     let value = self.read_immediate_byte();
                     self.registers.d = value;
+                    8
                 }
                 0x17 => {
                     let carry = self.registers.a & 0x80 != 0;
@@ -446,10 +471,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, carry);
+                    4
                 }
                 0x18 => {
                     let offset = self.read_immediate_byte() as i8;
                     self.op_jr_e(offset);
+                    12
                 }
                 0x19 => {
                     let hl = self.registers.get_hl();
@@ -459,12 +486,15 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (de & 0x0FFF) > 0x0FFF);
                     self.registers.f.set_flag(Flag::C, carry);
+                    8
                 }
                 0x1A => {
                     self.registers.a = self.memory_bus.borrow().read_byte(self.registers.get_de());
+                    8
                 }
                 0x1B => {
                     self.registers.set_de(self.registers.get_de().wrapping_sub(1));
+                    8
                 }
                 0x1C => {
                     let old_value = self.registers.e;
@@ -472,6 +502,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    4
                 }
                 0x1D => {
                     let old_value = self.registers.e;
@@ -479,10 +510,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x1E => {
                     let value = self.read_immediate_byte();
                     self.registers.e = value;
+                    8
                 }
                 0x1F => {
                     let carry = self.registers.a & 0x01 != 0;
@@ -496,23 +529,29 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, carry);
+                    4
                 }
                 0x20 => {
                     let offset = self.read_immediate_byte() as i8;
                     if !self.registers.f.get_flag(Flag::Z) {
                         self.op_jr_e(offset);
+                        return 12;
                     }
+                    return 8;
                 }
                 0x21 => {
                     let nn: u16 = self.read_immediate_short();
                     self.registers.set_hl(nn);
+                    12
                 }
                 0x22 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.a);
                     self.registers.set_hl(self.registers.get_hl() + 1);
+                    8
                 }
                 0x23 => {
                     self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
+                    8
                 }
                 0x24 => {
                     let old_value = self.registers.h;
@@ -520,6 +559,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                    4
                 }
                 0x25 => {
                     let old_value = self.registers.h;
@@ -527,10 +567,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x00 && (self.registers.h & 0x0F) == 0x0F);
+                    4
                 }
                 0x26 => {
                     let value = self.read_immediate_byte();
                     self.registers.h = value;
+                    8
                 }
                 0x27 => {
                     let mut a = self.registers.a;
@@ -553,12 +595,15 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, a == 0);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.a = a;
+                    4
                 }
                 0x28 => {
                     let offset = self.read_immediate_byte() as i8;
                     if self.registers.f.get_flag(Flag::Z) {
                         self.op_jr_e(offset);
+                        return 12;
                     }
+                    return 8;
                 }
                 0x29 => {
                     let hl: u16 = self.registers.get_hl();
@@ -567,15 +612,18 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
                     self.registers.f.set_flag(Flag::C, carry);
+                    8
                 }
                 0x2A => {
                     self.registers.a = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                     self.registers
                         .set_hl(self.registers.get_hl().wrapping_add(1));
+                    8
                 }
                 0x2B => {
                     self.registers
                         .set_hl(self.registers.get_hl().wrapping_sub(1));
+                    8
                 }
                 0x2C => {
                     let old_value = self.registers.l;
@@ -583,6 +631,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    4
                 }
                 0x2D => {
                     let old_value = self.registers.l;
@@ -590,34 +639,42 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x2E => {
                     let value = self.read_immediate_byte();
                     self.registers.l = value;
+                    8
                 }
                 0x2F => {
                     // CPL = complement A register
                     self.registers.a = !self.registers.a;
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::H, true);
+                    4
                 }
                 0x30 => {
                     let offset = self.read_immediate_byte() as i8;
                     if !self.registers.f.get_flag(Flag::C) {
                         self.op_jr_e(offset);
+                        return 12;
                     }
+                    return 8;
                 }
                 0x31 => {
                     let nn: u16 = self.read_immediate_short();
                     self.registers.sp = nn;
+                    12
                 }
                 0x32 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.a);
                     self.registers
                         .set_hl(self.registers.get_hl().wrapping_sub(1));
+                    8
                 }
                 0x33 => {
                     self.registers.sp = self.registers.sp.wrapping_add(1);
+                    8
                 }
                 0x34 => {
                     let hl = self.registers.get_hl();
@@ -626,6 +683,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.memory_bus.borrow_mut().write_byte(hl, value.wrapping_add(1));
                     self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(hl) == 0);
+                    12
                 }
                 0x35 => {
                     let hl = self.registers.get_hl();
@@ -635,21 +693,25 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, result == 0);
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0);
+                    12
                 }
                 0x36 => {
                     let value = self.read_immediate_byte();
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                    12
                 }
                 0x37 => {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, true);
+                    self.registers.f.set_flag(Flag::C, true);4
                 }
                 0x38 => {
                     let offset = self.read_immediate_byte() as i8;
                     if self.registers.f.get_flag(Flag::C) {
                         self.op_jr_e(offset);
+                        return 12;
                     }
+                    return 8;
                 }
                 0x39 => {
                     let hl = self.registers.get_hl();
@@ -658,14 +720,17 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (self.registers.sp & 0x0FFF) > 0x0FFF);
                     self.registers.f.set_flag(Flag::C, carry);
+                    8
                 }
                 0x3A => {
                     self.registers.a = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                     self.registers
                         .set_hl(self.registers.get_hl().wrapping_sub(1));
+                    8
                 }
                 0x3B => {
                     self.registers.sp = self.registers.sp.wrapping_sub(1);
+                    8
                 }
                 0x3C => {
                     let old_value = self.registers.a;
@@ -673,6 +738,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    4
                 }
                 0x3D => {
                     let old_value = self.registers.a;
@@ -680,208 +746,275 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
                     self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    4
                 }
                 0x3E => {
                     let value = self.read_immediate_byte();
                     self.registers.a = value;
+                    8
                 }
                 0x3F => {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+                    4
                 }
                 0x40 => {
                     self.registers.b = self.registers.b;
+                    4
                 }
                 0x41 => {
                     self.registers.b = self.registers.c;
+                    4
                 }
                 0x42 => {
                     self.registers.b = self.registers.d;
+                    4
                 }
                 0x43 => {
                     self.registers.b = self.registers.e;
+                    4
                 }
                 0x44 => {
                     self.registers.b = self.registers.h;
+                    4
                 }
                 0x45 => {
                     self.registers.b = self.registers.l;
+                    4
                 }
                 0x46 => {
                     self.registers.b = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    8
                 }
                 0x47 => {
                     self.registers.b = self.registers.a;
+                    4
                 }
                 0x48 => {
                     self.registers.c = self.registers.b;
+                    4
                 }
                 0x49 => {
                     self.registers.c = self.registers.c;
+                    4
                 }
                 0x4A => {
                     self.registers.c = self.registers.d;
+                    4
                 }
                 0x4B => {
                     self.registers.c = self.registers.e;
+                    4
                 }
                 0x4C => {
                     self.registers.c = self.registers.h;
+                    4
                 }
                 0x4D => {
                     self.registers.c = self.registers.l;
+                    4
                 }
                 0x4E => {
                     self.registers.c = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    8
                 }
                 0x4F => {
                     self.registers.c = self.registers.a;
+                    4
                 }
                 0x50 => {
                     self.registers.d = self.registers.b;
+                    4
                 }
                 0x51 => {
                     self.registers.d = self.registers.c;
+                    4
                 }
                 0x52 => {
                     self.registers.d = self.registers.d;
+                    4
                 }
                 0x53 => {
                     self.registers.d = self.registers.e;
+                    4
                 }
                 0x54 => {
                     self.registers.d = self.registers.h;
+                    4
                 }
                 0x55 => {
                     self.registers.d = self.registers.l;
+                    4
                 }
                 0x56 => {
                     self.registers.d = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    4
                 }
                 0x57 => {
                     self.registers.d = self.registers.a;
+                    4
                 }
                 0x58 => {
                     self.registers.e = self.registers.b;
+                    4
                 }
                 0x59 => {
                     self.registers.e = self.registers.c;
+                    4
                 }
                 0x5A => {
                     self.registers.e = self.registers.d;
+                    4
                 }
                 0x5B => {
                     self.registers.e = self.registers.e;
+                    4
                 }
                 0x5C => {
                     self.registers.e = self.registers.h;
+                    4
                 }
                 0x5D => {
                     self.registers.e = self.registers.l;
+                    4
                 }
                 0x5E => {
                     self.registers.e = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    8
                 }
                 0x5F => {
                     self.registers.e = self.registers.a;
+                    4
                 }
                 0x60 => {
                     self.registers.h = self.registers.b;
+                    4
                 }
                 0x61 => {
                     self.registers.h = self.registers.c;
+                    4
                 }
                 0x62 => {
                     self.registers.h = self.registers.d;
+                    4
                 }
                 0x63 => {
                     self.registers.h = self.registers.e;
+                    4
                 }
                 0x64 => {
                     self.registers.h = self.registers.h;
+                    4
                 }
                 0x65 => {
                     self.registers.h = self.registers.l;
+                    4
                 }
                 0x66 => {
                     self.registers.h = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    8
                 }
                 0x67 => {
                     self.registers.h = self.registers.a;
+                    4
                 }
                 0x68 => {
                     self.registers.l = self.registers.b;
+                    4
                 }
                 0x69 => {
                     self.registers.l = self.registers.c;
+                    4
                 }
                 0x6A => {
                     self.registers.l = self.registers.d;
+                    4
                 }
                 0x6B => {
                     self.registers.l = self.registers.e;
+                    4
                 }
                 0x6C => {
                     self.registers.l = self.registers.h;
+                    4
                 }
                 0x6D => {
                     self.registers.l = self.registers.l;
+                    4
                 }
                 0x6E => {
                     self.registers.l = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    8
                 }
                 0x6F => {
                     self.registers.l = self.registers.a;
+                    4
                 }
                 0x70 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.b);
+                    8
                 }
                 0x71 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.c);
+                    8
                 }
                 0x72 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.d);
+                    8
                 }
                 0x73 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.e);
+                    8
                 }
                 0x74 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.h);
+                    8
                 }
                 0x75 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.l);
+                    8
                 }
                 0x76 => {
                     info!("Halting CPU");
                     self.op_halt();
+                    4
                 }
                 0x77 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.a);
+                    8
                 }
                 0x78 => {
                     self.registers.a = self.registers.b;
+                    4
                 }
                 0x79 => {
                     self.registers.a = self.registers.c;
+                    4
                 }
                 0x7A => {
                     self.registers.a = self.registers.d;
+                    4
                 }
                 0x7B => {
                     self.registers.a = self.registers.e;
+                    4
                 }
                 0x7C => {
                     self.registers.a = self.registers.h;
+                    4
                 }
                 0x7D => {
                     self.registers.a = self.registers.l;
+                    4
                 }
                 0x7E => {
                     self.registers.a = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    8
                 }
                 0x7F => {
                     self.registers.a = self.registers.a;
+                    4
                 }
                 0x80 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.b);
@@ -890,6 +1023,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.b & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x81 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.c);
@@ -898,6 +1032,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.c & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x82 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.d);
@@ -907,6 +1042,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         Flag::H, (self.registers.a & 0x0F) + (self.registers.d & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x83 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.e);
@@ -915,6 +1051,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.e & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x84 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.h);
@@ -923,6 +1060,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.h & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x85 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.l);
@@ -931,6 +1069,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H,(self.registers.a & 0x0F) + (self.registers.l & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x86 => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -940,6 +1079,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    8
                 }
                 0x87 => {
                     let (result, carry) = self.registers.a.overflowing_add(self.registers.a);
@@ -948,6 +1088,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F);
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    4
                 }
                 0x88 => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -971,6 +1112,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (self.registers.b as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x89 => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -994,6 +1136,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (self.registers.c as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x8A => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1017,6 +1160,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (self.registers.d as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x8B => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1040,6 +1184,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (self.registers.e as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x8C => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1063,6 +1208,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (self.registers.h as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x8D => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1086,6 +1232,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (self.registers.l as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x8E => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1106,6 +1253,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
                     ); // Set the carry flag if there's a carry out of the most significant bit
                     self.registers.a = result;
+                    8
                 }
                 0x8F => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1128,6 +1276,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         .f
                         .set_flag(Flag::C, result < self.registers.a);
                     self.registers.a = result;
+                    4
                 }
                 0x90 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.b);
@@ -1139,6 +1288,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x91 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.c);
@@ -1150,6 +1300,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x92 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.d);
@@ -1161,6 +1312,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x93 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.e);
@@ -1172,6 +1324,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x94 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.h);
@@ -1183,6 +1336,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x95 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.l);
@@ -1194,6 +1348,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x96 => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1204,6 +1359,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(Flag::C, borrow); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    8
                 }
                 0x97 => {
                     let (result, borrow) = self.registers.a.overflowing_sub(self.registers.a);
@@ -1215,6 +1371,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     );
                     self.registers.f.set_flag(Flag::C, borrow);
                     self.registers.a = result;
+                    4
                 }
                 0x98 => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1232,6 +1389,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16));
                     self.registers.a = result;
+                    4
                 }
                 0x99 => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1255,6 +1413,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (self.registers.c as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x9A => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1278,6 +1437,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (self.registers.d as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x9B => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1301,6 +1461,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (self.registers.e as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x9C => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1324,6 +1485,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (self.registers.h as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x9D => {
                     let carry = if self.registers.f.get_flag(Flag::C) {
@@ -1347,6 +1509,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (self.registers.l as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    4
                 }
                 0x9E => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1366,6 +1529,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (value as u16) + (carry as u16),
                     ); // Set the carry flag if there's a borrow out of the most significant bit
                     self.registers.a = result;
+                    8
                 }
                 0x9F => {
                     let result = self.registers.a.wrapping_sub(self.registers.a);
@@ -1374,6 +1538,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
                     self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
                     self.registers.a = result;
+                    4
                 }
                 0xA0 => {
                     self.registers.a = self.registers.a & self.registers.b;
@@ -1381,6 +1546,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA1 => {
                     self.registers.a &= self.registers.c;
@@ -1388,6 +1554,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA2 => {
                     self.registers.a &= self.registers.d;
@@ -1395,6 +1562,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA3 => {
                     self.registers.a &= self.registers.e;
@@ -1402,6 +1570,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA4 => {
                     self.registers.a &= self.registers.h;
@@ -1409,6 +1578,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA5 => {
                     self.registers.a &= self.registers.l;
@@ -1416,6 +1586,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA6 => {
                     self.registers.a &= self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1423,6 +1594,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    8
                 }
                 0xA7 => {
                     self.registers.a &= self.registers.a;
@@ -1430,6 +1602,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA8 => {
                     self.registers.a = self.registers.a ^ self.registers.b;
@@ -1437,6 +1610,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xA9 => {
                     self.registers.a ^= self.registers.c;
@@ -1444,6 +1618,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xAA => {
                     self.registers.a ^= self.registers.d;
@@ -1451,6 +1626,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xAB => {
                     self.registers.a ^= self.registers.e;
@@ -1458,6 +1634,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xAC => {
                     self.registers.a ^= self.registers.h;
@@ -1465,6 +1642,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xAD => {
                     self.registers.a ^= self.registers.l;
@@ -1472,6 +1650,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xAE => {
                     self.registers.a ^= self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1479,6 +1658,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    8
                 }
                 0xAF => {
                     self.registers.a = 0x0000;
@@ -1486,6 +1666,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB0 => {
                     self.registers.a |= self.registers.b;
@@ -1493,6 +1674,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB1 => {
                     self.registers.a |= self.registers.c;
@@ -1500,6 +1682,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB2 => {
                     self.registers.a |= self.registers.d;
@@ -1507,6 +1690,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB3 => {
                     self.registers.a |= self.registers.e;
@@ -1514,6 +1698,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB4 => {
                     self.registers.a |= self.registers.h;
@@ -1521,6 +1706,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB5 => {
                     self.registers.a |= self.registers.l;
@@ -1528,6 +1714,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB6 => {
                     self.registers.a |= self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1535,6 +1722,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    8
                 }
                 0xB7 => {
                     self.registers.a |= self.registers.a;
@@ -1542,6 +1730,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
+                    4
                 }
                 0xB8 => {
                     let result = self.registers.a.wrapping_sub(self.registers.b);
@@ -1554,6 +1743,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers
                         .f
                         .set_flag(Flag::C, self.registers.a < self.registers.b); // Set the carry flag if there's a borrow out of the most significant bit
+                    4
                 }
                 0xB9 => {
                     let result = self.registers.a.wrapping_sub(self.registers.c);
@@ -1566,6 +1756,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers
                         .f
                         .set_flag(Flag::C, self.registers.a < self.registers.c); // Set the carry flag if there's a borrow out of the most significant bit
+                    4
                 }
                 0xBA => {
                     let result = self.registers.a.wrapping_sub(self.registers.d);
@@ -1578,6 +1769,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers
                         .f
                         .set_flag(Flag::C, self.registers.a < self.registers.d); // Set the carry flag if there's a borrow out of the most significant bit
+                    4
                 }
                 0xBB => {
                     let result = self.registers.a.wrapping_sub(self.registers.e);
@@ -1590,6 +1782,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers
                         .f
                         .set_flag(Flag::C, self.registers.a < self.registers.e); // Set the carry flag if there's a borrow out of the most significant bit
+                    4
                 }
                 0xBC => {
                     let result = self.registers.a.wrapping_sub(self.registers.h);
@@ -1600,6 +1793,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
                     ); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(Flag::C, self.registers.a < self.registers.h); // Set the carry flag if there's a borrow out of the most significant bit
+                    4
                 }
                 0xBD => {
                     let result = self.registers.a.wrapping_sub(self.registers.l);
@@ -1610,6 +1804,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
                     ); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(Flag::C, self.registers.a < self.registers.l); // Set the carry flag if there's a borrow out of the most significant bit
+                    4
                 }
                 0xBE => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
@@ -1618,6 +1813,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
                     self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
+                    8
                 }
                 0xBF => {
                     let result = self.registers.a.wrapping_sub(self.registers.a);
@@ -1625,35 +1821,45 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
                     self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
                     self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
+                    4
                 }
                 0xC0 => {
                     if !self.registers.f.get_flag(Flag::Z) {
                         self.op_ret();
+                        return 20;
                     }
+                    return 8;
                 }
                 0xC1 => {
                     let value = self.op_pop_stack();
                     self.registers.set_bc(value);
+                    12
                 }
                 0xC2 => {
                     if !self.registers.f.get_flag(Flag::Z) {
                         let nn: u16 = self.read_immediate_short();
                         self.op_jp_nn(nn);
+                        return 16;
                     }
+                    return 12;
                 }
                 0xC3 => {
                     let nn: u16 = self.read_immediate_short();
                     debug!("Jumping to 0x{:X}", nn);
                     self.op_jp_nn(nn);
+                    16
                 }
                 0xC4 => {
                     if !self.registers.f.get_flag(Flag::Z) {
                         let nn: u16 = self.read_immediate_short();
                         self.op_call_nn(nn);
+                        return 24;
                     }
+                    return 12;
                 }
                 0xC5 => {
                     self.op_push_stack(self.registers.get_bc());
+                    16
                 }
                 0xC6 => {
                     let value = self.read_immediate_byte();
@@ -1663,996 +1869,1261 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F, );
                     self.registers.f.set_flag(Flag::C, carry);
                     self.registers.a = result;
+                    8
                 }
                 0xC7 => {
                     self.op_rst_address(0x0000);
+                    16
                 }
                 0xC8 => {
                     if self.registers.f.get_flag(Flag::Z) {
                         self.op_ret();
+                        return 20;
                     }
+                    return 8;
                 }
                 0xC9 => {
                     self.op_ret();
+                    16
                 }
                 0xCA => {
                     let nn: u16 = self.read_immediate_short();
                     if self.registers.f.get_flag(Flag::Z) {
                         self.op_jp_nn(nn);
+                        return 12;
                     }
+                    return 12;
                 }
                 0xCB => {
                     // Get the next byte and use it as the extended opcode
                     let extended_opcode = self.read_immediate_byte();
+                    let cb_cycles = 4;
                     debug!("0xCB{:X}", extended_opcode);
                     match extended_opcode {
                         0x00 => {
                             let mut value = self.registers.b;
                             self.op_rlc(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x01 => {
                             let mut value = self.registers.c;
                             self.op_rlc(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x02 => {
                             let mut value = self.registers.d;
                             self.op_rlc(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x03 => {
                             let mut value = self.registers.e;
                             self.op_rlc(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x04 => {
                             let mut value = self.registers.h;
                             self.op_rlc(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x05 => {
                             let mut value = self.registers.l;
                             self.op_rlc(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x06 => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_rlc(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x07 => {
                             let mut value = self.registers.a;
                             self.op_rlc(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x08 => {
                             let mut value = self.registers.b;
                             self.op_rrc(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x09 => {
                             let mut value = self.registers.c;
                             self.op_rrc(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x0A => {
                             let mut value = self.registers.d;
                             self.op_rrc(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x0B => {
                             let mut value = self.registers.e;
                             self.op_rrc(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x0C => {
                             let mut value = self.registers.h;
                             self.op_rrc(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x0D => {
                             let mut value = self.registers.l;
                             self.op_rrc(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x0E => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_rrc(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x0F => {
                             let mut value = self.registers.a;
                             self.op_rrc(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x10 => {
                             let mut value = self.registers.b;
                             self.op_rl(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x11 => {
                             let mut value = self.registers.c;
                             self.op_rl(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x12 => {
                             let mut value = self.registers.d;
                             self.op_rl(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x13 => {
                             let mut value = self.registers.e;
                             self.op_rl(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x14 => {
                             let mut value = self.registers.h;
                             self.op_rl(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x15 => {
                             let mut value = self.registers.l;
                             self.op_rl(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x16 => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_rl(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x17 => {
                             let mut value = self.registers.a;
                             self.op_rl(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x18 => {
                             let mut value = self.registers.b;
                             self.op_rr(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x19 => {
                             let mut value = self.registers.c;
                             self.op_rr(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x1A => {
                             let mut value = self.registers.d;
                             self.op_rr(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x1B => {
                             let mut value = self.registers.e;
                             self.op_rr(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x1C => {
                             let mut value = self.registers.h;
                             self.op_rr(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x1D => {
                             let mut value = self.registers.l;
                             self.op_rr(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x1E => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_rr(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x1F => {
                             let mut value = self.registers.a;
                             self.op_rr(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x20 => {
                             let mut value = self.registers.b;
                             self.op_sla(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x21 => {
                             let mut value = self.registers.c;
                             self.op_sla(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x22 => {
                             let mut value = self.registers.d;
                             self.op_sla(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x23 => {
                             let mut value = self.registers.e;
                             self.op_sla(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x24 => {
                             let mut value = self.registers.h;
                             self.op_sla(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x25 => {
                             let mut value = self.registers.l;
                             self.op_sla(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x26 => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_sla(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x27 => {
                             let mut value = self.registers.a;
                             self.op_sla(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x28 => {
                             let mut value = self.registers.b;
                             self.op_sra(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x29 => {
                             let mut value = self.registers.c;
                             self.op_sra(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x2A => {
                             let mut value = self.registers.d;
                             self.op_sra(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x2B => {
                             let mut value = self.registers.e;
                             self.op_sra(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x2C => {
                             let mut value = self.registers.h;
                             self.op_sra(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x2D => {
                             let mut value = self.registers.l;
                             self.op_sra(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x2E => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_sra(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x2F => {
                             let mut value = self.registers.a;
                             self.op_sra(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x30 => {
                             let mut value = self.registers.b;
                             self.op_swap(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x31 => {
                             let mut value = self.registers.c;
                             self.op_swap(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x32 => {
                             let mut value = self.registers.d;
                             self.op_swap(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x33 => {
                             let mut value = self.registers.e;
                             self.op_swap(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x34 => {
                             let mut value = self.registers.h;
                             self.op_swap(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x35 => {
                             let mut value = self.registers.l;
                             self.op_swap(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x36 => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_swap(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x37 => {
                             let mut value = self.registers.a;
                             self.op_swap(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x38 => {
                             let mut value = self.registers.b;
                             self.op_srl(&mut value);
                             self.registers.b = value;
+                            cb_cycles + 8
                         }
                         0x39 => {
                             let mut value = self.registers.c;
                             self.op_srl(&mut value);
                             self.registers.c = value;
+                            cb_cycles + 8
                         }
                         0x3A => {
                             let mut value = self.registers.d;
                             self.op_srl(&mut value);
                             self.registers.d = value;
+                            cb_cycles + 8
                         }
                         0x3B => {
                             let mut value = self.registers.e;
                             self.op_srl(&mut value);
                             self.registers.e = value;
+                            cb_cycles + 8
                         }
                         0x3C => {
                             let mut value = self.registers.h;
                             self.op_srl(&mut value);
                             self.registers.h = value;
+                            cb_cycles + 8
                         }
                         0x3D => {
                             let mut value = self.registers.l;
                             self.op_srl(&mut value);
                             self.registers.l = value;
+                            cb_cycles + 8
                         }
                         0x3E => {
                             let mut value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             self.op_srl(&mut value);
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), value);
+                            cb_cycles + 16
                         }
                         0x3F => {
                             let mut value = self.registers.a;
                             self.op_srl(&mut value);
                             self.registers.a = value;
+                            cb_cycles + 8
                         }
                         0x40 => {
                             self.op_bit(0, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x41 => {
                             self.op_bit(0, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x42 => {
                             self.op_bit(0, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x43 => {
                             self.op_bit(0, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x44 => {
                             self.op_bit(0, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x45 => {
                             self.op_bit(0, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x46 => {
                             //self.op_bit(0, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 0)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x47 => {
                             self.op_bit(0, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x48 => {
                             self.op_bit(1, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x49 => {
                             self.op_bit(1, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x4A => {
                             self.op_bit(1, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x4B => {
                             self.op_bit(1, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x4C => {
                             self.op_bit(1, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x4D => {
                             self.op_bit(1, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x4E => {
                             //self.op_bit(1, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 1)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x4F => {
                             self.op_bit(1, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x50 => {
                             self.op_bit(2, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x51 => {
                             self.op_bit(2, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x52 => {
                             self.op_bit(2, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x53 => {
                             self.op_bit(2, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x54 => {
                             self.op_bit(2, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x55 => {
                             self.op_bit(2, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x56 => {
                             //self.op_bit(2, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 2)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x57 => {
                             self.op_bit(2, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x58 => {
                             self.op_bit(3, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x59 => {
                             self.op_bit(3, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x5A => {
                             self.op_bit(3, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x5B => {
                             self.op_bit(3, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x5C => {
                             self.op_bit(3, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x5D => {
                             self.op_bit(3, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x5E => {
                             //self.op_bit(3, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 3)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x5F => {
                             self.op_bit(3, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x60 => {
                             self.op_bit(4, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x61 => {
                             self.op_bit(4, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x62 => {
                             self.op_bit(4, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x63 => {
                             self.op_bit(4, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x64 => {
                             self.op_bit(4, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x65 => {
                             self.op_bit(4, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x66 => {
                             //self.op_bit(4, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 4)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+
+                            cb_cycles + 16
                         }
                         0x67 => {
                             self.op_bit(4, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x68 => {
                             self.op_bit(5, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x69 => {
                             self.op_bit(5, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x6A => {
                             self.op_bit(5, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x6B => {
                             self.op_bit(5, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x6C => {
                             self.op_bit(5, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x6D => {
                             self.op_bit(5, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x6E => {
                             //self.op_bit(5, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 5)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x6F => {
                             self.op_bit(5, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x70 => {
                             self.op_bit(6, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x71 => {
                             self.op_bit(6, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x72 => {
                             self.op_bit(6, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x73 => {
                             self.op_bit(6, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x74 => {
                             self.op_bit(6, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x75 => {
                             self.op_bit(6, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x76 => {
                             //self.op_bit(6, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 6)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x77 => {
                             self.op_bit(6, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x78 => {
                             self.op_bit(7, self.registers.b);
+                            cb_cycles + 8
                         }
                         0x79 => {
                             self.op_bit(7, self.registers.c);
+                            cb_cycles + 8
                         }
                         0x7A => {
                             self.op_bit(7, self.registers.d);
+                            cb_cycles + 8
                         }
                         0x7B => {
                             self.op_bit(7, self.registers.e);
+                            cb_cycles + 8
                         }
                         0x7C => {
                             self.op_bit(7, self.registers.h);
+                            cb_cycles + 8
                         }
                         0x7D => {
                             self.op_bit(7, self.registers.l);
+                            cb_cycles + 8
                         }
                         0x7E => {
                             //self.op_bit(7, self.memory_bus.borrow().read_byte(self.registers.get_hl()));
                             self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(self.registers.get_hl() & (1 << 7)) == 0);
                             self.registers.f.set_flag(Flag::N, false);
                             self.registers.f.set_flag(Flag::H, true);
+                            cb_cycles + 16
                         }
                         0x7F => {
                             self.op_bit(7, self.registers.a);
+                            cb_cycles + 8
                         }
                         0x80 => {
                             self.registers.b &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x81 => {
                             self.registers.c &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x82 => {
                             self.registers.d &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x83 => {
                             self.registers.e &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x84 => {
                             self.registers.h &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x85 => {
                             self.registers.l &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x86 => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 0);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 8
                         }
                         0x87 => {
                             self.registers.a &= !(1 << 0);
+                            cb_cycles + 8
                         }
                         0x88 => {
                             self.registers.b &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x89 => {
                             self.registers.c &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x8A => {
                             self.registers.d &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x8B => {
                             self.registers.e &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x8C => {
                             self.registers.h &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x8D => {
                             self.registers.l &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x8E => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 1);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 8
                         }
                         0x8F => {
                             self.registers.a &= !(1 << 1);
+                            cb_cycles + 8
                         }
                         0x90 => {
                             self.registers.b &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x91 => {
                             self.registers.c &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x92 => {
                             self.registers.d &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x93 => {
                             self.registers.e &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x94 => {
                             self.registers.h &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x95 => {
                             self.registers.l &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x96 => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 2);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 8
                         }
                         0x97 => {
                             self.registers.a &= !(1 << 2);
+                            cb_cycles + 8
                         }
                         0x98 => {
                             self.registers.b &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0x99 => {
                             self.registers.c &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0x9A => {
                             self.registers.d &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0x9B => {
                             self.registers.e &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0x9C => {
                             self.registers.h &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0x9D => {
                             self.registers.l &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0x9E => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 3);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 16
                         }
                         0x9F => {
                             self.registers.a &= !(1 << 3);
+                            cb_cycles + 8
                         }
                         0xA0 => {
                             self.registers.b &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA1 => {
                             self.registers.c &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA2 => {
                             self.registers.d &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA3 => {
                             self.registers.e &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA4 => {
                             self.registers.h &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA5 => {
                             self.registers.l &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA6 => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 4);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 8
                         }
                         0xA7 => {
                             self.registers.a &= !(1 << 4);
+                            cb_cycles + 8
                         }
                         0xA8 => {
                             self.registers.b &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xA9 => {
                             self.registers.c &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xAA => {
                             self.registers.d &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xAB => {
                             self.registers.e &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xAC => {
                             self.registers.h &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xAD => {
                             self.registers.l &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xAE => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 5);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 16
                         }
                         0xAF => {
                             self.registers.a &= !(1 << 5);
+                            cb_cycles + 8
                         }
                         0xB0 => {
                             self.registers.b &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB1 => {
                             self.registers.c &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB2 => {
                             self.registers.d &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB3 => {
                             self.registers.e &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB4 => {
                             self.registers.h &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB5 => {
                             self.registers.l &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB6 => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 6);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 16
                         }
                         0xB7 => {
                             self.registers.a &= !(1 << 6);
+                            cb_cycles + 8
                         }
                         0xB8 => {
                             self.registers.b &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xB9 => {
                             self.registers.c &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xBA => {
                             self.registers.d &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xBB => {
                             self.registers.e &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xBC => {
                             self.registers.h &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xBD => {
                             self.registers.l &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xBE => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value & !(1 << 7);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 16
                         }
                         0xBF => {
                             self.registers.a &= !(1 << 7);
+                            cb_cycles + 8
                         }
                         0xC0 => {
                             self.registers.b |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC1 => {
                             self.registers.c |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC2 => {
                             self.registers.d |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC3 => {
                             self.registers.e |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC4 => {
                             self.registers.h |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC5 => {
                             self.registers.l |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC6 => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value | (1 << 0);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 16
                         }
                         0xC7 => {
                             self.registers.a |= 1 << 0;
+                            cb_cycles + 8
                         }
                         0xC8 => {
                             self.registers.b |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xC9 => {
                             self.registers.c |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xCA => {
                             self.registers.d |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xCB => {
                             self.registers.e |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xCC => {
                             self.registers.h |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xCD => {
                             self.registers.l |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xCE => {
                             let hl = self.registers.get_hl();
                             let value = self.memory_bus.borrow().read_byte(hl);
                             let result = value | (1 << 1);
                             self.memory_bus.borrow_mut().write_byte(hl, result);
+                            cb_cycles + 16
                         }
                         0xCF => {
                             self.registers.a |= 1 << 1;
+                            cb_cycles + 8
                         }
                         0xD0 => {
                             self.registers.b |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD1 => {
                             self.registers.c |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD2 => {
                             self.registers.d |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD3 => {
                             self.registers.e |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD4 => {
                             self.registers.h |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD5 => {
                             self.registers.l |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD6 => {
                             let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             result |= value | 1 << 2;
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), result);
+                            cb_cycles + 16
                         }
                         0xD7 => {
                             self.registers.a |= 1 << 2;
+                            cb_cycles + 8
                         }
                         0xD8 => {
                             self.registers.b |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xD9 => {
                             self.registers.c |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xDA => {
                             self.registers.d |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xDB => {
                             self.registers.e |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xDC => {
                             self.registers.h |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xDD => {
                             self.registers.l |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xDE => {
                             let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             result |= value | 1 << 3;
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), result);
+                            cb_cycles + 16
                         }
                         0xDF => {
                             self.registers.a |= 1 << 3;
+                            cb_cycles + 8
                         }
                         0xE0 => {
                             self.registers.b |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE1 => {
                             self.registers.c |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE2 => {
                             self.registers.d |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE3 => {
                             self.registers.e |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE4 => {
                             self.registers.h |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE5 => {
                             self.registers.l |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE6 => {
                             let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             result |= value | 1 << 4;
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), result);
+                            cb_cycles + 8
                         }
                         0xE7 => {
                             self.registers.a |= 1 << 4;
+                            cb_cycles + 8
                         }
                         0xE8 => {
                             self.registers.b |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xE9 => {
                             self.registers.c |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xEA => {
                             self.registers.d |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xEB => {
                             self.registers.e |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xEC => {
                             self.registers.h |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xED => {
                             self.registers.l |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xEE => {
                             let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             result |= value | 1 << 5;
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), result);
+                            cb_cycles + 16
                         }
                         0xEF => {
                             self.registers.a |= 1 << 5;
+                            cb_cycles + 8
                         }
                         0xF0 => {
                             self.registers.b |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF1 => {
                             self.registers.c |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF2 => {
                             self.registers.d |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF3 => {
                             self.registers.e |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF4 => {
                             self.registers.h |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF5 => {
                             self.registers.l |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF6 => {
                             let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             result |= value | 1 << 6;
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), result);
+                            cb_cycles + 16
                         }
                         0xF7 => {
                             self.registers.a |= 1 << 6;
+                            cb_cycles + 8
                         }
                         0xF8 => {
                             self.registers.b |= 1 << 7;
+                            cb_cycles + 8
                         }
                         0xF9 => {
                             self.registers.c |= 1 << 7;
+                            cb_cycles + 8
                         }
                         0xFA => {
                             self.registers.d |= 1 << 7;
+                            cb_cycles + 8
                         }
                         0xFB => {
                             self.registers.e |= 1 << 7;
+                            cb_cycles + 8
                         }
                         0xFC => {
                             self.registers.h |= 1 << 7;
+                            cb_cycles + 8
                         }
                         0xFD => {
                             self.registers.l |= 1 << 7;
+                            cb_cycles + 8
                         }
                         0xFE => {
                             let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             let mut result = self.memory_bus.borrow().read_byte(self.registers.get_hl());
                             result |= value | 1 << 7;
                             self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), result);
+                            cb_cycles + 16
                         }
                         0xFF => {
                             self.registers.a |= 1 << 7;
+                            cb_cycles + 8
                         }
                         _ => {
                             panic!("Unsupported opcode: 0xCB{:02X}", opcode);
@@ -2663,12 +3134,15 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     let nn: u16 = self.read_immediate_short();
                     if self.registers.f.get_flag(Flag::Z) {
                         self.op_call_nn(nn);
+                        return 24;
                     }
+                    return 12;
                 }
                 0xCD => {
                     let nn: u16 = self.read_immediate_short();
                     debug!("CALL {:04X}", nn);
                     self.op_call_nn(nn);
+                    24
                 }
                 0xCE => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.pc);
@@ -2689,24 +3163,31 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
                     );
                     self.registers.a = result;
+                    8
                 }
                 0xCF => {
                     self.op_rst_address(0x08);
+                    16
                 }
                 0xD0 => {
                     if !self.registers.f.get_flag(Flag::C) {
                         self.op_ret();
+                        return 20;
                     }
+                    return 8;
                 }
                 0xD1 => {
                     let value = self.op_pop_stack();
                     self.registers.set_de(value);
+                    12
                 }
                 0xD2 => {
                     let nn: u16 = self.read_immediate_short();
                     if !self.registers.f.get_flag(Flag::C) {
                         self.op_jp_nn(nn);
+                        return 16;
                     }
+                    return 12;
                 }
                 0xD3 => {
                     panic!("Unsupported opcode: 0xD3");
@@ -2715,10 +3196,13 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     let nn: u16 = self.read_immediate_short();
                     if !self.registers.f.get_flag(Flag::C) {
                         self.op_call_nn(nn);
+                        return 24;
                     }
+                    return 12;
                 }
                 0xD5 => {
                     self.op_push_stack(self.registers.get_de());
+                    16
                 }
                 0xD6 => {
                     let value = self.read_immediate_byte();
@@ -2728,24 +3212,31 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
                     self.registers.f.set_flag(Flag::C, overflow);
                     self.registers.a = result;
+                    8
                 }
                 0xD7 => {
                     self.op_rst_address(0x10);
+                    16
                 }
                 0xD8 => {
                     if self.registers.f.get_flag(Flag::C) {
                         self.op_ret();
+                        return 20;
                     }
+                    return 8;
                 }
                 0xD9 => {
                     self.op_ret();
                     self.op_ei();
+                    16
                 }
                 0xDA => {
                     let nn: u16 = self.read_immediate_short();
                     if self.registers.f.get_flag(Flag::C) {
                         self.op_jp_nn(nn);
+                        return 16;
                     }
+                    return 12;
                 }
                 0xDB => {
                     panic!("Unsupported opcode: 0xDB");
@@ -2754,7 +3245,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     let nn: u16 = self.read_immediate_short();
                     if self.registers.f.get_flag(Flag::C) {
                         self.op_call_nn(nn);
+                        return 24;
                     }
+                    return 12;
                 }
                 0xDD => {
                     panic!("Unsupported opcode: 0xDD");
@@ -2778,9 +3271,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                         (self.registers.a as u16) < (value as u16 + carry as u16)
                     );
                     self.registers.a = result;
+                    8
                 }
                 0xDF => {
                     self.op_rst_address(0x18);
+                    16
                 }
                 0xE0 => {
                     let offset = self.read_immediate_byte() as u16;
@@ -2788,14 +3283,17 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     debug!("LDH (0xFF00 + {:02X}), A", offset);
                     debug!("Address = {:02X}", address);
                     self.memory_bus.borrow_mut().write_byte(address, self.registers.a);
+                    12
                 }
                 0xE1 => {
                     let value = self.op_pop_stack();
                     self.registers.set_hl(value);
+                    12
                 }
                 0xE2 => {
                     let address = 0xFF00 | self.registers.c as u16;
                     self.memory_bus.borrow_mut().write_byte(address, self.registers.a);
+                    8
                 }
                 0xE3 => {
                     panic!("Unsupported opcode: 0xE3");
@@ -2805,6 +3303,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0xE5 => {
                     self.op_push_stack(self.registers.get_hl());
+                    16
                 }
                 0xE6 => {
                     let value = self.read_immediate_byte();
@@ -2814,9 +3313,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, true);
                     self.registers.f.set_flag(Flag::C, false);
                     self.registers.a = result;
+                    8
                 }
                 0xE7 => {
                     self.op_rst_address(0x20);
+                    16
                 }
                 0xE8 => {
                     let value = self.read_immediate_byte() as i16;
@@ -2827,24 +3328,27 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result) & 0x10) == 0x10);
                     self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result) & 0x100) == 0x100);
                     self.registers.sp = result as u16;
+                    16
                 }
                 0xE9 => {
                     self.registers.pc = self.registers.get_hl();
+                    4
                 }
                 0xEA => {
                     let nn: u16 = self.read_immediate_short();
                     self.memory_bus.borrow_mut().write_byte(nn, self.registers.a);
+                    16
                 }
                 0xEB => {
                     panic!("Unsupported opcode: 0xEB");
                 }
                 0xEC => {
-                    //panic!("Unsupported opcode: 0xEC");
-                    error!("Unsupported opcode: 0xEC");
+                    panic!("Unsupported opcode: 0xEC");
+                    //error!("Unsupported opcode: 0xEC");
                 }
                 0xED => {
-                    //panic!("Unsupported opcode: 0xED");
-                    error!("Unsupported opcode: 0xED");
+                    panic!("Unsupported opcode: 0xED");
+                    //error!("Unsupported opcode: 0xED");
                 }
                 0xEE => {
                     let value = self.read_immediate_byte();
@@ -2854,31 +3358,38 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
                     self.registers.a = result;
+                    8
                 }
                 0xEF => {
                     self.op_rst_address(0x28);
+                    16
                 }
                 0xF0 => {
                     let value = self.read_immediate_byte();
                     let address = 0xFF00 + value as u16;
                     self.registers.a = self.memory_bus.borrow().read_byte(address);
+                    12
                 }
                 0xF1 => {
                     let value = self.op_pop_stack();
                     self.registers.set_af(value & 0xFFF0);
+                    12
                 }
                 0xF2 => {
                     let address = 0xFF00 | self.registers.c as u16;
                     self.registers.a = self.memory_bus.borrow().read_byte(address);
+                    8
                 }
                 0xF3 => {
                     self.op_di();
+                    4
                 }
                 0xF4 => {
                     panic!("Unsupported opcode: 0xF4");
                 }
                 0xF5 => {
                     self.op_push_stack(self.registers.get_af());
+                    16
                 }
                 0xF6 => {
                     let value = self.read_immediate_byte();
@@ -2888,9 +3399,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::H, false);
                     self.registers.f.set_flag(Flag::C, false);
                     self.registers.a = result;
+                    8
                 }
                 0xF7 => {
                     self.op_rst_address(0x30);
+                    16
                 }
                 0xF8 => {
                     let value = self.read_immediate_byte() as i8 as i16;
@@ -2901,16 +3414,20 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, false);
                     self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result as i16) & 0x10) == 0x10);
                     self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result as i16) & 0x100) == 0x100);
+                    12
                 }
                 0xF9 => {
                     self.registers.sp = self.registers.get_hl();
+                    8
                 }
                 0xFA => {
                     let nn: u16 = self.read_immediate_short();
                     self.registers.a = self.memory_bus.borrow().read_byte(nn);
+                    16
                 }
                 0xFB => {
                     self.op_ei();
+                    4
                 }
                 0xFC => {
                     panic!("Unsupported opcode: 0xFC");
@@ -2925,9 +3442,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     self.registers.f.set_flag(Flag::N, true);
                     self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
                     self.registers.f.set_flag(Flag::C, self.registers.a < value);
+                    8
                 }
                 0xFF => {
                     self.op_rst_address(0x0038);
+                    16
                 }
                 _ => {
                     panic!("Unsupported opcode: {:X}", opcode);
@@ -2935,12 +3454,14 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             }
         }
         else {
-            info!("CPU halted");
-            self.check_interrupts();
+            debug!("CPU halted");
 
+            if u8::from(self.memory_bus.borrow().interrupt_flags) != 0 {
+                self.halted = false;
+            }
+
+            4 // TODO this may not be right
         }
-
-
 
     }
 
@@ -3073,45 +3594,79 @@ impl/*<'a>*/ CPU/*<'a>*/ {
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
         debug!("set_interrupt {:?}", interrupt);
+        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow_mut().interrupt_flags);
         match interrupt {
-            Interrupt::VBLANK => self.interrupt_flags |= 0x01,
-            Interrupt::LCDSTAT => self.interrupt_flags |= 0x02,
-            Interrupt::TIMER => self.interrupt_flags |= 0x04,
-            Interrupt::SERIAL => self.interrupt_flags |= 0x08,
-            Interrupt::JOYPAD => self.interrupt_flags |= 0x10,
+            Interrupt::VBLANK => interrupt_flags |= 0x01,
+            Interrupt::LCDSTAT => interrupt_flags |= 0x02,
+            Interrupt::TIMER => interrupt_flags |= 0x04,
+            Interrupt::SERIAL => interrupt_flags |= 0x08,
+            Interrupt::JOYPAD => interrupt_flags |= 0x10,
         }
+        self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
     }
-    fn check_interrupts(&mut self) {
+    pub fn check_interrupts(&mut self) {
         if self.interrupt_master_enable {
-            let interrupts = self.memory_bus.borrow().interrupt_enable_register & self.interrupt_flags;
+            // Extract the needed values from self.memory_bus to local variables
+            let interrupt_enable_register: u8;
+            let interrupt_flags: u8;
+            
+            {
+                // Immutable borrow scope
+                let memory_bus = self.memory_bus.borrow();
+                interrupt_enable_register = memory_bus.interrupt_enable.into();
+                interrupt_flags = memory_bus.interrupt_flags.into();
+                info!("Interrupt enable register {:?}", memory_bus.interrupt_enable);
+                info!("Interrupt flags {:?}", memory_bus.interrupt_flags);
+            }
+
+            // Calculate interrupts
+            let interrupts = interrupt_enable_register & interrupt_flags;
+            info!("Interrupts {}", interrupts);
+            if interrupts != 0 {
+                panic!("Interrupts not implemented");
+            }
+
             if interrupts != 0 {
                 self.halted = false;
                 self.service_interrupt(interrupts);
             }
         }
     }
-
-    fn service_interrupt(&mut self, interrupts: u8) {
+    pub fn service_interrupt(&mut self, interrupts: u8) {
+        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow_mut().interrupt_flags);
+        info!("Service interrupt: {:X}", interrupts);
         if interrupts & 0x01 != 0 {
-            self.interrupt_flags &= !0x01;
+            //self.interrupt_flags &= !0x01;
+            // V-Blank interrupt
+            interrupt_flags &= !0x01;
             self.op_rst_address(0x40);
         }
         if interrupts & 0x02 != 0 {
-            self.interrupt_flags &= !0x02;
+            //self.interrupt_flags &= !0x02;
+            // LCD STAT interrupt
+            interrupt_flags &= !0x02;
+            panic!("LCD STAT interrupt not implemented");
             self.op_rst_address(0x48);
         }
         if interrupts & 0x04 != 0 {
-            self.interrupt_flags &= !0x04;
+            //self.interrupt_flags &= !0x04;
+            // Timer interrupt
+            interrupt_flags &= !0x04;
             self.op_rst_address(0x50);
         }
         if interrupts & 0x08 != 0 {
-            self.interrupt_flags &= !0x08;
+            //self.interrupt_flags &= !0x08;
+            // Serial interrupt
+            interrupt_flags &= !0x08;
             self.op_rst_address(0x58);
         }
         if interrupts & 0x10 != 0 {
-            self.interrupt_flags &= !0x10;
+            //self.interrupt_flags &= !0x10;
+            // Joypad interrupt
+            interrupt_flags &= !0x10;
             self.op_rst_address(0x60);
         }
+        self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
     }
 
     fn handle_interrupt(&mut self, address: u16) {
@@ -3126,10 +3681,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         self.halted = true;
     }
     fn op_stop(&mut self) {
-        debug!("op_stop");
-        self.halted = true;
-        //self.memory_bus.borrow_mut().write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
-
+        error!("op_stop");
+        //self.halted = true;
     }
     fn op_di(&mut self) {
         debug!("op_di");
@@ -3142,7 +3695,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.interrupt_master_enable = true;
+        self.enabling_ime = true;
     }
 
     /*
@@ -3339,4 +3892,15 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         file.flush().unwrap();
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{memory_bus, rom};
+
+    #[test]
+    fn test_scratchpad() {
+        assert_eq!(1 | 0, 1);
+    }
 }

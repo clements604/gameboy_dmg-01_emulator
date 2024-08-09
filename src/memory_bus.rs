@@ -1,11 +1,16 @@
+use std::cell::RefCell;
 use crate::rom::{ROM, ROMBanks};
 use crate::ppu::Ppu;
 use log::{debug, error, info};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, Read};
+use std::rc::{Rc, Weak};
+use crate::CPU::CPU;
+use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
+use crate::interupts::{Interrupt, InterruptFlags};
 
 const BOOT_ROM_START: u16 = 0x0000;
 const BOOT_ROM_END: u16 = 0x00FF;
@@ -66,15 +71,18 @@ pub struct MemoryBus {
     pub unused: [u8; UNUSED_SIZE],
     //pub io_registers: [u8; IO_REGISTERS_SIZE],
     pub hram: [u8; HRAM_SIZE],
-    pub interrupt_enable_register: u8,
-    pub ppu: Ppu,
+    pub interrupt_enable: InterruptFlags,
+    pub interrupt_flags: InterruptFlags,
+    pub ppu: Option<Rc<RefCell<Ppu>>>,
     rom_debug: rom_debug,
-    dmg_io: IO,
+    pub dmg_io: Option<Rc<RefCell<IO>>>,
+    pub dma: Option<Rc<RefCell<Dma>>>,
+    pub cpu:  Option<Rc<RefCell<CPU>>>,
     boot_rom_enabled: bool,
 }
 
 impl MemoryBus {
-    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM) -> MemoryBus {
+    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, io: Option<Rc<RefCell<IO>>>, dma:Option<Rc<RefCell<Dma>>>, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
 
         let mut memory_bus = MemoryBus {
             //rom: [0; (ROM_BANK_0_END - ROM_BANK_0_START) as usize],
@@ -102,11 +110,13 @@ impl MemoryBus {
             unused: [0; UNUSED_SIZE],
             //io_registers: [0; IO_REGISTERS_SIZE],
             hram: [0; HRAM_SIZE],
-            interrupt_enable_register: 0,
-            ppu: Ppu::new(),
+            interrupt_enable: InterruptFlags::new(),
+            interrupt_flags: InterruptFlags::new(),
+            ppu: None,
             rom_debug: rom_debug::new(),
-            dmg_io: IO::new(),
-            
+            dmg_io: io,
+            dma,
+            cpu,
         };
         //debug!("ROM data to be loaded: {:?}", rom);
         memory_bus.load_rom(&rom.rom);
@@ -132,14 +142,18 @@ impl MemoryBus {
             ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize],
             VRAM_START..=VRAM_END => {
                 //self.vram[(address - VRAM_START) as usize]
-                self.ppu.vram_read(address)
+                self.ppu.as_ref().unwrap().borrow().vram_read(address)
             },
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.external_ram[(address - EXTERNAL_RAM_START) as usize],
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize],
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
             ECHO_RAM_START..=ECHO_RAM_END => self.echo_ram[(address - ECHO_RAM_START) as usize],
-            OAM_START..=OAM_END => { 
-                self.ppu.oam_read(address - OAM_START)
+            OAM_START..=OAM_END => {
+                if self.dma.as_ref().unwrap().borrow().is_transferring() {
+                    panic!("DMA active");
+                    return 0xFF;
+                }
+                self.ppu.as_ref().unwrap().borrow().oam_read(address - OAM_START)
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
             IO_REGISTERS_START..=IO_REGISTERS_END => {
@@ -149,10 +163,16 @@ impl MemoryBus {
                     error!("LY read");
                     return self.ppu.ly;
                 }*/
-                self.dmg_io.read(address)
+                if address ==  0xFF0F {
+                    debug!("Interrupt flag read");
+                    return u8::from(self.interrupt_flags);
+                }
+                self.dmg_io.as_ref().unwrap().borrow_mut().read(address)
             }
             HRAM_START..=HRAM_END => self.hram[(address - HRAM_START) as usize],
-            INTERRUPT_ENABLE_REGISTER => self.interrupt_enable_register,
+            INTERRUPT_ENABLE_REGISTER => {
+                self.interrupt_enable.into()
+            },
             _ => {
                 panic!("Unimplemented read_byte in memory bus")
             }
@@ -161,7 +181,7 @@ impl MemoryBus {
     pub fn write_byte(&mut self, address: u16, value: u8) {
         debug!("Writing byte to address {:X}", address);
         if address == 0xFF44 {
-            panic!("LY write");
+            //panic!("LY write");
         }
         match address {
             //ROM_BANK_0_START..=ROM_BANK_0_END => self.rom_bank_0[address as usize] = value,
@@ -175,7 +195,7 @@ impl MemoryBus {
             ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize] = value,
             VRAM_START..=VRAM_END => { 
                 //self.vram[(address - VRAM_START) as usize] = value;
-                self.ppu.vram_write(address, value);
+                self.ppu.as_ref().unwrap().borrow_mut().vram_write(address, value);
             },
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
                 self.external_ram[(address - EXTERNAL_RAM_START) as usize] = value
@@ -186,7 +206,9 @@ impl MemoryBus {
                 self.echo_ram[(address - ECHO_RAM_START) as usize] = value
             }
             OAM_START..=OAM_END => {
-                self.ppu.oam_write(address - OAM_START, value);
+                if !self.dma.as_ref().unwrap().borrow().is_transferring() {
+                    self.ppu.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
+                }
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
             IO_REGISTERS_START..=IO_REGISTERS_END => {
@@ -196,18 +218,22 @@ impl MemoryBus {
                     debug!("Serial data write");
                     //panic!("Serial data write")
                 }
-                if address == 0xFF44 {
-                    error!("LY write");
-                    self.ppu.ly += 1;
-                    return;
+                if address == 0xFF0F {
+                    debug!("Interrupt flag write: {:#X}", value);
+                    self.interrupt_flags = InterruptFlags::from(value);
                 }
+                /*if address == 0xFF44 {
+                    error!("LY write");
+                    self.dmg_io.as_ref().unwrap().borrow_mut().lcd.borrow_mut().ly += 1;
+                    return;
+                }*/
                 if address == 0xFF50 {
                     debug!("Boot ROM disable");
                     self.boot_rom_enabled = false;
                     panic!("Boot ROM disable");
                     return;
                 }
-                self.dmg_io.write(address, value);
+                self.dmg_io.as_ref().unwrap().borrow_mut().write(address, value);
             },
             HRAM_START..=HRAM_END => {
                 //unimplemented!("HRAM write");
@@ -215,7 +241,7 @@ impl MemoryBus {
             },
             INTERRUPT_ENABLE_REGISTER => {
                 debug!("Interrupt enable register set to {:X}", value);
-                self.interrupt_enable_register = value
+                self.interrupt_enable = value.into();
             },
             _ => {
                 panic!("Unimplemented write_byte in memory bus")
@@ -260,7 +286,15 @@ impl MemoryBus {
             let bank_n_end = ROM_BANK_N_SIZE.min(rom.len() - ROM_BANK_0_SIZE);
             self.rom_bank_n[..bank_n_end].copy_from_slice(&rom[ROM_BANK_0_SIZE..ROM_BANK_0_SIZE + bank_n_end]);
         }
-        
+
+    }
+    
+    pub fn interrupted(&self) -> bool {
+        self.interrupt_enable.vblank && self.interrupt_flags.vblank ||
+        self.interrupt_enable.lcd_stat && self.interrupt_flags.lcd_stat ||
+        self.interrupt_enable.timer && self.interrupt_flags.timer ||
+        self.interrupt_enable.serial && self.interrupt_flags.serial ||
+        self.interrupt_enable.joypad && self.interrupt_flags.joypad
     }
 
     /*

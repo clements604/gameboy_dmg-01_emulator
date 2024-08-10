@@ -1,7 +1,7 @@
 use crate::constants::{CARRY_FLAG_BYTE_POSITION, HALF_CARRY_FLAG_BYTE_POSITION, SUBTRACT_FLAG_BYTE_POSITION, ZERO_FLAG_BYTE_POSITION};
 use crate::CPU::{CPU, FlagsRegister};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Interrupt {
     VBLANK,
     LCDSTAT,
@@ -58,6 +58,31 @@ impl std::convert::From<u8> for InterruptFlags {
             timer: byte & 0x04 != 0,
             serial: byte & 0x08 != 0,
             joypad: byte & 0x10 != 0,
+        }
+    }
+}
+
+/*impl std::convert::From<u8> for Interrupt { // FIXME this won't work in the case of multiple interrupts at the same time, i.e. VBLANK and LCDSTAT at the same time being 0x03
+    fn from(byte: u8) -> Self {
+        match byte {
+            0x01 => Interrupt::VBLANK,
+            0x02 => Interrupt::LCDSTAT,
+            0x04 => Interrupt::TIMER,
+            0x08 => Interrupt::SERIAL,
+            0x10 => Interrupt::JOYPAD,
+            _ => panic!("Invalid interrupt byte: {:#X}", byte),
+        }
+    }
+}*/
+
+impl std::convert::From<Interrupt> for u8 {
+    fn from(interrupt: Interrupt) -> u8 {
+        match interrupt {
+            Interrupt::VBLANK => 0x01,
+            Interrupt::LCDSTAT => 0x02,
+            Interrupt::TIMER => 0x04,
+            Interrupt::SERIAL => 0x08,
+            Interrupt::JOYPAD => 0x10,
         }
     }
 }
@@ -127,4 +152,52 @@ impl Interrupts{
     }
 }*/
 
-
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /*#[test]
+    fn test_interrupt_from_byte() {
+        let byte: u8 = 0b0000_0001;
+        let interrupt = Interrupt::from(byte);
+        assert_eq!(interrupt, Interrupt::VBLANK);
+        
+        let byte: u8 = 0b0000_0010;
+        let interrupt = Interrupt::from(byte);
+        assert_eq!(interrupt, Interrupt::LCDSTAT);
+        
+        let byte: u8 = 0b0000_0100;
+        let interrupt = Interrupt::from(byte);
+        assert_eq!(interrupt, Interrupt::TIMER);
+        
+        let byte: u8 = 0b0000_1000;
+        let interrupt = Interrupt::from(byte);
+        assert_eq!(interrupt, Interrupt::SERIAL);
+        
+        let byte: u8 = 0b0001_0000;
+        let interrupt = Interrupt::from(byte);
+        assert_eq!(interrupt, Interrupt::JOYPAD);
+    }*/
+    #[test]
+    fn test_byte_from_interrupt() {
+        let interrupt = Interrupt::VBLANK;
+        let byte: u8 = interrupt.into();
+        assert_eq!(byte, 0b0000_0001);
+        
+        let interrupt = Interrupt::LCDSTAT;
+        let byte: u8 = interrupt.into();
+        assert_eq!(byte, 0b0000_0010);
+        
+        let interrupt = Interrupt::TIMER;
+        let byte: u8 = interrupt.into();
+        assert_eq!(byte, 0b0000_0100);
+        
+        let interrupt = Interrupt::SERIAL;
+        let byte: u8 = interrupt.into();
+        assert_eq!(byte, 0b0000_1000);
+        
+        let interrupt = Interrupt::JOYPAD;
+        let byte: u8 = interrupt.into();
+        assert_eq!(byte, 0b0001_0000);
+    }
+    
+}

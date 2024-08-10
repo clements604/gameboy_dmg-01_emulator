@@ -86,13 +86,12 @@ impl Emulator {
             }
         }
         let cpu_cycles = self.cpu.borrow_mut().cycle();
-        if self.cpu.borrow().interrupt_master_enable {
-            //self.cpu.borrow_mut().check_interrupts();
-            self.cpu.borrow_mut().check_interrupts();
-            self.cpu.borrow_mut().enabling_ime = false;
+        if self.memory_bus.borrow().interrupt_master_enable {
+            self.cpu.borrow_mut().handle_interrupts();
+            self.memory_bus.borrow_mut().enabling_ime = false;
         }
-        if self.cpu.borrow().enabling_ime {
-            self.cpu.borrow_mut().interrupt_master_enable = true;
+        if self.memory_bus.borrow().enabling_ime {
+            self.memory_bus.borrow_mut().interrupt_master_enable = true;
         }
 
         for cycles in 0..cpu_cycles {

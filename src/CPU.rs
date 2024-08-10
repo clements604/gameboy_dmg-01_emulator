@@ -56,11 +56,10 @@ pub struct CPU/*<'a>*/ {
     pub memory_bus: Rc<RefCell<MemoryBus>>,
     pub halted: bool,
     stopped: bool,
-    pub interrupt_master_enable: bool,
+    /*pub interrupt_master_enable: bool,
     pub enabling_ime: bool,
-    //pub interrupt_enable_register: u8,
-    //pub interrupt_flags: u8,
-    //interrupts: Interrupts,
+    pub interrupt_enable_register: u8,
+    pub interrupt_flags: u8,*/
     rom_debug: rom_debug::rom_debug,
 }
 
@@ -259,12 +258,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             memory_bus,
             halted: false,
             stopped: false,
-            interrupt_master_enable: false,
+            /*interrupt_master_enable: false,
             enabling_ime: false,
-            //interrupt_enable_register: 0,
+            interrupt_enable_register: 0,
+            interrupt_flags: 0,*/
             rom_debug: rom_debug::rom_debug::new(),
-            //interrupts: Interrupts::new(),
-            //interrupt_flags: 0,
         }
     }
 
@@ -3593,8 +3591,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      */
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
-        debug!("set_interrupt {:?}", interrupt);
-        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow_mut().interrupt_flags);
+        info!("set_interrupt {:?}", interrupt);
+        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow().interrupt_flags);
         match interrupt {
             Interrupt::VBLANK => interrupt_flags |= 0x01,
             Interrupt::LCDSTAT => interrupt_flags |= 0x02,
@@ -3604,12 +3602,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         }
         self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
     }
-    pub fn check_interrupts(&mut self) {
+    /*pub fn check_interrupts(&mut self) {
         if self.interrupt_master_enable {
             // Extract the needed values from self.memory_bus to local variables
             let interrupt_enable_register: u8;
             let interrupt_flags: u8;
-            
+
             {
                 // Immutable borrow scope
                 let memory_bus = self.memory_bus.borrow();
@@ -3631,48 +3629,46 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 self.service_interrupt(interrupts);
             }
         }
-    }
-    pub fn service_interrupt(&mut self, interrupts: u8) {
-        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow_mut().interrupt_flags);
-        info!("Service interrupt: {:X}", interrupts);
-        if interrupts & 0x01 != 0 {
-            //self.interrupt_flags &= !0x01;
-            // V-Blank interrupt
-            interrupt_flags &= !0x01;
-            self.op_rst_address(0x40);
-        }
-        if interrupts & 0x02 != 0 {
-            //self.interrupt_flags &= !0x02;
-            // LCD STAT interrupt
-            interrupt_flags &= !0x02;
-            panic!("LCD STAT interrupt not implemented");
-            self.op_rst_address(0x48);
-        }
-        if interrupts & 0x04 != 0 {
-            //self.interrupt_flags &= !0x04;
-            // Timer interrupt
-            interrupt_flags &= !0x04;
-            self.op_rst_address(0x50);
-        }
-        if interrupts & 0x08 != 0 {
-            //self.interrupt_flags &= !0x08;
-            // Serial interrupt
-            interrupt_flags &= !0x08;
-            self.op_rst_address(0x58);
-        }
-        if interrupts & 0x10 != 0 {
-            //self.interrupt_flags &= !0x10;
-            // Joypad interrupt
-            interrupt_flags &= !0x10;
-            self.op_rst_address(0x60);
-        }
-        self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
-    }
+    }*/
 
-    fn handle_interrupt(&mut self, address: u16) {
-        self.op_push_stack(self.registers.pc);
-        self.registers.pc = address;
-        self.interrupt_master_enable = false;
+    pub fn handle_interrupts(&mut self) {
+        if self.check_interrupt(0x40, Interrupt::VBLANK) {
+            info!("VBLANK interrupt");
+        }
+        else if self.check_interrupt(0x48, Interrupt::LCDSTAT) {
+            info!("LCDSTAT interrupt")
+        }
+        else if self.check_interrupt(0x50, Interrupt::TIMER) {
+            info!("TIMER interrupt")
+        }
+        else if self.check_interrupt(0x58, Interrupt::SERIAL) {
+            info!("SERIAL interrupt")
+        }
+        else if self.check_interrupt(0x60, Interrupt::JOYPAD) {
+            info!("JOYPAD interrupt")
+        }
+    }
+    pub fn check_interrupt(&mut self, address: u16, interrupt: Interrupt) -> bool {
+        let interrupt = interrupt as u8;
+
+        if self.memory_bus.borrow().interrupt_flags & interrupt != 0 && self.memory_bus.borrow().interrupt_enable_register & interrupt != 0{
+            //self.handle_interrupt(Interrupt::from(interrupt));
+            self.handle_interrupt(address);
+
+            let updated_interrupt_flags = self.memory_bus.borrow().interrupt_flags & !interrupt;
+            self.memory_bus.borrow_mut().interrupt_flags = updated_interrupt_flags.into();
+            self.halted = false;
+            self.memory_bus.borrow_mut().interrupt_master_enable = false;
+            return true;
+        }
+        false
+    }
+    pub fn handle_interrupt(&mut self, /*interrupt: Interrupt*/ address: u16) {
+
+        info!("Service interrupt: {:X}", address);
+
+        self.op_rst_address(address);
+
     }
 
     fn op_halt(&mut self) {
@@ -3686,7 +3682,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     }
     fn op_di(&mut self) {
         debug!("op_di");
-        self.interrupt_master_enable = false;
+        self.memory_bus.borrow_mut().interrupt_master_enable = false;
     }
 
     /*
@@ -3695,7 +3691,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      */
     fn op_ei(&mut self) {
         debug!("op_ei");
-        self.enabling_ime = true;
+        self.memory_bus.borrow_mut().enabling_ime = true;
     }
 
     /*

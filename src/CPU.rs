@@ -974,7 +974,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x76 => {
-                    info!("Halting CPU");
+                    debug!("Halting CPU");
                     self.op_halt();
                     4
                 }
@@ -3591,7 +3591,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      */
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
-        info!("set_interrupt {:?}", interrupt);
+        debug!("set_interrupt {:?}", interrupt);
         let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow().interrupt_flags);
         match interrupt {
             Interrupt::VBLANK => interrupt_flags |= 0x01,
@@ -3602,73 +3602,40 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         }
         self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
     }
-    /*pub fn check_interrupts(&mut self) {
-        if self.interrupt_master_enable {
-            // Extract the needed values from self.memory_bus to local variables
-            let interrupt_enable_register: u8;
-            let interrupt_flags: u8;
-
-            {
-                // Immutable borrow scope
-                let memory_bus = self.memory_bus.borrow();
-                interrupt_enable_register = memory_bus.interrupt_enable.into();
-                interrupt_flags = memory_bus.interrupt_flags.into();
-                info!("Interrupt enable register {:?}", memory_bus.interrupt_enable);
-                info!("Interrupt flags {:?}", memory_bus.interrupt_flags);
-            }
-
-            // Calculate interrupts
-            let interrupts = interrupt_enable_register & interrupt_flags;
-            info!("Interrupts {}", interrupts);
-            if interrupts != 0 {
-                panic!("Interrupts not implemented");
-            }
-
-            if interrupts != 0 {
-                self.halted = false;
-                self.service_interrupt(interrupts);
-            }
-        }
-    }*/
 
     pub fn handle_interrupts(&mut self) {
-        if self.check_interrupt(0x40, Interrupt::VBLANK) {
-            info!("VBLANK interrupt");
+        if self.check_interrupt(Interrupt::VBLANK) {
+            debug!("VBLANK interrupt");
+            self.op_rst_address(0x40);
         }
-        else if self.check_interrupt(0x48, Interrupt::LCDSTAT) {
-            info!("LCDSTAT interrupt")
+        else if self.check_interrupt(Interrupt::LCDSTAT) {
+            info!("LCDSTAT interrupt");
+            self.op_rst_address(0x48);
         }
-        else if self.check_interrupt(0x50, Interrupt::TIMER) {
+        else if self.check_interrupt(Interrupt::TIMER) {
+            self.op_rst_address(0x50);
             info!("TIMER interrupt")
         }
-        else if self.check_interrupt(0x58, Interrupt::SERIAL) {
-            info!("SERIAL interrupt")
+        else if self.check_interrupt(Interrupt::SERIAL) {
+            info!("SERIAL interrupt");
+            self.op_rst_address(0x58);
         }
-        else if self.check_interrupt(0x60, Interrupt::JOYPAD) {
-            info!("JOYPAD interrupt")
+        else if self.check_interrupt(Interrupt::JOYPAD) {
+            info!("JOYPAD interrupt");
+            self.op_rst_address(0x60);
         }
     }
-    pub fn check_interrupt(&mut self, address: u16, interrupt: Interrupt) -> bool {
+    pub fn check_interrupt(&mut self, interrupt: Interrupt) -> bool {
         let interrupt = interrupt as u8;
 
         if self.memory_bus.borrow().interrupt_flags & interrupt != 0 && self.memory_bus.borrow().interrupt_enable_register & interrupt != 0{
-            //self.handle_interrupt(Interrupt::from(interrupt));
-            self.handle_interrupt(address);
-
-            let updated_interrupt_flags = self.memory_bus.borrow().interrupt_flags & !interrupt;
+           let updated_interrupt_flags = self.memory_bus.borrow().interrupt_flags & !interrupt;
             self.memory_bus.borrow_mut().interrupt_flags = updated_interrupt_flags.into();
             self.halted = false;
             self.memory_bus.borrow_mut().interrupt_master_enable = false;
             return true;
         }
         false
-    }
-    pub fn handle_interrupt(&mut self, /*interrupt: Interrupt*/ address: u16) {
-
-        info!("Service interrupt: {:X}", address);
-
-        self.op_rst_address(address);
-
     }
 
     fn op_halt(&mut self) {

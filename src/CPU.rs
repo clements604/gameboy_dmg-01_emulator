@@ -3318,14 +3318,14 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xE8 => {
-                    let value = self.read_immediate_byte() as i16;
-                    let sp = self.registers.sp as i16;
-                    let result = sp.wrapping_add(value);
+                    let value = self.read_immediate_byte() as i8; // Read as i8 to handle signed values
+                    let sp = self.registers.sp;
+                    let result = sp.wrapping_add(value as i16 as u16);
                     self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result) & 0x10) == 0x10);
-                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result) & 0x100) == 0x100);
-                    self.registers.sp = result as u16;
+                    self.registers.f.set_flag(Flag::H, (sp & 0xF) + (value as u16 & 0xF) > 0xF);
+                    self.registers.f.set_flag(Flag::C, (sp & 0xFF) + (value as u16 & 0xFF) > 0xFF);
+                    self.registers.sp = result;
                     16
                 }
                 0xE9 => {
@@ -3404,14 +3404,14 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xF8 => {
-                    let value = self.read_immediate_byte() as i8 as i16;
-                    let sp = self.registers.sp as i16;
-                    let result = sp.wrapping_add(value) as u16;
+                    let value = self.read_immediate_byte() as i8;
+                    let sp = self.registers.sp;
+                    let result = sp.wrapping_add(value as i16 as u16);
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::Z, false);
                     self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, ((sp ^ value ^ result as i16) & 0x10) == 0x10);
-                    self.registers.f.set_flag(Flag::C, ((sp ^ value ^ result as i16) & 0x100) == 0x100);
+                    self.registers.f.set_flag(Flag::H, (sp & 0xF) + (value as u16 & 0xF) > 0xF);
+                    self.registers.f.set_flag(Flag::C, (sp & 0xFF) + (value as u16 & 0xFF) > 0xFF);
                     12
                 }
                 0xF9 => {

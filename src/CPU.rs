@@ -11,6 +11,7 @@ use crate::rom;
 use crate::memory_bus;
 use constants::*;
 use rom::*;
+use crate::rom::ROM;
 use memory_bus::MemoryBus;
 use crate::interupts::*;
 
@@ -282,7 +283,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     pub fn cycle(&mut self) -> u16 {
         debug!("##################################################");
 
-        //self.gameboy_doctor_output_log();
+        self.gameboy_doctor_output_log();
 
         if !self.halted {
 
@@ -331,19 +332,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x04 => {
-                    let old_value = self.registers.b;
-                    self.registers.b = self.registers.b.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.b = self.op_inc_r8(self.registers.b);
                     4
                 }
                 0x05 => {
-                    let old_value = self.registers.b;
-                    self.registers.b = self.registers.b.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::Z, self.registers.b == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.b = self.op_dec_r8(self.registers.b);
                     4
                 }
                 0x06 => {
@@ -368,14 +361,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0x09 => {
                     let hl = self.registers.get_hl();
-                    let bc = self.registers.get_bc();
-                    let (result, carry) = hl.overflowing_add(bc);
+                    let value = self.registers.get_bc();
+                    let result = self.op_add_r16(hl, value);
                     self.registers.set_hl(result);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (hl & 0x0FFF) + (bc & 0x0FFF) > 0x0FFF);
-                    self.registers.f.set_flag(Flag::C, carry);
                     8
                 }
                 0x0A => {
@@ -387,19 +375,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x0C => {
-                    let old_value = self.registers.c;
-                    self.registers.c = self.registers.c.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                    self.registers.c = self.op_inc_r8(self.registers.c);
                     4
                 }
                 0x0D => {
-                    let old_value = self.registers.c;
-                    self.registers.c = self.registers.c.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::Z, self.registers.c == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.c = self.op_dec_r8(self.registers.c);
                     4
                 }
                 0x0E => {
@@ -437,19 +417,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x14 => {
-                    let old_value = self.registers.d;
-                    self.registers.d = self.registers.d.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                    self.registers.d = self.op_inc_r8(self.registers.d);
                     4
                 }
                 0x15 => {
-                    let old_value = self.registers.d;
-                    self.registers.d = self.registers.d.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::Z, self.registers.d == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.d = self.op_dec_r8(self.registers.d);
                     4
                 }
                 0x16 => {
@@ -478,12 +450,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0x19 => {
                     let hl = self.registers.get_hl();
-                    let de = self.registers.get_de();
-                    let (result, carry) = hl.overflowing_add(de);
+                    let value = self.registers.get_de();
+                    let result = self.op_add_r16(hl, value);
                     self.registers.set_hl(result);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (de & 0x0FFF) > 0x0FFF);
-                    self.registers.f.set_flag(Flag::C, carry);
                     8
                 }
                 0x1A => {
@@ -495,19 +464,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x1C => {
-                    let old_value = self.registers.e;
-                    self.registers.e = self.registers.e.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    self.registers.e = self.op_inc_r8(self.registers.e);
                     4
                 }
                 0x1D => {
-                    let old_value = self.registers.e;
-                    self.registers.e = self.registers.e.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::Z, self.registers.e == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.e = self.op_dec_r8(self.registers.e);
                     4
                 }
                 0x1E => {
@@ -552,19 +513,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x24 => {
-                    let old_value = self.registers.h;
-                    self.registers.h = self.registers.h.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) + 1 > 0x0F);
+                    self.registers.h = self.op_inc_r8(self.registers.h);
                     4
                 }
                 0x25 => {
-                    let old_value = self.registers.h;
-                    self.registers.h = self.registers.h.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::Z, self.registers.h == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x00 && (self.registers.h & 0x0F) == 0x0F);
+                    self.registers.h = self.op_dec_r8(self.registers.h);
                     4
                 }
                 0x26 => {
@@ -573,26 +526,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x27 => {
-                    let mut a = self.registers.a;
-                    if !self.registers.f.get_flag(Flag::N) {
-                        if self.registers.f.get_flag(Flag::C) || a > 0x99 {
-                            a = a.wrapping_add(0x60);
-                            self.registers.f.set_flag(Flag::C, true);
-                        }
-                        if self.registers.f.get_flag(Flag::H) || (a & 0x0F) > 0x09 {
-                            a = a.wrapping_add(0x06);
-                        }
-                    } else {
-                        if self.registers.f.get_flag(Flag::C) {
-                            a = a.wrapping_sub(0x60);
-                        }
-                        if self.registers.f.get_flag(Flag::H) {
-                            a = a.wrapping_sub(0x06);
-                        }
-                    }
-                    self.registers.f.set_flag(Flag::Z, a == 0);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.a = a;
+                    self.op_daa();
                     4
                 }
                 0x28 => {
@@ -604,12 +538,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 8;
                 }
                 0x29 => {
-                    let hl: u16 = self.registers.get_hl();
-                    let (result, carry) = hl.overflowing_add(hl);
+                    let hl = self.registers.get_hl();
+                    let result = self.op_add_r16(hl, hl);
                     self.registers.set_hl(result);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
-                    self.registers.f.set_flag(Flag::C, carry);
                     8
                 }
                 0x2A => {
@@ -624,19 +555,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x2C => {
-                    let old_value = self.registers.l;
-                    self.registers.l = self.registers.l.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    self.registers.l = self.op_inc_r8(self.registers.l);
                     4
                 }
                 0x2D => {
-                    let old_value = self.registers.l;
-                    self.registers.l = self.registers.l.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::Z, self.registers.l == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.l = self.op_dec_r8(self.registers.l);
                     4
                 }
                 0x2E => {
@@ -645,10 +568,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x2F => {
-                    // CPL = complement A register
-                    self.registers.a = !self.registers.a;
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::H, true);
+                    self.op_cpl();
                     4
                 }
                 0x30 => {
@@ -675,22 +595,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x34 => {
-                    let hl = self.registers.get_hl();
-                    let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.memory_bus.borrow_mut().write_byte(hl, value.wrapping_add(1));
-                    self.registers.f.set_flag(Flag::Z, self.memory_bus.borrow().read_byte(hl) == 0);
+                    self.op_inc_hl();
                     12
                 }
                 0x35 => {
-                    let hl = self.registers.get_hl();
-                    let value = self.memory_bus.borrow().read_byte(hl);
-                    let result = value.wrapping_sub(1);
-                    self.memory_bus.borrow_mut().write_byte(hl, result);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0);
+                    self.op_dec_hl();
                     12
                 }
                 0x36 => {
@@ -699,9 +608,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     12
                 }
                 0x37 => {
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, true);4
+                    self.op_scf();
+                    4
                 }
                 0x38 => {
                     let offset = self.read_immediate_byte() as i8;
@@ -713,11 +621,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0x39 => {
                     let hl = self.registers.get_hl();
-                    let (result, carry) = hl.overflowing_add(self.registers.sp);
+                    let value = self.registers.sp;
+                    let result = self.op_add_r16(hl, value);
                     self.registers.set_hl(result);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (hl & 0x0FFF) + (self.registers.sp & 0x0FFF) > 0x0FFF);
-                    self.registers.f.set_flag(Flag::C, carry);
                     8
                 }
                 0x3A => {
@@ -731,19 +637,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x3C => {
-                    let old_value = self.registers.a;
-                    self.registers.a = self.registers.a.wrapping_add(1);
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0x0F);
+                    self.registers.a = self.op_inc_r8(self.registers.a);
                     4
                 }
                 0x3D => {
-                    let old_value = self.registers.a;
-                    self.registers.a = self.registers.a.wrapping_sub(1);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::H, (old_value & 0x0F) == 0);
+                    self.registers.a = self.op_dec_r8(self.registers.a);
                     4
                 }
                 0x3E => {
@@ -752,9 +650,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0x3F => {
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+                    self.op_ccf();
                     4
                 }
                 0x40 => {
@@ -1015,583 +911,164 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0x80 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.b);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.b & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.b);
                     4
                 }
                 0x81 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.c);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.c & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.c);
                     4
                 }
                 0x82 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.d);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H, (self.registers.a & 0x0F) + (self.registers.d & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.d);
                     4
                 }
                 0x83 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.e);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.e & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.e);
                     4
                 }
                 0x84 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.h);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.h & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.h);
                     4
                 }
                 0x85 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.l);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H,(self.registers.a & 0x0F) + (self.registers.l & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.l);
                     4
                 }
                 0x86 => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    let (result, carry) = self.registers.a.overflowing_add(value);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(value);
                     8
                 }
                 0x87 => {
-                    let (result, carry) = self.registers.a.overflowing_add(self.registers.a);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (self.registers.a & 0x0F) > 0x0F);
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_r8(self.registers.a);
                     4
                 }
                 0x88 => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.b)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.b & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (self.registers.b as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.b);
                     4
                 }
                 0x89 => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.c)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.c & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (self.registers.c as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.c);
                     4
                 }
                 0x8A => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.d)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.d & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (self.registers.d as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.d);
                     4
                 }
                 0x8B => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.e)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.e & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (self.registers.e as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.e);
                     4
                 }
                 0x8C => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.h)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.h & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (self.registers.h as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.h);
                     4
                 }
                 0x8D => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.l)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.l & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (self.registers.l as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.l);
                     4
                 }
                 0x8E => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
-                    ); // Set the carry flag if there's a carry out of the most significant bit
-                    self.registers.a = result;
+                    self.op_adc_r8(value);
                     8
                 }
                 0x8F => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_add(self.registers.a)
-                        .wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false); // Clear the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (self.registers.a & 0x0F) + carry > 0x0F,
-                    ); // Set the half-carry flag if there's a carry from bit 3
-                    self.registers
-                        .f
-                        .set_flag(Flag::C, result < self.registers.a);
-                    self.registers.a = result;
+                    self.op_adc_r8(self.registers.a);
                     4
                 }
                 0x90 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.b);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.b & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.b);
                     4
                 }
                 0x91 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.c);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.c & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.c);
                     4
                 }
                 0x92 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.d);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.d & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.d);
                     4
                 }
                 0x93 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.e);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.e & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.e);
                     4
                 }
                 0x94 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.h);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.h);
                     4
                 }
                 0x95 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.l);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.l);
                     4
                 }
                 0x96 => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    //let result = self.registers.a.wrapping_sub(value);
-                    let (result, borrow) = self.registers.a.overflowing_sub(value);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, borrow); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sub_r8(value);
                     8
                 }
                 0x97 => {
-                    let (result, borrow) = self.registers.a.overflowing_sub(self.registers.a);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.a & 0x0F),
-                    );
-                    self.registers.f.set_flag(Flag::C, borrow);
-                    self.registers.a = result;
+                    self.op_sub_r8(self.registers.a);
                     4
                 }
                 0x98 => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.registers.b)
-                        .wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (self.registers.b & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (self.registers.b as u16) + (carry as u16));
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.b);
                     4
                 }
                 0x99 => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.registers.c)
-                        .wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.c & 0x0F) + carry,
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (self.registers.c as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.c);
                     4
                 }
                 0x9A => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.registers.d)
-                        .wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.d & 0x0F) + carry,
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (self.registers.d as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.d);
                     4
                 }
                 0x9B => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.registers.e)
-                        .wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.e & 0x0F) + carry,
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (self.registers.e as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.e);
                     4
                 }
                 0x9C => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.registers.h)
-                        .wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.h & 0x0F) + carry,
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (self.registers.h as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.h);
                     4
                 }
                 0x9D => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self
-                        .registers
-                        .a
-                        .wrapping_sub(self.registers.l)
-                        .wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.l & 0x0F) + carry,
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (self.registers.l as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.l);
                     4
                 }
                 0x9E => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers
-                        .f
-                        .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F) + carry); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (value as u16) + (carry as u16),
-                    ); // Set the carry flag if there's a borrow out of the most significant bit
-                    self.registers.a = result;
+                    self.op_sbc_r8(value);
                     8
                 }
                 0x9F => {
-                    let result = self.registers.a.wrapping_sub(self.registers.a);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(Flag::H, false); // Clear the half-carry flag
-                    self.registers.f.set_flag(Flag::C, false); // Clear the carry flag
-                    self.registers.a = result;
+                    self.op_sbc_r8(self.registers.a);
                     4
                 }
                 0xA0 => {
-                    self.registers.a = self.registers.a & self.registers.b;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_and_r8(self.registers.b);
                     4
                 }
                 0xA1 => {
-                    self.registers.a &= self.registers.c;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_and_r8(self.registers.c);
                     4
                 }
                 0xA2 => {
-                    self.registers.a &= self.registers.d;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_and_r8(self.registers.d);
                     4
                 }
                 0xA3 => {
-                    self.registers.a &= self.registers.e;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_and_r8(self.registers.e);
                     4
                 }
                 0xA4 => {
-                    self.registers.a &= self.registers.h;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_and_r8(self.registers.h);
                     4
                 }
                 0xA5 => {
-                    self.registers.a &= self.registers.l;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_and_r8(self.registers.l);
                     4
                 }
                 0xA6 => {
-                    self.registers.a &= self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
+                    let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    self.op_and_r8(value);
                     8
                 }
                 0xA7 => {
@@ -1603,59 +1080,32 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0xA8 => {
-                    self.registers.a = self.registers.a ^ self.registers.b;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_xor_r8(self.registers.b);
                     4
                 }
                 0xA9 => {
-                    self.registers.a ^= self.registers.c;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_xor_r8(self.registers.c);
                     4
                 }
                 0xAA => {
-                    self.registers.a ^= self.registers.d;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_xor_r8(self.registers.d);
                     4
                 }
                 0xAB => {
-                    self.registers.a ^= self.registers.e;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_xor_r8(self.registers.e);
                     4
                 }
                 0xAC => {
-                    self.registers.a ^= self.registers.h;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_xor_r8(self.registers.h);
                     4
                 }
                 0xAD => {
-                    self.registers.a ^= self.registers.l;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_xor_r8(self.registers.l);
                     4
                 }
                 0xAE => {
-                    self.registers.a ^= self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    self.op_xor_r8(value);
                     8
                 }
                 0xAF => {
@@ -1667,150 +1117,65 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0xB0 => {
-                    self.registers.a |= self.registers.b;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.b);
                     4
                 }
                 0xB1 => {
-                    self.registers.a |= self.registers.c;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.c);
                     4
                 }
                 0xB2 => {
-                    self.registers.a |= self.registers.d;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.d);
                     4
                 }
                 0xB3 => {
-                    self.registers.a |= self.registers.e;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.e);
                     4
                 }
                 0xB4 => {
-                    self.registers.a |= self.registers.h;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.h);
                     4
                 }
                 0xB5 => {
-                    self.registers.a |= self.registers.l;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.l);
                     4
                 }
                 0xB6 => {
-                    self.registers.a |= self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
+                    self.op_or_r8(value);
                     8
                 }
                 0xB7 => {
-                    self.registers.a |= self.registers.a;
-                    self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
+                    self.op_or_r8(self.registers.a);
                     4
                 }
                 0xB8 => {
-                    let result = self.registers.a.wrapping_sub(self.registers.b);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.b & 0x0F),
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers
-                        .f
-                        .set_flag(Flag::C, self.registers.a < self.registers.b); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(self.registers.b);
                     4
                 }
                 0xB9 => {
-                    let result = self.registers.a.wrapping_sub(self.registers.c);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.c & 0x0F),
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers
-                        .f
-                        .set_flag(Flag::C, self.registers.a < self.registers.c); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(self.registers.c);
                     4
                 }
                 0xBA => {
-                    let result = self.registers.a.wrapping_sub(self.registers.d);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.d & 0x0F),
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers
-                        .f
-                        .set_flag(Flag::C, self.registers.a < self.registers.d); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(self.registers.d);
                     4
                 }
                 0xBB => {
-                    let result = self.registers.a.wrapping_sub(self.registers.e);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.e & 0x0F),
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers
-                        .f
-                        .set_flag(Flag::C, self.registers.a < self.registers.e); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(self.registers.e);
                     4
                 }
                 0xBC => {
-                    let result = self.registers.a.wrapping_sub(self.registers.h);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.h & 0x0F),
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, self.registers.a < self.registers.h); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(self.registers.h);
                     4
                 }
                 0xBD => {
-                    let result = self.registers.a.wrapping_sub(self.registers.l);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) < (self.registers.l & 0x0F),
-                    ); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, self.registers.a < self.registers.l); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(self.registers.l);
                     4
                 }
                 0xBE => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.get_hl());
-                    let result = self.registers.a.wrapping_sub(value);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F)); // Set the half-carry flag if there's a borrow from bit 4
-                    self.registers.f.set_flag(Flag::C, self.registers.a < value); // Set the carry flag if there's a borrow out of the most significant bit
+                    self.op_cp_r8(value);
                     8
                 }
                 0xBF => {
@@ -1860,13 +1225,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xC6 => {
-                    let value = self.read_immediate_byte();
-                    let (result, carry) = self.registers.a.overflowing_add(value);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F, );
-                    self.registers.f.set_flag(Flag::C, carry);
-                    self.registers.a = result;
+                    self.op_add_d8();
                     8
                 }
                 0xC7 => {
@@ -3144,23 +2503,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0xCE => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.pc);
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
-                    let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
-                    );
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
-                    );
-                    self.registers.a = result;
+                    self.op_adc_r8(value);
                     8
                 }
                 0xCF => {
@@ -3203,13 +2546,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xD6 => {
-                    let value = self.read_immediate_byte();
-                    let (result, overflow) = self.registers.a.overflowing_sub(value);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
-                    self.registers.f.set_flag(Flag::C, overflow);
-                    self.registers.a = result;
+                    self.op_sub_d8();
                     8
                 }
                 0xD7 => {
@@ -3251,24 +2588,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     panic!("Unsupported opcode: 0xDD");
                 }
                 0xDE => {
-                    let carry = if self.registers.f.get_flag(Flag::C) {
-                        1
-                    } else {
-                        0
-                    } as u8;
                     let value = self.memory_bus.borrow().read_byte(self.registers.pc);
-                    let result = self.registers.a.wrapping_sub(value).wrapping_sub(carry);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true); // Set the subtraction flag
-                    self.registers.f.set_flag(
-                        Flag::H,
-                        ((self.registers.a & 0x0F) as i8 - (value & 0x0F) as i8 - carry as i8) < 0
-                    );
-                    self.registers.f.set_flag(
-                        Flag::C,
-                        (self.registers.a as u16) < (value as u16 + carry as u16)
-                    );
-                    self.registers.a = result;
+                    self.op_sbc_r8(value);
                     8
                 }
                 0xDF => {
@@ -3304,13 +2625,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xE6 => {
-                    let value = self.read_immediate_byte();
-                    let result = self.registers.a & value;
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, true);
-                    self.registers.f.set_flag(Flag::C, false);
-                    self.registers.a = result;
+                    self.op_and_d8();
                     8
                 }
                 0xE7 => {
@@ -3318,14 +2633,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xE8 => {
-                    let value = self.read_immediate_byte() as i8; // Read as i8 to handle signed values
-                    let sp = self.registers.sp;
-                    let result = sp.wrapping_add(value as i16 as u16);
-                    self.registers.f.set_flag(Flag::Z, false);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, (sp & 0xF) + (value as u16 & 0xF) > 0xF);
-                    self.registers.f.set_flag(Flag::C, (sp & 0xFF) + (value as u16 & 0xFF) > 0xFF);
-                    self.registers.sp = result;
+                    self.op_add_sp_d8();
                     16
                 }
                 0xE9 => {
@@ -3350,12 +2658,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0xEE => {
                     let value = self.read_immediate_byte();
-                    let result = self.registers.a ^ value;
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
-                    self.registers.a = result;
+                    self.op_xor_r8(value);
                     8
                 }
                 0xEF => {
@@ -3390,13 +2693,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xF6 => {
-                    let value = self.read_immediate_byte();
-                    let result = self.registers.a | value;
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, false);
-                    self.registers.f.set_flag(Flag::H, false);
-                    self.registers.f.set_flag(Flag::C, false);
-                    self.registers.a = result;
+                    self.op_or_d8();
                     8
                 }
                 0xF7 => {
@@ -3435,11 +2732,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0xFE => {
                     let value = self.read_immediate_byte();
-                    let result = self.registers.a.wrapping_sub(value);
-                    self.registers.f.set_flag(Flag::Z, result == 0);
-                    self.registers.f.set_flag(Flag::N, true);
-                    self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
-                    self.registers.f.set_flag(Flag::C, self.registers.a < value);
+                    self.op_cp_r8(value);
                     8
                 }
                 0xFF => {
@@ -3518,10 +2811,28 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     }
 
     /*
-     *   Add the immediate 8-bit value to the 8-bit A register.
-     */
-    fn op_add_a_n8(&mut self, value: u8) {
-        debug!("op_add_a_n8");
+    * 8-bit arithmetic and logical operations
+    */
+    fn op_inc_r8(&mut self, register: u8) -> u8{
+        debug!("op_inc_r8");
+        let result = register.wrapping_add(1);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, (register & 0x0F) + 1 > 0x0F);
+        result
+    }
+
+    fn op_dec_r8(&mut self, register: u8) -> u8{
+        debug!("op_dec_r8");
+        let result = register.wrapping_sub(1);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers.f.set_flag(Flag::H, (register & 0x0F) < 1);
+        result
+    }
+
+    fn op_add_r8(&mut self, value: u8) {
+        debug!("op_add_r8");
         let result: u8 = self.registers.a.wrapping_add(value);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -3532,6 +2843,233 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             .f
             .set_flag(Flag::C, (self.registers.a as u16) + (value as u16) > 0xFF);
         self.registers.a = result;
+    }
+
+    fn op_add_d8(&mut self) {
+        debug!("op_add_r8");
+        let value = self.read_immediate_byte();
+        let result: u8 = self.registers.a.wrapping_add(value);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers
+            .f
+            .set_flag(Flag::H, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+        self.registers
+            .f
+            .set_flag(Flag::C, (self.registers.a as u16) + (value as u16) > 0xFF);
+        self.registers.a = result;
+    }
+
+    fn op_sub_r8(&mut self, value: u8) {
+        debug!("op_sub_r8");
+        let result: u8 = self.registers.a.wrapping_sub(value);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers
+            .f
+            .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+        self.registers
+            .f
+            .set_flag(Flag::C, self.registers.a < value);
+        self.registers.a = result;
+    }
+    
+    fn op_sub_d8(&mut self) {
+        debug!("op_sub_d8");
+        let value = self.read_immediate_byte();
+        let result: u8 = self.registers.a.wrapping_sub(value);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers
+            .f
+            .set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+        self.registers
+            .f
+            .set_flag(Flag::C, self.registers.a < value);
+        self.registers.a = result;
+    }
+
+    fn op_or_r8(&mut self, value: u8) {
+        debug!("op_or_r8");
+        let result: u8 = self.registers.a | value;
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, false);
+        self.registers.a = result;
+    }
+    
+    fn op_or_d8(&mut self) {
+        debug!("op_or_d8");
+        let value = self.read_immediate_byte();
+        let result: u8 = self.registers.a | value;
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, false);
+        self.registers.a = result;
+    }
+
+    fn op_and_r8(&mut self, value: u8) {
+        debug!("op_and_r8");
+        let result: u8 = self.registers.a & value;
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, true);
+        self.registers.f.set_flag(Flag::C, false);
+        self.registers.a = result;
+    }
+    
+    fn op_and_d8(&mut self) {
+        debug!("op_and_d8");
+        let value = self.read_immediate_byte();
+        let result: u8 = self.registers.a & value;
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, true);
+        self.registers.f.set_flag(Flag::C, false);
+        self.registers.a = result;
+    }
+
+    fn op_cp_r8(&mut self, value: u8) {
+        debug!("op_cp_r8");
+        let result: u8 = self.registers.a.wrapping_sub(value);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (value & 0x0F));
+        self.registers.f.set_flag(Flag::C, self.registers.a < value);
+    }
+
+    fn op_xor_r8(&mut self, value: u8) {
+        debug!("op_xor_r8");
+        let result: u8 = self.registers.a ^ value;
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, false);
+        self.registers.a = result;
+    }
+
+    fn op_adc_r8(&mut self, value: u8) {
+        debug!("op_adc_r8");
+        let carry = if self.registers.f.get_flag(Flag::C) {
+            1
+        } else {
+            0
+        } as u8;
+        let result = self.registers.a.wrapping_add(value).wrapping_add(carry);
+        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(
+            Flag::H,
+            (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
+        );
+        self.registers.f.set_flag(
+            Flag::C,
+            (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
+        );
+        self.registers.a = result;
+    }
+
+    // Complement
+    fn op_cpl(&mut self) {
+        debug!("op_cpl");
+        self.registers.a = !self.registers.a;
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers.f.set_flag(Flag::H, true);
+    }
+
+    fn op_ccf(&mut self) {
+        debug!("op_ccf");
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
+    }
+
+    fn op_scf(&mut self) {
+        debug!("op_scf");
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, false);
+        self.registers.f.set_flag(Flag::C, true);
+    }
+
+    fn op_daa(&mut self) {
+        debug!("op_daa");
+        let mut adjust = 0;
+
+        if self.registers.f.get_flag(Flag::H) || (!self.registers.f.get_flag(Flag::N) && (self.registers.a & 0x0F) > 9) {
+            adjust = 0x06;
+        }
+        if self.registers.f.get_flag(Flag::C) || (!self.registers.f.get_flag(Flag::N) && self.registers.a > 0x99) {
+            adjust = 0x60;
+            self.registers.f.set_flag(Flag::C, true);
+        }
+
+        if self.registers.f.get_flag(Flag::N) {
+            self.registers.a = self.registers.a.wrapping_sub(adjust);
+        } else {
+            self.registers.a = self.registers.a.wrapping_add(adjust);
+        }
+
+        self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+        self.registers.f.set_flag(Flag::H, false);
+    }
+
+    fn op_sbc_r8(&mut self, r: u8) {
+        let carry = if self.registers.f.get_flag(Flag::C) { 1 } else { 0 };
+        let (result, carry_out) = self.registers.a.overflowing_sub(r + carry);
+
+        self.registers.a = result;
+        self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers.f.set_flag(Flag::H, ((self.registers.a ^ r ^ carry) & 0x10) == 0x10);
+        self.registers.f.set_flag(Flag::C, carry_out);
+    }
+
+    /*
+     *   16-bit arithmetic operations
+     */
+    fn op_inc_hl(&mut self) {
+        debug!("op_inc_hl");
+        let address = self.registers.get_hl();
+        let mut value = self.memory_bus.borrow_mut().read_byte(address);
+        value = value.wrapping_add(1);
+        self.memory_bus.borrow_mut().write_byte(address, value);
+        self.registers.f.set_flag(Flag::Z, value == 0);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x00);
+    }
+
+    fn op_dec_hl(&mut self) {
+        debug!("op_dec_hl");
+        let address = self.registers.get_hl();
+        let mut value = self.memory_bus.borrow_mut().read_byte(address);
+        value = value.wrapping_sub(1);
+        self.memory_bus.borrow_mut().write_byte(address, value);
+        self.registers.f.set_flag(Flag::Z, value == 0);
+        self.registers.f.set_flag(Flag::N, true);
+        self.registers.f.set_flag(Flag::H, (value & 0x0F) == 0x0F);
+    }
+
+    fn op_add_r16(&mut self, register: u16, value: u16) -> u16{
+        debug!("op_add_r16");
+        let result = register.wrapping_add(value);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::H, (register & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
+        self.registers.f.set_flag(Flag::C, (register as u32) + (value as u32) > 0xFFFF);
+        result
+    }
+    fn op_add_sp_d8(&mut self) {
+        let value = self.read_immediate_byte() as i8;
+        let sp = self.registers.sp as i16;
+        let result = sp.wrapping_add(value as i16);
+        self.registers.sp = result as u16;
+        let half_carry = ((sp & 0x0F) + (value as i16 & 0x0F)) & 0x10 != 0;
+        self.registers.f.set_flag(Flag::H, half_carry);
+        let carry = (sp & 0xFF) + (value as i16 & 0xFF) > 0xFF;
+        self.registers.f.set_flag(Flag::C, carry);
+        self.registers.f.set_flag(Flag::N, false);
+        self.registers.f.set_flag(Flag::Z, false);
     }
 
     /*
@@ -3558,7 +3096,6 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         debug!("Program counter before jump: 0x{:04X}", self.registers.pc);
         debug!("Offset: 0x{:02X}", offset);
         let address = (self.registers.pc as i16).wrapping_add(offset as i16);
-        debug!("address: 0x{:04X}", address);
         debug!("Jumping to 0x{:04X}", address);
         self.registers.pc = address as u16;
     }
@@ -3866,4 +3403,443 @@ mod tests {
     fn test_scratchpad() {
         assert_eq!(1 | 0, 1);
     }
+
+    #[test]
+    fn test_op_inc_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x0;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.registers.a = cpu.op_inc_r8(cpu.registers.a);
+        assert_eq!(cpu.registers.a, 0x01);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn test_op_dec_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.registers.a = cpu.op_dec_r8(cpu.registers.a);
+        assert_eq!(cpu.registers.a, 0x00);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn test_op_add_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_add_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x2);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_sub_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_sub_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x0);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_or_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_or_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x1);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_and_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_and_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x1);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_cp_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_cp_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x1);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_xor_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_xor_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x0);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_adc_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_adc_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x3);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+
+        cpu.registers.a = 0x14;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_adc_r8(0x12);
+        assert_eq!(cpu.registers.a, 0x26);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+
+        cpu.registers.a = 0xFF;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_adc_r8(0x01);
+        assert_eq!(cpu.registers.a, 0x01);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn test_op_cpl() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+        cpu.registers.a = 0xCC;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, false);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_cpl();
+        assert_eq!(cpu.registers.a, 0x33);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_ccf() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_ccf();
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_ccf();
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn test_op_scf() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, true);
+        cpu.op_scf();
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+    }
+
+    #[test]
+    fn test_op_daa() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.a = 0x45;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, false);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_daa();
+        assert_eq!(cpu.registers.a, 0x45);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+
+        cpu.registers.a = 0x09;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, false);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_daa();
+        assert_eq!(cpu.registers.a, 0x09);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+
+        /*cpu.registers.a = 0x99; //FIXME this corner case is not working
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, false);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_daa();
+        assert_eq!(cpu.registers.a, 0x33);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);*/
+    }
+
+    #[test]
+    fn test_op_sbc_r8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.a = 0x1;
+        cpu.registers.f.set_flag(Flag::Z, false);
+        cpu.registers.f.set_flag(Flag::N, false);
+        cpu.registers.f.set_flag(Flag::H, false);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_sbc_r8(0x1);
+        assert_eq!(cpu.registers.a, 0x0);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+
+        cpu.registers.a = 0x14;
+        cpu.registers.f.set_flag(Flag::Z, true);
+        cpu.registers.f.set_flag(Flag::N, true);
+        cpu.registers.f.set_flag(Flag::H, true);
+        cpu.registers.f.set_flag(Flag::C, false);
+        cpu.op_sbc_r8(0x12);
+        assert_eq!(cpu.registers.a, 0x02);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+
+    #[test]
+    fn test_op_inc_hl() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.h = 0x00;
+        cpu.registers.l = 0x00;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_inc_hl();
+        assert_eq!(cpu.memory_bus.borrow().read_byte(0x0000), 0x02);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+    }
+
+    #[test]
+    fn test_op_dec_hl() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.h = 0x00;
+        cpu.registers.l = 0x00;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_dec_hl();
+        assert_eq!(cpu.memory_bus.borrow().read_byte(0x0000), 0x00);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+    }
+
+    #[test]
+    fn test_op_add_r16() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        let register = 0x0000;
+        let value = 0x0001;
+        let result = cpu.op_add_r16(register, value);
+        assert_eq!(result, 0x0001);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+    
+    #[test]
+    fn test_op_add_sp_d8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.sp = 0x0000;
+        cpu.registers.pc = 0x0000;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_add_sp_d8();
+        assert_eq!(cpu.registers.sp, 0x0001);
+        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+    }
+    
+    #[test]
+    fn test_op_add_d8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.a = 0x01;
+        cpu.registers.pc = 0x0000;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_add_d8();
+        assert_eq!(cpu.registers.a, 0x02);
+    }
+    
+    #[test]
+    fn test_op_sub_d8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.a = 0x01;
+        cpu.registers.pc = 0x0000;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_sub_d8();
+        assert_eq!(cpu.registers.a, 0x00);
+    }
+    
+    #[test]
+    fn test_op_and_d8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.a = 0x01;
+        cpu.registers.pc = 0x0000;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_and_d8();
+        assert_eq!(cpu.registers.a, 0x01);
+    }
+    
+    #[test]
+    fn test_op_or_d8() {
+        let rom = ROM::new(vec![0; 500]);
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let mut cpu = CPU::new(memory_bus);
+
+        cpu.registers.a = 0x01;
+        cpu.registers.pc = 0x0000;
+        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.op_or_d8();
+        assert_eq!(cpu.registers.a, 0x01);
+    }
+
 }

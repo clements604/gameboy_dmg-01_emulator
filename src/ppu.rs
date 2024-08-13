@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use crate::interupts;
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
-use log::{debug, error};
+use log::{debug, error, info};
 use std::fmt;
 use std::rc::Rc;
 use crate::display::Display;
@@ -208,7 +208,7 @@ impl Ppu {
 
         match self.mode {
             HBLANK_MODE => { // H-Blank
-                if self.line_ticks >= 204 {
+                if self.line_ticks >= 204 {//FIXME should be 456 (ticks per line)
                     //self.line_ticks -= 204;
                     self.increment_ly();
 
@@ -248,6 +248,7 @@ impl Ppu {
                 if self.line_ticks >= 80 + 172 {
                     //self.line_ticks -= 172;
                     self.mode = HBLANK_MODE;
+                    self.update_stat_interrupts();
                 }
             },
             _ => panic!("Unknown PPU mode: {}", self.mode),
@@ -324,13 +325,13 @@ impl Ppu {
         }
 
         if end - self.start_time >= 1000 {
+            info!("FPS: {}", self.frame_count);
             self.start_time = end;
             self.frame_count = 0;
-            debug!("FPS: {}", self.frame_count);
         }
 
         self.frame_count += 1;
-        self.previous_frame_time = end; // TODO maybe supposed to be get_ticks() for some reason
+        self.previous_frame_time = self.display.borrow().get_ticks();
     }
     
 }

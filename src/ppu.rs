@@ -333,7 +333,7 @@ impl Ppu {
         self.frame_count += 1;
         self.previous_frame_time = self.display.borrow().get_ticks();
     }
-    
+
 }
 
 #[cfg(test)]

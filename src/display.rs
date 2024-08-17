@@ -4,7 +4,7 @@ use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
 use sdl2::video::{Window, WindowContext};
 
-use crate::memory_bus;
+use crate::{memory_bus, ppu};
 use crate::memory_bus::MemoryBus;
 use log::{debug, error, info};
 
@@ -162,8 +162,8 @@ impl Display /*<'a>*/ {
             debug_texture: None,
             debug_renderer: Some(debug_renderer),
             debug_screen: Some(debug_screen),
-            window_width: window_width,
-            window_height: window_height,
+            window_width,
+            window_height,
             framebuffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 3],
             framebuffer_a: [0; SCREEN_WIDTH * SCREEN_HEIGHT * 4],
         }

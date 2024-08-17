@@ -3,12 +3,13 @@ use std::rc::{Rc, Weak};
 use log::{debug, error};
 use crate::dma::Dma;
 
-const DEFAULT_COLOURS: [u32; 4] = [0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000];
+pub const DEFAULT_COLOURS: [u32; 4] = [0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000];
 pub struct LCD {
     dma: Weak<RefCell<Dma>>,
-    lcdc: u8,
-    scroll_x: u8,
-    scroll_y: u8,
+    pub lcdc: u8,
+    pub stat: u8,
+    pub scroll_x: u8,
+    pub scroll_y: u8,
     pub ly: u8,
     pub ly_compare: u8,
     bg_palette: u8,
@@ -36,6 +37,7 @@ impl LCD{
         LCD {
             dma: Rc::downgrade(&dma),
             lcdc: 0x91,
+            stat: 0,
             scroll_x: 0,
             scroll_y: 0,
             ly: 0,
@@ -52,7 +54,7 @@ impl LCD{
     pub fn read(&self, address: u16) -> u8 {
         match address {
             0xFF40 => self.lcdc,
-            0xFF41 => 0,
+            0xFF41 => self.stat,
             0xFF42 => self.scroll_y,
             0xFF43 => self.scroll_x,
             0xFF44 => self.ly,
@@ -70,7 +72,7 @@ impl LCD{
         
         match address {
             0xFF40 => self.lcdc = value,
-            0xFF41 => {},
+            0xFF41 => self.stat = value,
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
             0xFF44 => self.ly = value,
@@ -87,13 +89,6 @@ impl LCD{
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
-    pub fn step(&mut self, cycles: u8) {
-        self.ly += cycles;
-        if self.ly >= 154 {
-            self.ly = 0;
-        }
-    }
-    
     pub fn update_palette(&mut self, palette_data: u8, palette: u8) {
         let mut palette_colours = [0; 4];
         match palette {

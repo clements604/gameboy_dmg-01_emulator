@@ -11,6 +11,7 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
+use crate::ppu_experiment;
 
 const BOOT_ROM_START: u16 = 0x0000;
 const BOOT_ROM_END: u16 = 0x00FF;
@@ -69,7 +70,10 @@ pub struct MemoryBus {
     pub oam: [u8; OAM_SIZE],
     pub unused: [u8; UNUSED_SIZE],
     pub hram: [u8; HRAM_SIZE],
+    
     pub ppu: Option<Rc<RefCell<Ppu>>>,
+    pub ppu_experiment: Option<Rc<RefCell<ppu_experiment::Ppu>>>,
+    
     rom_debug: rom_debug,
     pub dmg_io: Option<Rc<RefCell<IO>>>,
     pub dma: Option<Rc<RefCell<Dma>>>,
@@ -109,7 +113,10 @@ impl MemoryBus {
             oam: [0; OAM_SIZE],
             unused: [0; UNUSED_SIZE],
             hram: [0; HRAM_SIZE],
+            
             ppu: None,
+            ppu_experiment: None,
+            
             rom_debug: rom_debug::new(),
             dmg_io: io,
             dma,
@@ -155,6 +162,7 @@ impl MemoryBus {
                     return 0xFF;
                 }
                 self.ppu.as_ref().unwrap().borrow().oam_read(address - OAM_START)
+                //self.ppu_experiment.as_ref().unwrap().borrow().oam_read(address - OAM_START)
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
             IO_REGISTERS_START..=IO_REGISTERS_END => {
@@ -209,6 +217,7 @@ impl MemoryBus {
             OAM_START..=OAM_END => {
                 if !self.dma.as_ref().unwrap().borrow().is_transferring() {
                     self.ppu.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
+                    //self.ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                 }
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,

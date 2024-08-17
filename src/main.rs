@@ -10,6 +10,8 @@ mod interupts;
 mod dma;
 mod lcd;
 mod timer;
+mod ppu_experiment;
+mod ppu_pipeline;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -29,7 +31,10 @@ use crate::timer::Timer;
 struct Emulator {
     ticks: u64,
     cpu: Rc<RefCell<CPU::CPU>>,
+
     ppu: Rc<RefCell<ppu::Ppu>>,
+    //ppu_experiment: Rc<RefCell<ppu_experiment::Ppu>>,
+
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     dma: Rc<RefCell<dma::Dma>>,
     display: Rc<RefCell<display::Display>>,
@@ -56,11 +61,17 @@ impl Emulator {
         let timer = Timer::new(Rc::clone(&cpu));
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+
         let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+        //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+
         let io = Rc::new(RefCell::new(dmg_io::IO::new(dma.clone(), cpu.clone(), lcd.clone())));
         memory_bus.borrow_mut().dmg_io = Some(io.clone());
         memory_bus.borrow_mut().dma = Some(dma.clone());
+
         memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
+
         memory_bus.borrow_mut().cpu = Some(cpu.clone());
         
 
@@ -68,7 +79,10 @@ impl Emulator {
         Emulator {
             ticks: 0,
             cpu,
+
             ppu,
+            //ppu_experiment,
+
             memory_bus,
             display,
             timer,
@@ -98,7 +112,9 @@ impl Emulator {
             for _ in 0..4 {
                 self.ticks += 1;
                 self.timer.tick();
+
                 self.ppu.borrow_mut().tick(cycles);
+                //self.ppu_experiment.borrow_mut().cycle();
             }
         }
         self.dma.borrow_mut().dma_tick();

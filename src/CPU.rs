@@ -283,7 +283,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     pub fn cycle(&mut self) -> u16 {
         debug!("##################################################");
 
-        self.gameboy_doctor_output_log();
+        //self.gameboy_doctor_output_log();
 
         if !self.halted {
 

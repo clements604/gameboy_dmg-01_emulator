@@ -65,7 +65,7 @@ impl Emulator {
         let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
-        let io = Rc::new(RefCell::new(dmg_io::IO::new(dma.clone(), cpu.clone(), lcd.clone())));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
         memory_bus.borrow_mut().dmg_io = Some(io.clone());
         memory_bus.borrow_mut().dma = Some(dma.clone());
 

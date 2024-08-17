@@ -5,21 +5,15 @@ use crate::dma::Dma;
 
 pub const DEFAULT_COLOURS: [u32; 4] = [0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000];
 pub struct LCD {
-    dma: Weak<RefCell<Dma>>,
-    pub lcdc: u8,
-    pub stat: u8,
-    pub scroll_x: u8,
-    pub scroll_y: u8,
-    pub ly: u8,
-    pub ly_compare: u8,
-    bg_palette: u8,
-    obj_palette: [u8; 2],
-    window_x: u8,
-    window_y: u8,
+    pub dma: Weak<RefCell<Dma>>,
+    pub bg_palette: u8,
+    pub obj_palette: [u8; 2],
+    pub window_x: u8,
+    pub window_y: u8,
     
-    bg_colours: [u32; 4],
-    sp1_colours: [u32; 4],
-    sp2_colours: [u32; 4],
+    pub bg_colours: [u32; 4],
+    pub sp1_colours: [u32; 4],
+    pub sp2_colours: [u32; 4],
 }
 
 impl LCD{
@@ -36,12 +30,6 @@ impl LCD{
         
         LCD {
             dma: Rc::downgrade(&dma),
-            lcdc: 0x91,
-            stat: 0,
-            scroll_x: 0,
-            scroll_y: 0,
-            ly: 0,
-            ly_compare: 0,
             bg_palette: 0xFC,
             obj_palette: [0xFF; 2],
             window_x: 0,
@@ -51,7 +39,7 @@ impl LCD{
             sp2_colours,
         }
     }
-    pub fn read(&self, address: u16) -> u8 {
+    /*pub fn read(&self, address: u16) -> u8 {
         match address {
             0xFF40 => self.lcdc,
             0xFF41 => self.stat,
@@ -88,7 +76,7 @@ impl LCD{
             0xFF4B => self.window_x = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
-    }
+    }*/
     pub fn update_palette(&mut self, palette_data: u8, palette: u8) {
         let mut palette_colours = [0; 4];
         match palette {

@@ -6,23 +6,26 @@ use crate::display::Display;
 use crate::dma::Dma;
 use crate::lcd::LCD;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE, MemoryBus};
+use crate::ppu::Ppu;
 
 pub struct IO {
     io_registers: [u8; IO_REGISTERS_SIZE],
     serial_data: [char; 2],
     pub lcd: Rc<RefCell<LCD>>,
-    dma: Rc<RefCell<Dma>>,
+    //dma: Rc<RefCell<Dma>>,
     cpu: Rc<RefCell<CPU>>,
+    ppu: Rc<RefCell<Ppu>>,
 }
 
 impl IO {
-    pub fn new(dma: Rc<RefCell<Dma>>, cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>) -> IO {
+    pub fn new(/*dma: Rc<RefCell<Dma>>, */cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>, ppu: Rc<RefCell<Ppu>>) -> IO {
         IO {
             io_registers: [0; IO_REGISTERS_SIZE],
             serial_data: ['\0'; 2],
             lcd,
-            dma,
+            //dma,
             cpu,
+            ppu,
         }
     }
 
@@ -39,7 +42,7 @@ impl IO {
                 self.serial_data[1] as u8
             },
             0xFF40..=0xFF4B => {
-                self.lcd.as_ref().borrow().read(address)
+                self.ppu.as_ref().borrow().read(address)
             },
             _ => {
                 debug!("Read from IO address: {:#X}", address);
@@ -57,7 +60,7 @@ impl IO {
                 self.serial_data[1] = value as char;
             },
             0xFF40..=0xFF4B => {
-                self.lcd.as_ref().borrow_mut().write(address, value);
+                self.ppu.as_ref().borrow_mut().write(address, value);
             },
             _ => {
                 debug!("Write to IO address: {:#X}", address);

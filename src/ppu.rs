@@ -33,10 +33,16 @@ pub struct Ppu {
     previous_frame_time: u32,
     start_time: u32,
     frame_count: u16,
-    stat: u8, // STAT register
     cpu: Rc<RefCell<CPU>>,
     lcd: Rc<RefCell<LCD>>,
     display: Rc<RefCell<Display>>,
+
+    pub lcdc: u8,
+    pub stat: u8,
+    pub scroll_x: u8,
+    pub scroll_y: u8,
+    pub ly: u8,
+    pub ly_compare: u8,
 }
 #[derive(Debug, Clone, Copy)]
 pub struct OamEntry {
@@ -180,20 +186,23 @@ impl Ppu {
             previous_frame_time: 0,
             start_time: 0,
             frame_count: 0,
-            stat: 0,
             cpu,
             lcd,
-            display
+            display,
+            lcdc: 0x91,
+            stat: 0,
+            scroll_x: 0,
+            scroll_y: 0,
+            ly: 0,
+            ly_compare: 0,
         }
     }
 
     fn increment_ly(&mut self) {
-        {
-            let mut lcd = self.lcd.borrow_mut();
-            lcd.ly += 1;
-        }
 
-        if self.lcd.borrow().ly == self.lcd.borrow().ly_compare {
+        self.ly += 1;
+        
+        if self.ly == self.ly_compare {
             // set lyc bit
             self.stat |= 0x04;
             self.update_stat_interrupts();
@@ -212,7 +221,7 @@ impl Ppu {
                     //self.line_ticks -= 204;
                     self.increment_ly();
 
-                    if self.lcd.borrow().ly >= Y_RES {
+                    if self.ly >= Y_RES {
                         self.mode = VBLANK_MODE;
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
                         // check vblank stat
@@ -231,9 +240,9 @@ impl Ppu {
                     //self.line_ticks -= 456;
                     self.increment_ly();
 
-                    if self.lcd.borrow_mut().ly >= LINES_PER_FRAME {
+                    if self.ly >= LINES_PER_FRAME {
                         self.mode = OAM_MODE;
-                        self.lcd.borrow_mut().ly = 0;
+                        self.ly = 0;
                     }
                     self.line_ticks = 0;
                 }
@@ -257,7 +266,7 @@ impl Ppu {
 
     fn update_stat_interrupts(&mut self) {
         let lcd = self.lcd.borrow();
-        let lyc_ly_coincidence = lcd.ly == lcd.ly_compare;
+        let lyc_ly_coincidence = self.ly == self.ly_compare;
         if lyc_ly_coincidence {
             self.stat |= 0x04; // Set coincidence flag
         } else {
@@ -271,6 +280,45 @@ impl Ppu {
             self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
         }
 
+    }
+
+    pub fn read(&self, address: u16) -> u8 {
+        match address {
+            0xFF40 => self.lcdc,
+            0xFF41 => self.stat,
+            0xFF42 => self.scroll_y,
+            0xFF43 => self.scroll_x,
+            0xFF44 => self.ly,
+            0xFF45 => self.ly_compare,
+            0xFF47 => self.lcd.borrow().bg_palette,
+            0xFF48 => self.lcd.borrow().obj_palette[0],
+            0xFF49 => self.lcd.borrow().obj_palette[1],
+            0xFF4A => self.lcd.borrow().window_y,
+            0xFF4B => self.lcd.borrow().window_x,
+            _ => panic!("Invalid LCD address: {:#X}", address),
+        }
+    }
+    pub fn write(&mut self, address: u16, value: u8) {
+        let offset = (address - 0xFF40) as usize;
+
+        match address {
+            0xFF40 => self.lcdc = value,
+            0xFF41 => self.stat = value,
+            0xFF42 => self.scroll_y = value,
+            0xFF43 => self.scroll_x = value,
+            0xFF44 => self.ly = value,
+            0xFF45 => self.ly_compare = value,
+            0xFF46 => {
+                debug!("DMA transfer start: {:#X}", value);
+                self.lcd.borrow_mut().dma.upgrade().unwrap().borrow_mut().dma_start(value);
+            }
+            0xFF47 => self.lcd.borrow_mut().update_palette(value, 0),
+            0xFF48 => self.lcd.borrow_mut().update_palette(value & 0b11111100, 1),
+            0xFF49 => self.lcd.borrow_mut().update_palette(value & 0b11111100, 2),
+            0xFF4A => self.lcd.borrow_mut().window_y = value,
+            0xFF4B => self.lcd.borrow_mut().window_x = value,
+            _ => panic!("Invalid LCD address: {:#X}", address),
+        }
     }
 
     pub fn oam_read(&self, address: u16) -> u8 {

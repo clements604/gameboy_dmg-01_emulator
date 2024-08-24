@@ -12,6 +12,7 @@ mod lcd;
 mod timer;
 mod ppu_experiment;
 mod ppu_pipeline;
+mod joypad;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -26,7 +27,7 @@ use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
 use sdl2::EventPump;
-use crate::timer::Timer;
+use crate::timer::{Timer, TimerFrequency};
 
 struct Emulator {
     ticks: u64,
@@ -38,15 +39,19 @@ struct Emulator {
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     dma: Rc<RefCell<dma::Dma>>,
     display: Rc<RefCell<display::Display>>,
-    timer: Timer,
+
+
+
     event_pump: EventPump,
     previous_frame: u32,
+    previous_ly: u8,
 }
 
 impl Emulator {
     pub fn new(boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
 
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
+
 
         let display = Rc::new(RefCell::new(display::Display::new(
             &String::from("RustGB"),
@@ -55,10 +60,9 @@ impl Emulator {
             display::SCREEN_HEIGHT as u32,
         )));
         let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();
-        
+
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
-        let timer = Timer::new(Rc::clone(&cpu));
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
 
@@ -66,6 +70,9 @@ impl Emulator {
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
         let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+
+
+
         memory_bus.borrow_mut().dmg_io = Some(io.clone());
         memory_bus.borrow_mut().dma = Some(dma.clone());
 
@@ -73,7 +80,9 @@ impl Emulator {
         //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
 
         memory_bus.borrow_mut().cpu = Some(cpu.clone());
-        
+
+
+
 
 
         Emulator {
@@ -85,13 +94,14 @@ impl Emulator {
 
             memory_bus,
             display,
-            timer,
+
             event_pump,
             dma,
             previous_frame: 0,
+            previous_ly: 0,
         }
     }
-    
+
     fn cycle(&mut self) {
         for event in self.event_pump.poll_iter() {
             match event {
@@ -100,6 +110,23 @@ impl Emulator {
             }
         }
         let cpu_cycles = self.cpu.borrow_mut().cycle();
+        if self.cpu.borrow().registers.pc == 0xCB89 {//0xCB89
+            debug!("{}", self.cpu.borrow().registers);
+            debug!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
+            debug!("hello");
+        }
+
+        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+            self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
+        }
+        self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().divider.cycle(cpu_cycles);
+
+        self.ppu.borrow_mut().tick(cpu_cycles);
+        
+        self.debug_ly();
+
+        self.dma.borrow_mut().dma_tick();
+
         if self.memory_bus.borrow().interrupt_master_enable {
             self.cpu.borrow_mut().handle_interrupts();
             self.memory_bus.borrow_mut().enabling_ime = false;
@@ -108,23 +135,20 @@ impl Emulator {
             self.memory_bus.borrow_mut().interrupt_master_enable = true;
         }
 
-        for cycles in 0..cpu_cycles {
-            for _ in 0..4 {
-                self.ticks += 1;
-                self.timer.tick();
-
-                self.ppu.borrow_mut().tick(cycles);
-                //self.ppu_experiment.borrow_mut().cycle();
-            }
-        }
-        self.dma.borrow_mut().dma_tick();
-
         if self.previous_frame != self.ppu.borrow().current_frame {
             self.display.borrow_mut().ui_update();
             self.previous_frame = self.ppu.borrow().current_frame;
         }
     }
     
+    fn debug_ly(&mut self) {
+        let new_ly = self.ppu.borrow().ly;
+        if new_ly != self.previous_ly {
+            info!("LY: {}", new_ly);
+            self.previous_ly = new_ly;
+        }
+    }
+
 }
 
 fn main() {
@@ -145,28 +169,34 @@ fn main() {
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
-    
+
     //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); //TODO FAILED
     //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO FAILED
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO implement interupts and timers. C229, C22D, C2231 are setting interupt and timers.
+    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO no test rom output
     //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // TODO no test rom output
     //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // TODO never finishes CURRENT INSTR DEBUG WIP
+    //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // TODO never finishes
     //let rom = load_rom(String::from("roms/test/cpu/individual/08-misc instrs.gb")); // TODO no test rom output
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // TODO never finishes
-    //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // TODO never finishes 211211211211211211211211211211211211211211211211211
-    //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // TODO was passed, now never finishes
+
+
+    let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // TODO never finishes 211211 CURRENT INSTR DEBUG WIP
+
+
+    //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
 
-    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// CPU instruction timing
+
+    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
 
     /*let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
     let mut cpu = CPU::CPU::new(Rc::clone(&memory_bus));
     let mut ppu = ppu::Ppu::new();*/
 
 let mut emulator = Emulator::new(boot_rom, &rom);
-    
+
     loop {
         emulator.cycle();
         //emulator.display.ui_update();

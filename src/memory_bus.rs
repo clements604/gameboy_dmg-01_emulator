@@ -158,7 +158,7 @@ impl MemoryBus {
             ECHO_RAM_START..=ECHO_RAM_END => self.echo_ram[(address - ECHO_RAM_START) as usize],
             OAM_START..=OAM_END => {
                 if self.dma.as_ref().unwrap().borrow().is_transferring() {
-                    panic!("DMA active");
+                    //panic!("DMA active");
                     return 0xFF;
                 }
                 self.ppu.as_ref().unwrap().borrow().oam_read(address - OAM_START)
@@ -232,11 +232,6 @@ impl MemoryBus {
                     debug!("Interrupt flag write: {:#X}", value);
                     self.interrupt_flags = value;
                 }
-                /*if address == 0xFF44 {
-                    error!("LY write");
-                    self.dmg_io.as_ref().unwrap().borrow_mut().lcd.borrow_mut().ly += 1;
-                    return;
-                }*/
                 if address == 0xFF50 {
                     debug!("Boot ROM disable");
                     self.boot_rom_enabled = false;

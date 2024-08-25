@@ -139,12 +139,13 @@ impl Emulator {
             self.display.borrow_mut().ui_update();
             self.previous_frame = self.ppu.borrow().current_frame;
         }
+        
     }
     
     fn debug_ly(&mut self) {
         let new_ly = self.ppu.borrow().ly;
         if new_ly != self.previous_ly {
-            info!("LY: {}", new_ly);
+            debug!("LY: {}", new_ly);
             self.previous_ly = new_ly;
         }
     }
@@ -170,7 +171,7 @@ fn main() {
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
 
-    //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); //TODO FAILED
+    let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); //TODO FAILED
     //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO FAILED
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO no test rom output
@@ -181,7 +182,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // TODO never finishes
 
 
-    let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // TODO never finishes 211211 CURRENT INSTR DEBUG WIP
+    //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // TODO never finishes 211211 CURRENT INSTR DEBUG WIP
 
 
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED

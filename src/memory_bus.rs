@@ -11,7 +11,8 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
-use crate::ppu_experiment;
+use crate::{ppu_experiment, timer};
+use crate::timer::{Timer, TimerFrequency};
 
 const BOOT_ROM_START: u16 = 0x0000;
 const BOOT_ROM_END: u16 = 0x00FF;
@@ -78,6 +79,7 @@ pub struct MemoryBus {
     pub dmg_io: Option<Rc<RefCell<IO>>>,
     pub dma: Option<Rc<RefCell<Dma>>>,
     pub cpu:  Option<Rc<RefCell<CPU>>>,
+
     boot_rom_enabled: bool,
     pub interrupt_master_enable: bool,
     pub enabling_ime: bool,
@@ -121,6 +123,7 @@ impl MemoryBus {
             dmg_io: io,
             dma,
             cpu,
+ 
             interrupt_master_enable: false,
             enabling_ime: false,
             interrupt_enable_register: 0,
@@ -129,7 +132,7 @@ impl MemoryBus {
         //debug!("ROM data to be loaded: {:?}", rom);
         memory_bus.load_rom(&rom.rom);
 
-        debug!("Memory bus created");
+        //debug!("Memory bus created");
 
         //debug!("Memory bus bank 0: {:?}", memory_bus.rom_bank_0);
         //debug!("Memory bus bank n: {:?}", memory_bus.rom_bank_n);
@@ -188,7 +191,7 @@ impl MemoryBus {
         }
     }
     pub fn write_byte(&mut self, address: u16, value: u8) {
-        debug!("Writing byte to address {:X}", address);
+        //debug!("Writing byte to address {:X}", address);
         if address == 0xFF44 {
             //panic!("LY write");
         }
@@ -222,14 +225,7 @@ impl MemoryBus {
             },
             UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
             IO_REGISTERS_START..=IO_REGISTERS_END => {
-                debug!("Writing to IO register {:X} value {:X}", address, value);
-                //self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
-                if address == 0xFF01 || address == 0xFF02 {
-                    debug!("Serial data write");
-                    //panic!("Serial data write")
-                }
                 if address == 0xFF0F {
-                    debug!("Interrupt flag write: {:#X}", value);
                     self.interrupt_flags = value;
                 }
                 if address == 0xFF50 {
@@ -245,7 +241,7 @@ impl MemoryBus {
                 self.hram[(address - HRAM_START) as usize] = value
             },
             INTERRUPT_ENABLE_REGISTER => {
-                debug!("Interrupt enable register set to {:X}", value);
+                //debug!("Interrupt enable register set to {:X}", value);
                 self.interrupt_enable_register = value;
             },
             _ => {

@@ -16,7 +16,7 @@ const OAM_MODE: u8 = 2;
 const VRAM_MODE: u8 = 3;
 const HBLANK_MODE: u8 = 0;
 const VBLANK_MODE: u8 = 1;
-const LINES_PER_FRAME: u8 = 154;
+const LINES_PER_FRAME: u8 = 153;
 const TICKS_PER_LINE: u16 = 456;
 const Y_RES: u8 = 144;
 const X_RES: u8 = 160;
@@ -44,6 +44,40 @@ pub struct Ppu {
     pub ly: u8,
     pub ly_compare: u8,
 }
+
+//Display for Ppu
+impl fmt::Display for Ppu {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "LY: {},\
+            LYC: {},\
+            Mode: {},\
+            Line Ticks: {},\
+            Current Frame: {},\
+            Previous Frame Time: {},\
+            Start Time: {},\
+            Frame Count: {},\
+            LCDC: {:#X},\
+            STAT: {:#X},\
+            Scroll X: {},\
+            Scroll Y: {}",
+            self.ly,
+            self.ly_compare,
+            self.mode,
+            self.line_ticks,
+            self.current_frame,
+            self.previous_frame_time,
+            self.start_time,
+            self.frame_count,
+            self.lcdc,
+            self.stat,
+            self.scroll_x,
+            self.scroll_y
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct OamEntry {
     y: u8,
@@ -61,6 +95,13 @@ pub struct OamEntry {
         Bit 3 - Bank [CGB Mode Only]: 0 = Fetch tile from VRAM bank 0, 1 = Fetch tile from VRAM bank 1
         Bits 2,1,0 - CGB palette [CGB Mode Only]: Which of OBP0–7 to use
      */
+}
+
+enum StatInterrupt {
+    LYC = 0x40,
+    OAM = 0x20,
+    VBLANK = 0x10,
+    HBLANK = 0x08,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -178,8 +219,6 @@ impl Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
             vram: [0x0000; 0x2000],
-            //ly: 0,
-            //lyc: 0,
             mode: 2,
             line_ticks: 0,
             current_frame: 0,
@@ -198,33 +237,147 @@ impl Ppu {
         }
     }
 
-    fn increment_ly(&mut self) {
+    fn lcd_ppu_enabled(&self) -> bool {
+        self.lcdc & 0x80 != 0
+    }
 
-        self.ly += 1;
-        
-        if self.ly == self.ly_compare {
-            // set lyc bit
-            self.stat |= 0x04;
-            self.update_stat_interrupts();
-        }
-        else {
-            // clear lyc bit
-            self.stat &= !0x04;
+    fn window_tile_map(&self) -> u16 {
+        if self.lcdc & 0x40 != 0 {
+            0x9C00
+        } else {
+            0x9800
         }
     }
-    pub fn tick(&mut self, cycles: u16) {
-        self.line_ticks += 1;
+
+    fn window_enabled(&self) -> bool {
+        self.lcdc & 0x20 != 0
+    }
+
+    fn bg_window_tile_data(&self) -> u16 {
+        if self.lcdc & 0x10 != 0 {
+            0x8000
+        } else {
+            0x8800
+        }
+    }
+
+    fn bg_tile_map(&self) -> u16 {
+        if self.lcdc & 0x08 != 0 {
+            0x9C00
+        } else {
+            0x9800
+        }
+    }
+
+    fn sprite_size(&self) -> u8 {
+        if self.lcdc & 0x04 != 0 {
+            16
+        } else {
+            8
+        }
+    }
+
+    /**
+    Mode 2 int select
+    */
+    fn get_lyc_int_select(&self) -> bool {
+        self.stat & 0x40 != 0
+    }
+    fn set_lyc_int_select(&mut self, value: bool) {
+        if value {
+            self.stat |= 0x40;
+        } else {
+            self.stat &= !0x40;
+        }
+    }
+
+    /**
+    Mode 1 int select
+    */
+    fn get_vblank_int_select(&self) -> bool {
+        self.stat & 0x10 != 0
+    }
+    fn set_vblank_int_select(&mut self, value: bool) {
+        if value {
+            self.stat |= 0x10;
+        } else {
+            self.stat &= !0x10;
+        }
+    }
+
+    /**
+    Mode 0 int select
+    */
+    fn get_hblank_int_select(&self) -> bool {
+        self.stat & 0x08 != 0
+    }
+    fn set_hblank_int_select(&mut self, value: bool) {
+        if value {
+            self.stat |= 0x08;
+        } else {
+            self.stat &= !0x08;
+        }
+    }
+
+    /**
+    LYC == LY
+    */
+    fn lyc_equals_ly(&self) -> bool {
+        self.ly == self.ly_compare
+    }
+
+    /**
+    PPU mode
+    */
+    fn get_ppu_mode(&self) -> u8 {
+        self.stat & 0x03
+    }
+    fn set_ppu_mode(&mut self, mode: u8) {
+        self.stat = (self.stat & 0xFC) | mode;
+    }
+
+    fn get_oam_int_select(&self) -> bool {
+        self.stat & 0x20 != 0
+    }
+
+    fn sprites_enabled(&self) -> bool {
+        self.lcdc & 0x02 != 0
+    }
+
+    fn bg_window_enabled(&self) -> bool {
+        self.lcdc & 0x01 != 0
+    }
+
+    pub fn tick(&mut self, cycles: u8) {
+        debug!("PPU tick with cycles: {}", cycles);
+
+        if !self.lcd_ppu_enabled() {
+            debug!("LCD is disabled");
+            //self.ly = 0;
+            //self.line_ticks = 0;
+            return;
+        }
+
+        self.line_ticks += cycles as u16;
+        debug!("Line ticks: {}", self.line_ticks);
+
+        // Handle full line completion (ticks >= 456)
+        /*if self.line_ticks > 456 && self.mode != VBLANK_MODE {
+            self.ly = self.ly.wrapping_add(1);  // Move to the next line
+
+            // Handle mode transitions based on the line (LY)
+            if self.ly <= 144 {
+                self.line_ticks = 0;
+            }
+        }*/
 
         match self.mode {
-            HBLANK_MODE => { // H-Blank
-                if self.line_ticks >= 204 {//FIXME should be 456 (ticks per line)
-                    //self.line_ticks -= 204;
-                    self.increment_ly();
-
+            HBLANK_MODE => {
+                if self.line_ticks >= 204 { // 376 - mode 3’s (VRAM_MODE) duration
+                    self.ly = self.ly.wrapping_add(1);
                     if self.ly >= Y_RES {
                         self.mode = VBLANK_MODE;
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
-                        // check vblank stat
                         self.update_stat_interrupts();
                         self.current_frame += 1;
                         self.calculate_fps();
@@ -232,36 +385,44 @@ impl Ppu {
                     else {
                         self.mode = OAM_MODE;
                     }
+                    self.line_ticks = 0;
                 }
-                self.line_ticks = 0;
-            },
-            VBLANK_MODE => { // V-Blank
-                if self.line_ticks >= TICKS_PER_LINE {
-                    //self.line_ticks -= 456;
-                    self.increment_ly();
-
+            }
+            VBLANK_MODE => {    
+                if self.line_ticks >= TICKS_PER_LINE { // 4560 / 10 scanlines
+                    self.ly = self.ly.wrapping_add(1);
                     if self.ly >= LINES_PER_FRAME {
                         self.mode = OAM_MODE;
                         self.ly = 0;
                     }
                     self.line_ticks = 0;
                 }
-            },
-            OAM_MODE => { // OAM Search
+            }
+            OAM_MODE => {
                 if self.line_ticks >= 80 {
-                    //self.line_ticks -= 80;
                     self.mode = VRAM_MODE;
                 }
-            },
-            VRAM_MODE => { // VRAM Transfer
-                if self.line_ticks >= 80 + 172 {
-                    //self.line_ticks -= 172;
+            }
+            VRAM_MODE => {
+                if self.line_ticks >= 172 { // Between 172 and 289 line_ticks (with conditions).
                     self.mode = HBLANK_MODE;
                     self.update_stat_interrupts();
                 }
-            },
-            _ => panic!("Unknown PPU mode: {}", self.mode),
+            }
+            _ => {
+                panic!("Invalid PPU mode: {}", self.mode);
+            }
         }
+
+        // Update STAT register bits 0-2
+        let stat_bits_0_2 = if self.ly == self.ly_compare {
+            0b100 | self.mode
+        } else {
+            self.mode
+        };
+        debug!("STAT bits 0-2: {:#X}", stat_bits_0_2);
+        self.stat = (self.stat & 0b11111000) | stat_bits_0_2;
+        debug!("STAT: {:#X}", self.stat);
     }
 
     fn update_stat_interrupts(&mut self) {
@@ -290,34 +451,31 @@ impl Ppu {
             0xFF43 => self.scroll_x,
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
-            0xFF47 => self.lcd.borrow().bg_palette,
-            0xFF48 => self.lcd.borrow().obj_palette[0],
-            0xFF49 => self.lcd.borrow().obj_palette[1],
-            0xFF4A => self.lcd.borrow().window_y,
-            0xFF4B => self.lcd.borrow().window_x,
-            _ => panic!("Invalid LCD address: {:#X}", address),
+                _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
     pub fn write(&mut self, address: u16, value: u8) {
-        let offset = (address - 0xFF40) as usize;
-
         match address {
             0xFF40 => self.lcdc = value,
             0xFF41 => self.stat = value,
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
-            0xFF44 => self.ly = value,
+            0xFF44 => error!("Attempt to write to read-only register: {:#X}", address),
             0xFF45 => self.ly_compare = value,
             0xFF46 => {
                 debug!("DMA transfer start: {:#X}", value);
                 self.lcd.borrow_mut().dma.upgrade().unwrap().borrow_mut().dma_start(value);
-            }
-            0xFF47 => self.lcd.borrow_mut().update_palette(value, 0),
-            0xFF48 => self.lcd.borrow_mut().update_palette(value & 0b11111100, 1),
-            0xFF49 => self.lcd.borrow_mut().update_palette(value & 0b11111100, 2),
-            0xFF4A => self.lcd.borrow_mut().window_y = value,
-            0xFF4B => self.lcd.borrow_mut().window_x = value,
+            },
             _ => panic!("Invalid LCD address: {:#X}", address),
+        }
+    }
+
+    fn is_stat_interrupt_enabled(&self, interrupt: StatInterrupt) -> bool {
+        match interrupt {
+            StatInterrupt::LYC => self.stat & 0x40 != 0,
+            StatInterrupt::OAM => self.stat & 0x20 != 0,
+            StatInterrupt::VBLANK => self.stat & 0x10 != 0,
+            StatInterrupt::HBLANK => self.stat & 0x08 != 0,
         }
     }
 
@@ -335,7 +493,7 @@ impl Ppu {
             panic!("Attempt to write to invalid OAM address: {:#X}", address);
         }*/
         self.oam_ram[(address) as usize] = value;
-        debug!("OAM data: {:?}", self.oam_ram);
+        //debug!("OAM data: {:?}", self.oam_ram);
     }
 
     pub fn vram_read(&self, address: u16) -> u8 {
@@ -344,19 +502,19 @@ impl Ppu {
     }
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
-        debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
+        //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
         self.vram[(address - 0x8000) as usize] = value;
-        debug!("VRAM data: {:?}", self.vram);
+        //debug!("VRAM data: {:?}", self.vram);
     }
 
     fn trigger_interrupt(&mut self, interrupt: interupts::Interrupt) {
-        debug!("Triggering interrupt: {:?}", interrupt);
+        //debug!("Triggering interrupt: {:?}", interrupt);
         match interrupt {
-            interupts::Interrupt::VBLANK => {
-                self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::VBLANK);
+            Interrupt::VBLANK => {
+                self.trigger_interrupt(interupts::Interrupt::VBLANK);
             }
-            interupts::Interrupt::LCDSTAT => {
-                self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::LCDSTAT);
+            Interrupt::LCDSTAT => {
+                self.trigger_interrupt(interupts::Interrupt::LCDSTAT);
             }
             _ => {
                 panic!("Invalid interrupt: {:?}", interrupt);
@@ -416,61 +574,5 @@ mod tests {
         assert_eq!(ppu.cycles, 0);
     }
 
-    #[test]
-    fn test_oam_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 2;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-        ppu.step(&mut cpu, 79);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_lcd_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 3;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-        ppu.step(&mut cpu, 171);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_lyc_ly_interrupt() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        // Case 1: LY matches LYC, interrupt should trigger
-        ppu.ly = 100;
-        ppu.lyc = 100;
-        ppu.stat = 0x40; // LYC=LY interrupt enabled
-        ppu.mode = 0; // H-Blank mode
-        ppu.step(&mut cpu, 204); // Simulate step to the end of H-Blank
-        assert_eq!(ppu.stat & 0x04, 0x04); // Coincidence flag set
-                                           // Ensure interrupt was triggered (additional logic needed for full test)
-
-        // Reset PPU state
-        ppu.ly = 0;
-        ppu.lyc = 0;
-        ppu.stat = 0;
-        ppu.mode = 0;
-        ppu.cycles = 0;
-
-        // Case 2: LY does not match LYC, interrupt should not trigger
-        ppu.ly = 100;
-        ppu.lyc = 101;
-        ppu.stat = 0x40; // LYC=LY interrupt enabled
-        ppu.mode = 0; // H-Blank mode
-        ppu.step(&mut cpu, 204); // Simulate step to the end of H-Blank
-        assert_eq!(ppu.stat & 0x04, 0x00); // Coincidence flag not set
-                                           // Ensure interrupt was not triggered (additional logic needed for full test)
     }*/
 }

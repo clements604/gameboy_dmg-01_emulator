@@ -1,10 +1,5 @@
-use crate::interupts::Interrupt;
-use crate::CPU::CPU;
-use log::{debug, error, info};
-use std::cell::RefCell;
-use std::rc::Rc;
-
-enum TimerFrequency {
+#[derive(Clone)]
+pub(crate) enum TimerFrequency {
     Hz4096 = 1024,
     Hz16384 = 256,
     Hz65536 = 64,
@@ -12,73 +7,47 @@ enum TimerFrequency {
 }
 
 pub struct Timer {
-    div: u16,
-    tima: u8,
-    tma: u8,
-    tac: u8,
-    
-    cycles: u16,
-    enabled: bool,
-    
-    cpu: Rc<RefCell<CPU>>,
+    pub(crate) frequency: TimerFrequency,
+    cycles: usize,
+    pub value: u8,
+    pub modulo: u8,
+    pub enabled: bool,
 }
 
 impl Timer {
-    pub fn new(cpu: Rc<RefCell<CPU>>) -> Timer {
+    pub fn new(frequency: TimerFrequency) -> Timer {
         Timer {
-            div: 0xAC00,
-            tima: 0,
-            tma: 0,
-            tac: 0,
-            
+            frequency,
             cycles: 0,
+            value: 0,
+            modulo: 0,
             enabled: false,
-            
-            cpu,
         }
     }
-    pub fn read(&self, address: u16) -> u8 {
-        match address {
-            0xFF04 => (self.div >> 8) as u8, // TODO does casting to u8 loose the upper bits?
-            0xFF05 => self.tima,
-            0xFF06 => self.tma,
-            0xFF07 => self.tac,
-            _ => panic!("Invalid Timer address: {:#X}", address),
+    pub fn cycle(&mut self, cycles: u8) -> bool {
+        if !self.enabled {
+            return false;
         }
-    }
-    pub fn write(&mut self, address: u16, value: u8) {
-        match address {
-            0xFF04 => self.div = 0,
-            0xFF05 => self.tima = value,
-            0xFF06 => self.tma = value,
-            0xFF07 => self.tac = value,
-            _ => panic!("Invalid Timer address: {:#X}", address),
+        
+        self.cycles += cycles as usize;
+        
+        let tick_cycles = self.frequency.clone() as usize;
+        
+        let overflow = if self.cycles > tick_cycles {
+            self.cycles = self.cycles % tick_cycles;
+            let (value, did_overflow) = self.value.overflowing_add(1);
+            self.value = value;
+            did_overflow
         }
-    }
-    
-    pub fn cycle(&mut self, cycles: &u16) {
-        for _ in 0..*cycles {
-            let previous_div = self.div;
-            self.div = self.div.wrapping_add(1);
-            debug!("Previous DIV: {:#X}, New DIV: {:#X}", previous_div, self.div);
+        else {
+            false
+        };
+        
+        if overflow {
+            self.value = self.modulo;
+        }
 
-            let timer_update: bool = match self.tac & 0x3 {
-                0 => (previous_div & (1 << 9) != 0) && (self.div & (1 << 9) == 0),
-                1 => (previous_div & (1 << 3) != 0) && (self.div & (1 << 3) == 0),
-                2 => (previous_div & (1 << 5) != 0) && (self.div & (1 << 5) == 0),
-                3 => (previous_div & (1 << 7) != 0) && (self.div & (1 << 7) == 0),
-                _ => panic!("Invalid Timer frequency: {:#X}", self.tac & 0x3),
-            };
-            debug!("Timer update: {}", timer_update);
-
-            if timer_update && self.tac & (1 << 2) != 0 {
-                self.tima = self.tima.wrapping_add(1);
-                if self.tima == 0xFF {
-                    self.tima = self.tma;
-                    self.cpu.borrow_mut().trigger_interrupt(Interrupt::TIMER);
-                }
-            }
-        }
+        overflow
     }
 
 }

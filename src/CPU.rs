@@ -280,10 +280,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     /*
      *   CPU cycle - fetch, decode, execute
      */
-    pub fn cycle(&mut self) -> u16 {
+    pub fn cycle(&mut self) -> u8 {
         debug!("##################################################");
         //info!("{}", self.memory_bus.borrow().ppu.as_ref().unwrap().borrow());
-        //self.gameboy_doctor_output_log();
+
+        self.gameboy_doctor_output_log();
 
         if !self.halted {
 
@@ -505,7 +506,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0x22 => {
                     self.memory_bus.borrow_mut().write_byte(self.registers.get_hl(), self.registers.a);
-                    self.registers.set_hl(self.registers.get_hl() + 1);
+                    self.registers.set_hl(self.registers.get_hl().wrapping_add(1));
                     8
                 }
                 0x23 => {
@@ -2634,11 +2635,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0xEC => {
                     panic!("Unsupported opcode: 0xEC");
-                    //error!("Unsupported opcode: 0xEC");
                 }
                 0xED => {
                     panic!("Unsupported opcode: 0xED");
-                    //error!("Unsupported opcode: 0xED");
                 }
                 0xEE => {
                     let value = self.read_immediate_byte();
@@ -2709,12 +2708,10 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0xFC => {
-                    error!("Unsupported opcode: 0xFC");
-                    4
+                    panic!("Unsupported opcode: 0xFC");
                 }
                 0xFD => {
-                    error!("Unsupported opcode: 0xFD");
-                    4
+                    panic!("Unsupported opcode: 0xFD");
                 }
                 0xFE => {
                     let value = self.read_immediate_byte();
@@ -2928,12 +2925,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
 
     fn op_xor_r8(&mut self, value: u8) {
         debug!("op_xor_r8");
-        let result: u8 = self.registers.a ^ value;
-        self.registers.f.set_flag(Flag::Z, result == 0);
+        self.registers.a ^= value;
+        self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, false);
         self.registers.f.set_flag(Flag::C, false);
-        self.registers.a = result;
     }
 
     fn op_adc_r8(&mut self, value: u8) {

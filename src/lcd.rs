@@ -39,14 +39,8 @@ impl LCD{
             sp2_colours,
         }
     }
-    /*pub fn read(&self, address: u16) -> u8 {
+    pub fn read(&self, address: u16) -> u8 {
         match address {
-            0xFF40 => self.lcdc,
-            0xFF41 => self.stat,
-            0xFF42 => self.scroll_y,
-            0xFF43 => self.scroll_x,
-            0xFF44 => self.ly,
-            0xFF45 => self.ly_compare,
             0xFF47 => self.bg_palette,
             0xFF48 => self.obj_palette[0],
             0xFF49 => self.obj_palette[1],
@@ -56,27 +50,15 @@ impl LCD{
         }
     }
     pub fn write(&mut self, address: u16, value: u8) {
-        let offset = (address - 0xFF40) as usize;
-        
         match address {
-            0xFF40 => self.lcdc = value,
-            0xFF41 => self.stat = value,
-            0xFF42 => self.scroll_y = value,
-            0xFF43 => self.scroll_x = value,
-            0xFF44 => self.ly = value,
-            0xFF45 => self.ly_compare = value,
-            0xFF46 => {
-                debug!("DMA transfer start: {:#X}", value);
-                self.dma.upgrade().unwrap().borrow_mut().dma_start(value);
-            }
-            0xFF47 => self.update_palette(value, 0),
-            0xFF48 => self.update_palette(value & 0b11111100, 1),
-            0xFF49 => self.update_palette(value & 0b11111100, 2),
+            0xFF47 => self.bg_palette = value,
+            0xFF48 => self.obj_palette[0] = value,
+            0xFF49 => self.obj_palette[1] = value,
             0xFF4A => self.window_y = value,
             0xFF4B => self.window_x = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
-    }*/
+    }
     pub fn update_palette(&mut self, palette_data: u8, palette: u8) {
         let mut palette_colours = [0; 4];
         match palette {

@@ -2487,7 +2487,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     24
                 }
                 0xCE => {
-                    let value = self.memory_bus.borrow().read_byte(self.registers.pc);
+                    let value = self.read_immediate_byte();
                     self.op_adc_r8(value);
                     8
                 }

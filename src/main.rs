@@ -171,22 +171,18 @@ fn main() {
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
 
-    let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); //TODO FAILED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO FAILED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
+    let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO no test rom output
-    //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // TODO no test rom output
+    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
+    //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // TODO never finishes
-    //let rom = load_rom(String::from("roms/test/cpu/individual/08-misc instrs.gb")); // TODO no test rom output
-    //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // TODO never finishes
-
-
-    //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // TODO never finishes 211211 CURRENT INSTR DEBUG WIP
-
-
+    //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/08-misc instrs.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
+    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to joypad interrupt?
 
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// CPU instruction timing
 

@@ -229,9 +229,9 @@ impl MemoryBus {
                     self.interrupt_flags = value;
                 }
                 if address == 0xFF50 {
-                    debug!("Boot ROM disable");
+                    info!("Boot ROM disable");
                     self.boot_rom_enabled = false;
-                    panic!("Boot ROM disable");
+                    //panic!("Boot ROM disable");
                     return;
                 }
                 self.dmg_io.as_ref().unwrap().borrow_mut().write(address, value);

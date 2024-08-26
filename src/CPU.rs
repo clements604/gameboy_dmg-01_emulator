@@ -284,7 +284,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         debug!("##################################################");
         //info!("{}", self.memory_bus.borrow().ppu.as_ref().unwrap().borrow());
 
-        self.gameboy_doctor_output_log();
+        //self.gameboy_doctor_output_log();
 
         if !self.halted {
 

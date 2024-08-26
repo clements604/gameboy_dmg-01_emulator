@@ -1200,8 +1200,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     12
                 }
                 0xC2 => {
+                    let nn: u16 = self.read_immediate_short();
                     if !self.registers.f.get_flag(Flag::Z) {
-                        let nn: u16 = self.read_immediate_short();
                         self.op_jp_nn(nn);
                         return 16;
                     }
@@ -1214,8 +1214,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xC4 => {
+                    let nn: u16 = self.read_immediate_short();
                     if !self.registers.f.get_flag(Flag::Z) {
-                        let nn: u16 = self.read_immediate_short();
                         self.op_call_nn(nn);
                         return 24;
                     }

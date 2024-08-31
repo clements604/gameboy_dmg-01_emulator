@@ -355,6 +355,7 @@ impl Ppu {
             debug!("LCD is disabled");
             //self.ly = 0;
             //self.line_ticks = 0;
+            //self.set_ppu_mode(OAM_MODE);
             return;
         }
 
@@ -531,7 +532,7 @@ impl Ppu {
         }
 
         if end - self.start_time >= 1000 {
-            info!("FPS: {}", self.frame_count);
+            debug!("FPS: {}", self.frame_count);
             self.start_time = end;
             self.frame_count = 0;
         }

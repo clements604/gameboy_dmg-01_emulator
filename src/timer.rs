@@ -32,7 +32,7 @@ impl Timer {
         self.cycles += cycles as usize;
         
         let tick_cycles = self.frequency.clone() as usize;
-        
+
         let overflow = if self.cycles > tick_cycles {
             self.cycles = self.cycles % tick_cycles;
             let (value, did_overflow) = self.value.overflowing_add(1);

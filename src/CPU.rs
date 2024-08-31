@@ -1248,7 +1248,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     let nn: u16 = self.read_immediate_short();
                     if self.registers.f.get_flag(Flag::Z) {
                         self.op_jp_nn(nn);
-                        return 12;
+                        return 16;
                     }
                     return 12;
                 }
@@ -3151,6 +3151,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         }
         else if self.check_interrupt(Interrupt::JOYPAD) {
             info!("JOYPAD interrupt");
+            info!("IME: {}", self.memory_bus.borrow().interrupt_master_enable);
+            info!("PC: {:4X}", self.registers.pc);
             self.op_rst_address(0x60);
         }
     }

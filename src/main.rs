@@ -11,8 +11,8 @@ mod dma;
 mod lcd;
 mod timer;
 mod ppu_experiment;
-mod ppu_pipeline;
 mod joypad;
+mod pixel_fifo;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -171,10 +171,13 @@ fn main() {
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
 
+    /*
+     * CPU instructions
+    */
     //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
-    let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
+    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
+    let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
     //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // PASSED
@@ -183,10 +186,29 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to joypad interrupt?
-
+    
+    /*
+    * CPU timing
+     */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// CPU instruction timing
 
+    /*
+     * Graphics
+    */
     //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+    
+    /*
+     * Memory timing
+    */
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/mem_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/01-read_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/02-write_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/03-modify_timing.gb")); // TODO no debug output
+
+    /*
+    * Interrupt timing
+    */
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/interrupts/interrupt_time.gb"));
 
     /*let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
     let mut cpu = CPU::CPU::new(Rc::clone(&memory_bus));

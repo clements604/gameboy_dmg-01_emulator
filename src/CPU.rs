@@ -3176,7 +3176,10 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     }
     fn op_stop(&mut self) {
         error!("op_stop");
-        //self.halted = true;
+        /*
+        https://gbdev.io/pandocs/Timer_and_Divider_Registers.html
+        */
+        self.memory_bus.borrow_mut().write_byte(0xFF04, 0);
     }
     fn op_di(&mut self) {
         debug!("op_di");

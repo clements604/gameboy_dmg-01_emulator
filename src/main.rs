@@ -12,7 +12,6 @@ mod lcd;
 mod timer;
 mod ppu_experiment;
 mod joypad;
-mod pixel_fifo;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -50,6 +49,15 @@ struct Emulator {
 impl Emulator {
     pub fn new(boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
 
+        let boot_rom_enabled = match boot_rom {
+            Some(_) => {
+                true
+            },
+            None => {
+                false
+            },
+        };
+
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
 
 
@@ -81,7 +89,14 @@ impl Emulator {
 
         memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-
+        match boot_rom_enabled {
+            true => {
+                cpu.borrow_mut().registers.pc = 0x0000
+            },
+            false => {
+                cpu.borrow_mut().registers.pc = 0x0100
+            },
+        }
 
 
 
@@ -110,16 +125,16 @@ impl Emulator {
             }
         }
         let cpu_cycles = self.cpu.borrow_mut().cycle();
-        if self.cpu.borrow().registers.pc == 0xCB89 {//0xCB89
-            debug!("{}", self.cpu.borrow().registers);
-            debug!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
+        info!("CPU OP code {}", self.cpu.borrow().registers.pc);
+        if self.cpu.borrow().registers.pc == 0x00FE {//0xCB89
+            info!("{}", self.cpu.borrow().registers);
+            info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
 
         if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
             self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }
-        self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().divider.cycle(cpu_cycles);
 
         self.ppu.borrow_mut().tick(cpu_cycles);
         
@@ -162,8 +177,8 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    let boot_rom = Option::None;
+    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    //let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
@@ -190,7 +205,7 @@ fn main() {
     /*
     * CPU timing
      */
-    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// CPU instruction timing
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// TODO FAILED
 
     /*
      * Graphics

@@ -347,6 +347,22 @@ impl Ppu {
     fn bg_window_enabled(&self) -> bool {
         self.lcdc & 0x01 != 0
     }
+    
+    fn increment_ly(&mut self) {
+        
+        self.ly = self.ly.wrapping_add(1);
+        
+        if self.ly == self.ly_compare {
+            self.stat |= 0x04;
+            // check for stat interrupt
+            if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
+                self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+            }
+        }
+        else {
+            self.stat &= !0x04; // Reset ly coincidence flag
+        }
+    }
 
     pub fn tick(&mut self, cycles: u8) {
         debug!("PPU tick with cycles: {}", cycles);
@@ -363,19 +379,20 @@ impl Ppu {
         debug!("Line ticks: {}", self.line_ticks);
 
         // Handle full line completion (ticks >= 456)
-        /*if self.line_ticks > 456 && self.mode != VBLANK_MODE {
+        if self.line_ticks > 456 && self.mode != VBLANK_MODE {
             self.ly = self.ly.wrapping_add(1);  // Move to the next line
 
             // Handle mode transitions based on the line (LY)
             if self.ly <= 144 {
                 self.line_ticks = 0;
             }
-        }*/
+        }
 
         match self.mode {
             HBLANK_MODE => {
                 if self.line_ticks >= 204 { // 376 - mode 3’s (VRAM_MODE) duration
-                    self.ly = self.ly.wrapping_add(1);
+                    //self.ly = self.ly.wrapping_add(1);
+                    self.increment_ly();
                     if self.ly >= Y_RES {
                         self.mode = VBLANK_MODE;
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
@@ -389,9 +406,10 @@ impl Ppu {
                     self.line_ticks = 0;
                 }
             }
-            VBLANK_MODE => {    
+            VBLANK_MODE => {
                 if self.line_ticks >= TICKS_PER_LINE { // 4560 / 10 scanlines
-                    self.ly = self.ly.wrapping_add(1);
+                    //self.ly = self.ly.wrapping_add(1);
+                    self.increment_ly();
                     if self.ly >= LINES_PER_FRAME {
                         self.mode = OAM_MODE;
                         self.ly = 0;
@@ -416,13 +434,12 @@ impl Ppu {
         }
 
         // Update STAT register bits 0-2
-        let stat_bits_0_2 = if self.ly == self.ly_compare {
-            0b100 | self.mode
-        } else {
-            self.mode
-        };
-        debug!("STAT bits 0-2: {:#X}", stat_bits_0_2);
-        self.stat = (self.stat & 0b11111000) | stat_bits_0_2;
+        let stat_bit_0_to_2: u8 = match self.ly == self.ly_compare {
+            true => 0b100 | self.mode,
+            false => self.mode,
+        } as u8;
+        debug!("STAT bits 0-2: {:#X}", stat_bit_0_to_2);
+        self.stat = (self.stat & 0b11111000) | stat_bit_0_to_2;
         debug!("STAT: {:#X}", self.stat);
     }
 
@@ -452,6 +469,7 @@ impl Ppu {
             0xFF43 => self.scroll_x,
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
+            0xFF47 => self.lcd.borrow().bg_palette,
                 _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
@@ -461,12 +479,16 @@ impl Ppu {
             0xFF41 => self.stat = value,
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
-            0xFF44 => error!("Attempt to write to read-only register: {:#X}", address),
+            0xFF44 => {
+                error!("Attempt to write to read-only register: {:#X}", address);
+                self.ly = value;
+            }
             0xFF45 => self.ly_compare = value,
             0xFF46 => {
                 debug!("DMA transfer start: {:#X}", value);
                 self.lcd.borrow_mut().dma.upgrade().unwrap().borrow_mut().dma_start(value);
             },
+            0xFF47 => self.lcd.borrow_mut().bg_palette = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }

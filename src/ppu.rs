@@ -58,8 +58,8 @@ impl fmt::Display for Ppu {
             Previous Frame Time: {},\
             Start Time: {},\
             Frame Count: {},\
-            LCDC: {:#X},\
-            STAT: {:#X},\
+            LCDC: {:#b},\
+            STAT: {:#b},\
             Scroll X: {},\
             Scroll Y: {}",
             self.ly,
@@ -390,6 +390,9 @@ impl Ppu {
 
         match self.mode {
             HBLANK_MODE => {
+                if self.stat & 0x08 != 0 || self.stat & 0x40 != 0 {
+                    self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                }
                 if self.line_ticks >= 204 { // 376 - mode 3’s (VRAM_MODE) duration
                     //self.ly = self.ly.wrapping_add(1);
                     self.increment_ly();
@@ -407,6 +410,9 @@ impl Ppu {
                 }
             }
             VBLANK_MODE => {
+                if self.stat & 0x10 != 0 || self.stat & 0x40 != 0 {
+                    self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                }
                 if self.line_ticks >= TICKS_PER_LINE { // 4560 / 10 scanlines
                     //self.ly = self.ly.wrapping_add(1);
                     self.increment_ly();
@@ -418,11 +424,17 @@ impl Ppu {
                 }
             }
             OAM_MODE => {
+                if self.stat & 0x20 != 0 || self.stat & 0x40 != 0 {
+                    self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                }
                 if self.line_ticks >= 80 {
                     self.mode = VRAM_MODE;
                 }
             }
             VRAM_MODE => {
+                if self.stat & 0x30 != 0 || self.stat & 0x40 != 0 {
+                    self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                }
                 if self.line_ticks >= 172 { // Between 172 and 289 line_ticks (with conditions).
                     self.mode = HBLANK_MODE;
                     self.update_stat_interrupts();

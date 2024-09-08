@@ -7,10 +7,11 @@ pub(crate) enum TimerFrequency {
 }
 
 pub struct Timer {
-    pub(crate) frequency: TimerFrequency,
-    cycles: usize,
-    pub value: u8,
-    pub modulo: u8,
+    pub frequency: TimerFrequency,
+    pub div: u8,
+    pub tima: u8,
+    pub tma: u8,
+    pub tac: u8,
     pub enabled: bool,
 }
 
@@ -18,9 +19,10 @@ impl Timer {
     pub fn new(frequency: TimerFrequency) -> Timer {
         Timer {
             frequency,
-            cycles: 0,
-            value: 0,
-            modulo: 0,
+            div: 0,
+            tima: 0,
+            tma: 0,
+            tac: 0,
             enabled: false,
         }
     }
@@ -28,26 +30,27 @@ impl Timer {
         if !self.enabled {
             return false;
         }
-        
-        self.cycles += cycles as usize;
-        
-        let tick_cycles = self.frequency.clone() as usize;
 
-        let overflow = if self.cycles > tick_cycles {
-            self.cycles = self.cycles % tick_cycles;
-            let (value, did_overflow) = self.value.overflowing_add(1);
-            self.value = value;
-            did_overflow
-        }
-        else {
-            false
+        self.div = self.div.wrapping_add(cycles);
+        
+        let freq = match self.tac {
+            0b00 => TimerFrequency::Hz4096,
+            0b01 => TimerFrequency::Hz262144,
+            0b10 => TimerFrequency::Hz65536,
+            0b11 => TimerFrequency::Hz16384,
+            _ => panic!("Invalid timer frequency: {:#X}", self.tac),
         };
         
+        let (new_tima, overflow) = self.tima.overflowing_add(freq as u8);
+        
         if overflow {
-            self.value = self.modulo;
+            self.tima = self.tma;
+            return true;
         }
-
-        overflow
-    }
+        
+        self.tima = new_tima;
+        false
+        
+    }     
 
 }

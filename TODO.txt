@@ -1,0 +1,34 @@
+C229, C22D, C2231 are setting interrupt and timers.
+
+Halted howto at 21:33, part 9
+
+0x2A, 0xF0
+
+Wokring on loading boot rom properly
+Does the boot rom need to be mutable?
+
+Working on test 07.
+Output is there but never finishes.
+
+//0xC73A is incorrect and sets the AF register to 0x0000, what is expected is 0x8700
+CPU instruction 0xFE is incorrect, compare a,90 for test rom 07.
+A:FF F:00 B:FB C:1F D:D0 E:00 H:CB L:8F SP:DFF3 PC:C738 PCMEM:F0,44,FE,90
+A:00 F:00 B:FB C:1F D:D0 E:00 H:CB L:8F SP:DFF3 PC:C73A PCMEM:FE,90,20,F5
+
+//0xC24C CORRECT UNTIL HERE
+
+Issue appears to be that 0xC73A sets the AF register to the value stored at memory address 0xFF44, which is the PPU's LY register, which is not implemented as of yet.
+
+0xFF44 is not set at the time of rom load, so whatever instruction is supposed to load that value, isn't.
+0xFF44 is loaded some time before 0xC24C is executed.
+0x0206 loads the A register with the value stored at the memory address (HL) and increments HL by 1
+
+
+Suspected instructions:
+0x2A
+0x12
+0x1C
+0x20
+
+##########  TODO  ##########
+Put PPU in IO, have the memory bus calls to 0xFF44 return the value of the PPU's LY register.

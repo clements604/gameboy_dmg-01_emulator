@@ -141,14 +141,14 @@ impl Display /*<'a>*/ {
             .unwrap();
 
         let debug_renderer = debug_window.into_canvas().build().unwrap();
-
+        
         let debug_screen = sdl2::surface::Surface::new(
             (16 * 8 * SCALE_FACTOR) + (16 * SCALE_FACTOR),
             (32 * 8 * SCALE_FACTOR) + (64 * SCALE_FACTOR),
             sdl2::pixels::PixelFormatEnum::ARGB8888,
         )
-            .unwrap();
-
+        .unwrap();
+        
 
         Display {
             memory_bus: memory_bus,
@@ -264,10 +264,10 @@ impl Display /*<'a>*/ {
                         for bit in (0..=7).rev() {
                             let hi = (b1 & (1 << bit)) >> bit << 1;
                             let lo = (b2 & (1 << bit)) >> bit;
-                            //debug!("hi: {:X}, lo: {:X}", hi, lo);
+                                                          //debug!("hi: {:X}, lo: {:X}", hi, lo);
                             let colour = hi | lo;
                             let rgb_color = match colour {
-
+                                
                                 0 => Color::RGB(255, 255, 255), // White
                                 1 => Color::RGB(192, 192, 192), // Light Gray
                                 2 => Color::RGB(96, 96, 96),    // Dark Gray
@@ -327,7 +327,7 @@ impl Display /*<'a>*/ {
             //self.debug_renderer.as_mut().present();
         }
     }
-
+    
     pub fn get_ticks(&self) -> u32 {
         // Get number of ticks for the main window
         self.sdl_context.timer().unwrap().ticks()
@@ -336,7 +336,7 @@ impl Display /*<'a>*/ {
         self.sdl_context.timer().unwrap().delay(ms);
     }
 
-
+    
 }
 #[cfg(test)]
 mod tests {

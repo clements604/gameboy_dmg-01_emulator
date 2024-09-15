@@ -8,7 +8,7 @@ pub(crate) enum TimerFrequency {
 
 pub struct Timer {
     pub frequency: TimerFrequency,
-    pub div: u8,
+    pub div: u16,
     pub tima: u8,
     pub tma: u8,
     pub tac: u8,
@@ -19,7 +19,7 @@ impl Timer {
     pub fn new(frequency: TimerFrequency) -> Timer {
         Timer {
             frequency,
-            div: 0,
+            div: 0xAC00,
             tima: 0,
             tma: 0,
             tac: 0,
@@ -31,8 +31,8 @@ impl Timer {
             return false;
         }
 
-        self.div = self.div.wrapping_add(cycles);
-        
+        self.div = self.div.wrapping_add(cycles as u16);
+
         let freq = match self.tac {
             0b00 => TimerFrequency::Hz4096,
             0b01 => TimerFrequency::Hz262144,
@@ -40,17 +40,17 @@ impl Timer {
             0b11 => TimerFrequency::Hz16384,
             _ => panic!("Invalid timer frequency: {:#X}", self.tac),
         };
-        
+
         let (new_tima, overflow) = self.tima.overflowing_add(freq as u8);
-        
+
         if overflow {
             self.tima = self.tma;
             return true;
         }
-        
+
         self.tima = new_tima;
         false
-        
-    }     
+
+    }
 
 }

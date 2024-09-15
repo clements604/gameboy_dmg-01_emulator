@@ -18,16 +18,12 @@ pub struct IO {
     cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<Ppu>>,
     joypad: joypad::Joypad,
-    pub(crate) timer: Timer,
-    pub(crate) divider: Timer,
+    pub timer: Timer,
 }
 
 impl IO {
     pub fn new(/*dma: Rc<RefCell<Dma>>, */cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>, ppu: Rc<RefCell<Ppu>>) -> IO {
 
-        let mut divider: Timer = Timer::new(TimerFrequency::Hz16384);//TODO why have four variants if this is a constant?
-        divider.enabled = true;
-        
         IO {
             io_registers: [0; IO_REGISTERS_SIZE],
             serial_data: ['\0'; 2],
@@ -38,7 +34,6 @@ impl IO {
             joypad: joypad::Joypad::new(),
             //timer: Timer::new(cpu.clone()),
             timer: Timer::new(timer::TimerFrequency::Hz4096),//TODO why have four variants if this is a constant?
-            divider,
         }
     }
 
@@ -56,8 +51,17 @@ impl IO {
                 self.serial_data[1] as u8
             },
             0xFF04 => {
-                self.divider.value
+                self.timer.div as u8
             },
+            0xFF05 => {
+                self.timer.tima
+            },
+            0xFF06 => {
+                self.timer.tma
+            },
+            0xFF07 => {
+                panic!("Tac register read")
+            }
             0xFF40..=0xFF46 => {
                 self.ppu.as_ref().borrow().read(address)
             },
@@ -83,22 +87,22 @@ impl IO {
                 self.serial_data[1] = value as char;
             },
             0xFF04 => {
-                self.divider.value = 0;
+                self.timer.div = 0;
             },
             0xFF05 => {
-                self.timer.value = value;
+                self.timer.tima = value;
             },
             0xFF06 => {
-                self.timer.modulo = value;
+                self.timer.tma = value;
             },
             0xFF07 => {
-                self.timer.frequency = match value { 
+                self.timer.frequency = match value & 0b11 {
                     0b00 => TimerFrequency::Hz4096,
                     0b11 => TimerFrequency::Hz16384,
                     0b10 => TimerFrequency::Hz65536,
                     0b01 => TimerFrequency::Hz262144,
-                    _ => TimerFrequency::Hz262144,
-                    //_ => panic!("Invalid timer frequency: {:#X}", value),
+                    //_ => TimerFrequency::Hz262144,
+                    _ => panic!("Invalid timer frequency: {:#X}", value),
                 };
                 self.timer.enabled = (value & 0b100) == 0b100;
             }

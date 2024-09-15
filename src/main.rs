@@ -73,8 +73,9 @@ impl Emulator {
 
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
-
+        
         let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+        
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
         let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
@@ -125,10 +126,10 @@ impl Emulator {
             }
         }
         let cpu_cycles = self.cpu.borrow_mut().cycle();
-        info!("CPU OP code {}", self.cpu.borrow().registers.pc);
-        if self.cpu.borrow().registers.pc == 0x00FE {//0xCB89
-            info!("{}", self.cpu.borrow().registers);
-            info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
+
+        if self.cpu.borrow().registers.pc == 0xC384 {//0xCB89
+            debug!("{}", self.cpu.borrow().registers);
+            debug!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
 
@@ -192,7 +193,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
-    let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
+    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
     //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // PASSED
@@ -210,7 +211,7 @@ fn main() {
     /*
      * Graphics
     */
-    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
     
     /*
      * Memory timing

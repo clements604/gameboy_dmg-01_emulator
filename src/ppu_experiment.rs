@@ -1,646 +1,227 @@
 use std::cell::RefCell;
-use crate::interupts;
-use crate::interupts::Interrupt;
-use crate::CPU::{Flag, FlagsRegister, CPU};
-use log::{debug, error, info};
-use std::fmt;
 use std::rc::Rc;
-use crate::display::Display;
-use crate::lcd::LCD;
 use crate::memory_bus::MemoryBus;
 
-const TILE_START: u16 = 0x8000;
-const TILE_END: u16 = 0x97FF;
+const WIDTH: usize = 256;
+const HEIGHT: usize = 256;
 
-const OAM_MODE: u8 = 2;
-const VRAM_MODE: u8 = 3;
-const HBLANK_MODE: u8 = 0;
-const VBLANK_MODE: u8 = 1;
-const LINES_PER_FRAME: u8 = 153;
-const TICKS_PER_LINE: u16 = 456;
-const Y_RES: u8 = 144;
-const X_RES: u8 = 160;
-const TARGET_FRAME_TIME : u32 = 1000 / 60; // 60 FPS
+pub const SCREEN_WIDTH: usize = 160;
+pub const SCREEN_HEIGHT: usize = 144;
+//pub const SCREEN_WIDTH: usize = 256;
+//pub const SCREEN_HEIGHT: usize = 256;
 
-pub struct Ppu {
-    oam_ram: [u8; 0xA0],
-    pub vram: [u8; 0x2000],
-    //pub ly: u8, // LY register
-    //pub lyc: u8,
-    pub mode: u8,
-    line_ticks: u16,
-    pub current_frame: u32,
-    previous_frame_time: u32,
-    start_time: u32,
-    frame_count: u16,
-    cpu: Rc<RefCell<CPU>>,
-    lcd: Rc<RefCell<LCD>>,
-    display: Rc<RefCell<Display>>,
+pub const DARKEST_GREEN: u32 = 0xFF0F380F;
+pub const DARK_GREEN: u32 = 0xFF306230;
+pub const LIGHT_GREEN: u32 = 0xFF8BAC0F;
+pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
 
-    pub lcdc: u8,
-    pub stat: u8,
-    pub scroll_x: u8,
-    pub scroll_y: u8,
-    pub ly: u8,
-    pub ly_compare: u8,
+pub struct PPU {
+    mode: u8,
+    mode_clock: usize,
+    background_buffer: Vec<u32>,
+    viewport: Vec<u32>,
 }
 
-//Display for Ppu
-impl fmt::Display for Ppu {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "LY: {},\
-            LYC: {},\
-            Mode: {},\
-            Line Ticks: {},\
-            Current Frame: {},\
-            Previous Frame Time: {},\
-            Start Time: {},\
-            Frame Count: {},\
-            LCDC: {:#X},\
-            STAT: {:#X},\
-            Scroll X: {},\
-            Scroll Y: {}",
-            self.ly,
-            self.ly_compare,
-            self.mode,
-            self.line_ticks,
-            self.current_frame,
-            self.previous_frame_time,
-            self.start_time,
-            self.frame_count,
-            self.lcdc,
-            self.stat,
-            self.scroll_x,
-            self.scroll_y
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct OamEntry {
-    y: u8,
-    x: u8,
-    tile_number: u8,
-    flags: OAMFlags,
-    //TODO make each flag its own bit variable
-
-    /*
-    FLAGS:
-        Bit 7 - Priority: 0 = No, 1 = BG and Window colors 1–3 are drawn over this OBJ
-        Bit 6 - Y flip: 0 = Normal, 1 = Entire OBJ is vertically mirrored
-        Bit 5 - X flip: 0 = Normal, 1 = Entire OBJ is horizontally mirrored
-        Bit 4 - DMG palette [Non CGB Mode only]: 0 = OBP0, 1 = OBP1
-        Bit 3 - Bank [CGB Mode Only]: 0 = Fetch tile from VRAM bank 0, 1 = Fetch tile from VRAM bank 1
-        Bits 2,1,0 - CGB palette [CGB Mode Only]: Which of OBP0–7 to use
-     */
-}
-
-enum StatInterrupt {
-    LYC = 0x40,
-    OAM = 0x20,
-    VBLANK = 0x10,
-    HBLANK = 0x08,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum OamFlag {
-    PRIORITY,
-    Y_FLIP,
-    X_FLIP,
-    DMG_PALETTE,
-    BANK,
-    CGB_PALETTE,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct OAMFlags {
-    priority: bool,
-    y_flip: bool,
-    x_flip: bool,
-    dmg_palette: bool,
-    bank: bool,
-    cgb_palette: u8,
-}
-
-impl fmt::Display for OAMFlags {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Priority: {}, Y Flip: {}, X Flip: {}, DMG Palette: {}, Bank: {}, CGB Palette: {}",
-            if self.priority { "1" } else { "0" },
-            if self.y_flip { "1" } else { "0" },
-            if self.x_flip { "1" } else { "0" },
-            if self.dmg_palette { "1" } else { "0" },
-            if self.bank { "1" } else { "0" },
-            self.cgb_palette
-        )
-    }
-}
-
-impl std::convert::From<OAMFlags> for u8 {
-    fn from(flag: OAMFlags) -> u8 {
-        (if flag.priority { 1 } else { 0 } << 7)
-            | (if flag.y_flip { 1 } else { 0 } << 6)
-            | (if flag.x_flip { 1 } else { 0 } << 5)
-            | (if flag.dmg_palette { 1 } else { 0 } << 4)
-            | (if flag.bank { 1 } else { 0 } << 3)
-            | flag.cgb_palette
-    }
-}
-
-impl std::convert::From<u8> for OAMFlags {
-    fn from(byte: u8) -> Self {
-        let priority = byte & 0b1000_0000 != 0;
-        let y_flip = byte & 0b0100_0000 != 0;
-        let x_flip = byte & 0b0010_0000 != 0;
-        let dmg_palette = byte & 0b0001_0000 != 0;
-        let bank = byte & 0b0000_1000 != 0;
-        let cgb_palette = byte & 0b0000_0111;
-        OAMFlags {
-            priority,
-            y_flip,
-            x_flip,
-            dmg_palette,
-            bank,
-            cgb_palette,
-        }
-    }
-}
-impl OAMFlags {
-    pub fn new() -> Self {
-        OAMFlags {
-            priority: false,
-            y_flip: false,
-            x_flip: false,
-            dmg_palette: false,
-            bank: false,
-            cgb_palette: 0,
-        }
-    }
-
-    pub fn get_flag(&self, flag: OamFlag) -> bool {
-        match flag {
-            OamFlag::PRIORITY => self.priority,
-            OamFlag::Y_FLIP => self.y_flip,
-            OamFlag::X_FLIP => self.x_flip,
-            OamFlag::DMG_PALETTE => self.dmg_palette,
-            OamFlag::BANK => self.bank,
-            OamFlag::CGB_PALETTE => self.cgb_palette != 0,
-        }
-    }
-
-    pub fn set_flag(&mut self, flag: OamFlag, value: bool) {
-        match flag {
-            OamFlag::PRIORITY => self.priority = value,
-            OamFlag::Y_FLIP => self.y_flip = value,
-            OamFlag::X_FLIP => self.x_flip = value,
-            OamFlag::DMG_PALETTE => self.dmg_palette = value,
-            OamFlag::BANK => self.bank = value,
-            OamFlag::CGB_PALETTE => self.cgb_palette = value as u8,
-        }
-    }
-}
-
-impl OamEntry {
-    pub fn new() -> OamEntry {
-        OamEntry {
-            y: 0,
-            x: 0,
-            tile_number: 0,
-            flags: OAMFlags::from(0),
-        }
-    }
-
-}
-impl Ppu {
-    pub fn new(cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>, display: Rc<RefCell<Display>>) -> Ppu {
-        Ppu {
-            oam_ram: [0; 0xA0],
-            vram: [0x0000; 0x2000],
-            //ly: 0,
-            //lyc: 0,
-            mode: 2,
-            line_ticks: 0,
-            current_frame: 0,
-            previous_frame_time: 0,
-            start_time: 0,
-            frame_count: 0,
-            cpu,
-            lcd,
-            display,
-            lcdc: 0x91,
-            stat: 0,
-            scroll_x: 0,
-            scroll_y: 0,
-            ly: 0,
-            ly_compare: 0,
-        }
-    }
-    fn is_bgw_enabled(&self) -> bool {
-        self.lcdc & 0x01 != 0
-    }
-
-    fn is_obj_enabled(&self) -> bool {
-        self.lcdc & 0x02 != 0
-    }
-
-    fn get_object_height(&self) -> u8 {
-        if self.lcdc & 0x04 != 0 {
-            16
-        } else {
-            8
-        }
-    }
-
-    fn get_bg_map_area(&self) -> u16 {
-        if self.lcdc & 0x08 != 0 {
-            0x9C00
-        } else {
-            0x9800
-        }
-    }
-
-    fn get_tile_data_area(&self) -> u16 {
-        if self.lcdc & 0x10 != 0 {
-            0x8000
-        } else {
-            0x8800
-        }
-    }
-
-    fn is_window_enabled(&self) -> bool {
-        self.lcdc & 0x20 != 0
-    }
-
-    fn get_window_map_area(&self) -> u16 {
-        if self.lcdc & 0x40 != 0 {
-            0x9C00
-        } else {
-            0x9800
-        }
-    }
-    fn is_lcd_enabled(&self) -> bool {
-        self.lcdc & 0x80 != 0
-    }
-
-    fn set_mode(&mut self, mode: u8) {
-        self.mode = mode;
-        self.stat = (self.stat & 0xFC) | mode;//TODO maybe not correct?
-    }
-
-    fn increment_ly(&mut self) {
-
-        self.ly += 1;
-
-        if self.ly > 154 {
-            self.ly = 0; // Prepare for the next frame
-        }
-
-        if self.ly == self.ly_compare {
-            // set lyc bit
-            self.stat |= 0x04;
-            if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
-                self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-            }
-        }
-        else {
-            // clear lyc bit
-            self.stat &= !0x04;
-        }
-    }
-    pub fn tick(&mut self, cycles: u8) {
-
-        if !self.is_lcd_enabled() {
-            debug!("LCD is disabled");
-            self.ly = 0;
-            self.set_mode(HBLANK_MODE);
-            //self.mode = HBLANK_MODE;//TODO maybe not correct?
-            return;
-        }
-
-        //debug!("Line ticks: {}", self.line_ticks);
-        self.line_ticks += cycles as u16;
-        //debug!("Line ticks + cycles: {}", self.line_ticks);
-
-        if self.line_ticks > TICKS_PER_LINE && self.mode != VBLANK_MODE {
-            self.ly = self.ly.wrapping_add(1);
-            if self.ly <= 144 {
-                self.line_ticks = 0;
-            }
-        }
-
-        match self.line_ticks {
-            0..=80 => {
-                self.set_mode(OAM_MODE);
-            }
-            81..=251 => {
-                self.set_mode(VRAM_MODE);
-            }
-            252..=455 => {
-                self.set_mode(HBLANK_MODE);
-            },
-            456..=4559 => {
-                self.set_mode(VBLANK_MODE);
-            },
-            4560.. => {
-                self.set_mode(OAM_MODE);
-                self.line_ticks = 0;
-                if self.ly > 154 {
-                    self.ly = 0;
-                }
-            },
-            _ => {
-                panic!("Invalid line ticks: {}", self.line_ticks);
-            }
-        }
-
-        let stat_bit_0_to_2: u8 = match self.ly == self.ly_compare {
-            true => 0b100 | self.mode,
-            false => self.mode,
+impl PPU {
+    pub fn new() -> PPU {
+        let ppu = PPU {
+            mode: 0,
+            background_buffer: vec![LIGHTEST_GREEN; WIDTH * HEIGHT],
+            mode_clock: 0,
+            viewport: vec![LIGHTEST_GREEN; SCREEN_WIDTH * SCREEN_HEIGHT],
         };
+        ppu
+    }
 
-        self.stat &= 0b11111000;
-        self.stat = (self.stat & 0xF8) | stat_bit_0_to_2;
+    pub fn get_lcdc(&self, mmu: &MemoryBus) -> u8 {
+        mmu.read_byte(0xFF40)
+    }
 
-        if self.mode == OAM_MODE {
+    pub fn get_bgp(&self, mmu: &MemoryBus) -> u8 {
+        mmu.read_byte(0xFF47)
+    }
 
+    pub fn get_scy(&self, mmu: &MemoryBus) -> u8 {
+        mmu.read_byte(0xFF42)
+    }
+
+    pub fn get_scx(&self, mmu: &MemoryBus) -> u8 {
+        mmu.read_byte(0xFF43)
+    }
+
+    pub fn get_ly(&self, mmu: &MemoryBus) -> u8 {
+        mmu.read_byte(0xFF44)
+    }
+
+    pub fn get_lyc(&self, mmu: &MemoryBus) -> u8 {
+        mmu.read_byte(0xFF45)
+    }
+
+    pub fn get_viewport(&self) -> &Vec<u32> {
+        &self.viewport
+    }
+
+    pub fn is_lcd_enable(&self, mmu: &MemoryBus) -> bool {
+        (self.get_lcdc(mmu) & 0b1000_0000) != 0
+    }
+
+    pub fn get_tile_set(&self, mmu: &MemoryBus) -> [[u8; 16]; 256] {
+        // @TODO check LCDC
+        let mut tile_set = [[0; 16]; 256];
+
+        for i in 0..256 {
+            tile_set[i] = self.get_tile(&mmu, (0x8000 + (i * 16)) as u16);
         }
+        tile_set
+    }
 
-        /*match self.mode {
-            HBLANK_MODE => { // H-Blank
-                if self.line_ticks >= 204 {
-                    self.line_ticks = 0;
-                    //self.increment_ly();
-                    self.ly += 1;
-                    
-                    if self.ly == Y_RES - 1 {
-                        self.set_mode(VBLANK_MODE);
-                        //self.display.borrow_mut().render();
-                        //TODO render scanline here
-                        //self.trigger_interrupt(Interrupt::VBLANK);
+    pub fn get_tile_map(&self, mmu: &MemoryBus) -> [u8; 1_024] {
+        let mut tile_map: [u8; 1024] = [0; 1_024];
+
+        for i in 0..1_024 {
+            tile_map[i] = mmu.read_byte((0x9800 + i) as u16);
+        }
+        tile_map
+    }
+
+    pub fn get_tile(&self, mmu: &MemoryBus, first_tile_byte_addr: u16) -> [u8; 16] {
+        let mut tile = [0; 16];
+        for i in 0..16 {
+            tile[i] = mmu.read_byte(first_tile_byte_addr + i as u16);
+        }
+        tile
+    }
+
+    pub fn transform_background_buffer_into_screen(&mut self, mmu: &MemoryBus) {
+        let scx = self.get_scx(mmu) as usize;
+        let scy = self.get_scy(mmu) as usize;
+        //        let scx = 0;
+        //        let scy = 70;
+
+        self.viewport = self
+            .background_buffer
+            .iter()
+            .enumerate()
+            .filter(|(m, _)| {
+                let line = m / WIDTH;
+                let column = m % WIDTH;
+                line >= scy && line < (scy + 144) && column >= scx && column < (scx + 160)
+            })
+            .map(|(_, minifb_tile)| *minifb_tile)
+            .collect();
+    }
+
+    pub fn populate_background_buffer(&mut self, mmu: &MemoryBus) {
+        // get the tile set
+        let tile_set = self.get_tile_set(mmu);
+        // get the tile map
+        let tile_map = self.get_tile_map(mmu);
+        // populate the background_buffer accordingly to tile_map AND tranform tile to minifb tile
+        // in the process
+        for (t, tile_map_item) in tile_map.iter().enumerate() {
+            let tile = tile_set[*tile_map_item as usize];
+            let minifb_tile = self.transform_tile_to_minifb_tile(mmu, tile);
+            for (i, pixel) in minifb_tile.iter().enumerate() {
+                let h_offset = (i % 8) + ((t % 32) * 8);
+                let v_offset = ((i / 8) + (t / 32) * 8) * WIDTH;
+                self.background_buffer[h_offset + v_offset] = *pixel;
+            }
+        }
+    }
+
+    pub fn get_background_buffer(&self) -> &Vec<u32> {
+        &self.background_buffer
+    }
+
+    pub fn transform_pair_into_bgp_palette(&self, mmu: &MemoryBus, pixel_pair: u8) -> u8 {
+        let bgp_palette = self.get_bgp(&mmu);
+        //        println!("bgp_palette: {:?}", bgp_palette);
+        match pixel_pair {
+            0b00 => bgp_palette & 0b0000_0011,
+            0b01 => (bgp_palette & 0b0000_1100) >> 2,
+            0b10 => (bgp_palette & 0b0011_0000) >> 4,
+            0b11 => (bgp_palette & 0b1100_0000) >> 4,
+            _ => bgp_palette & 0b0000_0011,
+        }
+    }
+
+    pub fn transform_from_bgp_to_minifb_color(&self, bgp_palette: u8) -> u32 {
+        match bgp_palette {
+            0b00 => LIGHTEST_GREEN,
+            0b01 => LIGHT_GREEN,
+            0b10 => DARK_GREEN,
+            0b11 => DARKEST_GREEN,
+            _ => LIGHTEST_GREEN,
+        }
+    }
+
+    pub fn transform_tile_to_minifb_tile(&self, mmu: &MemoryBus, tile: [u8; 16]) -> Vec<u32> {
+        let mut minifb_tile = vec![0; 64];
+        for i in (0..tile.len()).step_by(2) {
+            let pixel_part_1 = tile[i];
+            let pixel_part_2 = tile[i + 1];
+            for j in 0..8 {
+                let bit_part_1 = pixel_part_1 & (1 << j) != 0;
+                let bit_part_2 = pixel_part_2 & (1 << j) != 0;
+                let pair = ((bit_part_1 as u8) << 1) | (bit_part_2 as u8);
+                // TRANSFORM THIS PAIR INTO BGP PALETTE
+                let bgp_palette = self.transform_pair_into_bgp_palette(&mmu, pair);
+                // TRANSFORM INTO MINIFB COLOR
+                let minifb = self.transform_from_bgp_to_minifb_color(bgp_palette);
+
+                //                minifb_tile[i / 2][7 - j] = minifb;
+                minifb_tile[(i / 2 * 8) + (7 - j) as usize] = minifb;
+            }
+        }
+        minifb_tile
+    }
+
+    pub fn step(&mut self, cpu_clocks_passed: usize, mmu: Rc<RefCell<MemoryBus>>) {
+        let lcdc: u8 = mmu.borrow().read_byte(0xFF40);
+        let is_lcd_enable = (lcdc & 0b1000_0000) != 0;
+        if is_lcd_enable {
+            // increment our internal clock
+            self.mode_clock += cpu_clocks_passed;
+            // check which mode we are
+            let mut ly: u8 = mmu.borrow().read_byte(0xFF44);
+            if self.mode_clock > 456 && self.mode != 1 {
+                // this happen on HBLANK
+                ly = ly.wrapping_add(1);
+                mmu.borrow_mut().write_byte(0xFF44, ly);
+                if ly <= 144 {
+                    self.mode_clock = 0;
+                }
+            }
+
+            match self.mode_clock {
+                t if t <= 80 => self.mode = 2,
+                t if t <= 252 => self.mode = 3,
+                t if t <= 456 => self.mode = 0,
+                t if t <= 4560 => self.mode = 1,
+                t if t > 4560 => {
+                    self.mode = 2;
+                    self.mode_clock = 0;
+                    if ly > 154 {
+                        mmu.borrow_mut().write_byte(0xFF44, 0);
                     }
-                    else {
-                        self.set_mode(OAM_MODE);
-                    }
                 }
-            },
-            VBLANK_MODE => { // V-Blank
-                if self.line_ticks >= 456 {
-                    self.line_ticks = 0;
-                    //self.increment_ly();
-                    self.ly += 1;
-                    
-                    if self.ly > 153 {
-                        self.set_mode(OAM_MODE);
-                        self.current_frame += 1;
-                        self.ly = 0;
-                        self.calculate_fps();
-                    }
-                }
-            },
-            OAM_MODE => { // OAM Search
-                if self.line_ticks >= 80 {
-                    self.line_ticks = 0;
-                    self.set_mode(VRAM_MODE);
-                }
-            },
-            VRAM_MODE => { // VRAM Transfer
-               if self.line_ticks >= 172 {
-                    self.line_ticks = 0;
-                    self.set_mode(HBLANK_MODE);
-                   
-                   //TODO render scanline here
-                }
-            },
-            _ => panic!("Unknown PPU mode: {}", self.mode),
-        }*/
-    }
-
-    fn update_stat_interrupts(&mut self) {
-        let lcd = self.lcd.borrow();
-        let lyc_ly_coincidence = self.ly == self.ly_compare;
-        if lyc_ly_coincidence {
-            self.stat |= 0x04; // Set coincidence flag
-        } else {
-            self.stat &= !0x04; // Clear coincidence flag
-        }
-
-        if (self.stat & 0x40 != 0 && lyc_ly_coincidence) || // LYC=LY interrupt
-            (self.stat & 0x20 != 0 && self.mode == 2) || // OAM interrupt
-            (self.stat & 0x10 != 0 && self.mode == 1) || // V-Blank interrupt
-            (self.stat & 0x08 != 0 && self.mode == 0) { // H-Blank interrupt
-            self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-        }
-
-    }
-
-    pub fn read(&self, address: u16) -> u8 {
-        match address {
-            0xFF40 => self.lcdc,
-            //0xFF41 => self.stat,
-            0xFF41 => {
-                0b10000000
-                    | if self.is_stat_interrupt_enabled(StatInterrupt::LYC) { 1 } else { 0 }  << 6
-                    | if self.is_stat_interrupt_enabled(StatInterrupt::OAM) { 1 } else { 0 } << 5
-                    | if self.is_stat_interrupt_enabled(StatInterrupt::VBLANK) { 1 } else { 0 } << 4
-                    | if self.is_stat_interrupt_enabled(StatInterrupt::HBLANK) { 1 } else { 0 } << 3
-                    | if self.ly == self.ly_compare { 1 } else { 0 } << 2
-                    | self.mode
-            },
-            0xFF42 => self.scroll_y,
-            0xFF43 => self.scroll_x,
-            0xFF44 => self.ly,
-            0xFF45 => self.ly_compare,
-            0xFF47 => self.lcd.borrow().bg_palette,
-            0xFF48 => self.lcd.borrow().obj_palette[0],
-            0xFF49 => self.lcd.borrow().obj_palette[1],
-            0xFF4A => self.lcd.borrow().window_y,
-            0xFF4B => self.lcd.borrow().window_x,
-            _ => panic!("Invalid LCD address: {:#X}", address),
-        }
-    }
-    pub fn write(&mut self, address: u16, value: u8) {
-        match address {
-            0xFF40 => self.lcdc = value,
-            0xFF41 => self.stat = value,
-            0xFF42 => self.scroll_y = value,
-            0xFF43 => self.scroll_x = value,
-            0xFF44 => self.ly = value,
-            0xFF45 => self.ly_compare = value,
-            0xFF46 => {
-                //debug!("DMA transfer start: {:#X}", value);
-                self.lcd.borrow_mut().dma.upgrade().unwrap().borrow_mut().dma_start(value);
+                _ => panic!("Not handled mode_clock"),
             }
-            0xFF47 => self.lcd.borrow_mut().update_palette(value, 0),
-            0xFF48 => self.lcd.borrow_mut().update_palette(value & 0b11111100, 1),
-            0xFF49 => self.lcd.borrow_mut().update_palette(value & 0b11111100, 2),
-            0xFF4A => self.lcd.borrow_mut().window_y = value,
-            0xFF4B => self.lcd.borrow_mut().window_x = value,
-            _ => panic!("Invalid LCD address: {:#X}", address),
+
+            // change the appropriated PPU register (LY, LYC, STAT)
+            // @TODO Check LYC behavior
+            let lyc = mmu.borrow().read_byte(0xFF45);
+            let stat_bit_0_to_2: u8 = match ly == lyc {
+                true => 0b100 | self.mode,
+                false => self.mode,
+            } as u8;
+            let mut current_stat = mmu.borrow().read_byte(0xFF41);
+            current_stat = current_stat & 0b11111000;
+            current_stat = current_stat | stat_bit_0_to_2;
+            // set STAT register
+            mmu.borrow_mut().write_byte(0xFF41, current_stat);
+            //            println!("{:?}", self.get_scy(mmu));
+
         }
     }
-
-    fn is_stat_interrupt_enabled(&self, interrupt: StatInterrupt) -> bool {
-        match interrupt {
-            StatInterrupt::LYC => self.stat & 0x40 != 0,
-            StatInterrupt::OAM => self.stat & 0x20 != 0,
-            StatInterrupt::VBLANK => self.stat & 0x10 != 0,
-            StatInterrupt::HBLANK => self.stat & 0x08 != 0,
-        }
-    }
-
-    pub fn oam_read(&self, address: u16) -> u8 {
-        //debug!("OAM read at address: {:#X}", address);
-        /*if address < 0xFE00 || address >= 0xFEA0 {
-            panic!("Attempt to read from invalid OAM address: {:#X}", address);
-        }*/
-        self.oam_ram[(address) as usize]
-    }
-
-    pub fn oam_write(&mut self, address: u16, value: u8) {
-        //debug!("OAM write at address: {:#X}", address);
-        /*if address < 0xFE00 || address >= 0xFEA0 {
-            panic!("Attempt to write to invalid OAM address: {:#X}", address);
-        }*/
-        self.oam_ram[(address) as usize] = value;
-        //debug!("OAM data: {:?}", self.oam_ram);
-    }
-
-    pub fn vram_read(&self, address: u16) -> u8 {
-        //debug!("VRAM read at address: {:#X}", address);
-        self.vram[(address - 0x8000) as usize]
-    }
-
-    pub fn vram_write(&mut self, address: u16, value: u8) {
-        //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
-        self.vram[(address - 0x8000) as usize] = value;
-        //debug!("VRAM data: {:?}", self.vram);
-    }
-
-    fn trigger_interrupt(&mut self, interrupt: interupts::Interrupt) {
-        //debug!("Triggering interrupt: {:?}", interrupt);
-        match interrupt {
-            interupts::Interrupt::VBLANK => {
-                self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::VBLANK);
-            }
-            interupts::Interrupt::LCDSTAT => {
-                self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::LCDSTAT);
-            }
-            _ => {
-                panic!("Invalid interrupt: {:?}", interrupt);
-            }
-        }
-    }
-
-    fn calculate_fps(&mut self) {
-        let end = self.display.borrow().get_ticks();
-        let frame_time = end - self.previous_frame_time;
-
-        if frame_time < TARGET_FRAME_TIME {
-            self.display.borrow().delay(TARGET_FRAME_TIME - frame_time);
-        }
-
-        if end - self.start_time >= 1000 {
-            //debug!("FPS: {}", self.frame_count);
-            self.start_time = end;
-            self.frame_count = 0;
-        }
-
-        self.frame_count += 1;
-        self.previous_frame_time = self.display.borrow().get_ticks();
-    }
-
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{memory_bus, rom};
-
-    /*#[test]
-    fn test_hblank_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 0;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-
-        ppu.step(&mut cpu, 203);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_vblank_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 1;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-        ppu.step(&mut cpu, 455);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_oam_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 2;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-        ppu.step(&mut cpu, 79);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_lcd_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 3;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-        ppu.step(&mut cpu, 171);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_lyc_ly_interrupt() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        // Case 1: LY matches LYC, interrupt should trigger
-        ppu.ly = 100;
-        ppu.lyc = 100;
-        ppu.stat = 0x40; // LYC=LY interrupt enabled
-        ppu.mode = 0; // H-Blank mode
-        ppu.step(&mut cpu, 204); // Simulate step to the end of H-Blank
-        assert_eq!(ppu.stat & 0x04, 0x04); // Coincidence flag set
-                                           // Ensure interrupt was triggered (additional logic needed for full test)
-
-        // Reset PPU state
-        ppu.ly = 0;
-        ppu.lyc = 0;
-        ppu.stat = 0;
-        ppu.mode = 0;
-        ppu.cycles = 0;
-
-        // Case 2: LY does not match LYC, interrupt should not trigger
-        ppu.ly = 100;
-        ppu.lyc = 101;
-        ppu.stat = 0x40; // LYC=LY interrupt enabled
-        ppu.mode = 0; // H-Blank mode
-        ppu.step(&mut cpu, 204); // Simulate step to the end of H-Blank
-        assert_eq!(ppu.stat & 0x04, 0x00); // Coincidence flag not set
-                                           // Ensure interrupt was not triggered (additional logic needed for full test)
-    }*/
 }

@@ -267,51 +267,22 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         }
     }
 
-    /*fn debug_print_tile_data(&mut self) {
-        let tile_data = &self.work_ram[TILE_RAM_START as usize..=TILE_RAM_END as usize];
-        for (i, byte) in tile_data.iter().enumerate() {
-            if i % 16 == 0 {
-                println!();
-            }
-            print!("{:02X} ", byte);
-        }
-    }*/
-
     /*
      *   CPU cycle - fetch, decode, execute
      */
     pub fn cycle(&mut self) -> u8 {
         debug!("##################################################");
-        //info!("{}", self.memory_bus.borrow().ppu.as_ref().unwrap().borrow());
 
         //self.gameboy_doctor_output_log();
 
         if !self.halted {
 
-            debug!("Fetch");
-
-            //debug!("{:?}", self.registers);
-
             let opcode = self.memory_bus.borrow().read_byte(self.registers.pc);
-
-            debug!("PC [0x{:X}]", self.registers.pc);
-            debug!("Opcode [0x{:X}]", opcode);
-            //debug!("{}", self.registers);
-            //self.debug_print_tile_data();
-            //debug!("Registers: {}", self.registers);
-
-            /*if self.registers.pc == 0xc701 {
-                info!("{}", self.registers);
-                panic!("hello [0x{:X}]", self.registers.pc);
-            }*/
 
             self.registers.pc = self.registers.pc.wrapping_add(1);
 
             self.debug_update();
             self.debug_print();
-
-            debug!("Decode & Execute");
-
 
             match opcode {
                 0x00 => {
@@ -2734,7 +2705,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 self.halted = false;
             }
 
-            4 // TODO this may not be right
+            4
         }
 
     }
@@ -3151,8 +3122,6 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         }
         else if self.check_interrupt(Interrupt::JOYPAD) {
             info!("JOYPAD interrupt");
-            info!("IME: {}", self.memory_bus.borrow().interrupt_master_enable);
-            info!("PC: {:4X}", self.registers.pc);
             self.op_rst_address(0x60);
         }
     }

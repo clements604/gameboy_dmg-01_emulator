@@ -23,8 +23,8 @@ const ROM_BANK_0_SIZE: usize = ((ROM_BANK_0_END - ROM_BANK_0_START) + 1) as usiz
 const ROM_BANK_N_START: u16 = 0x4000;
 const ROM_BANK_N_END: u16 = 0x7FFF;
 const ROM_BANK_N_SIZE: usize = ((ROM_BANK_N_END - ROM_BANK_N_START) + 1) as usize;
-const VRAM_START: u16 = 0x8000;
-const VRAM_END: u16 = 0x9FFF;
+pub const VRAM_START: u16 = 0x8000;
+pub const VRAM_END: u16 = 0x9FFF;
 const VRAM_SIZE: usize = ((VRAM_END - VRAM_START) + 1) as usize;
 const EXTERNAL_RAM_START: u16 = 0xA000;
 const EXTERNAL_RAM_END: u16 = 0xBFFF;
@@ -73,7 +73,7 @@ pub struct MemoryBus {
     pub hram: [u8; HRAM_SIZE],
     
     pub ppu: Option<Rc<RefCell<Ppu>>>,
-    pub ppu_experiment: Option<Rc<RefCell<ppu_experiment::Ppu>>>,
+    pub ppu_experiment: Option<Rc<RefCell<ppu_experiment::PPU>>>,
     
     rom_debug: rom_debug,
     pub dmg_io: Option<Rc<RefCell<IO>>>,

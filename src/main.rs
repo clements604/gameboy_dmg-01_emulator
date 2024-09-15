@@ -25,8 +25,10 @@ use std::io::{self, Read};
 use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
-use sdl2::EventPump;
+//use sdl2::EventPump;
 use crate::timer::{Timer, TimerFrequency};
+
+use minifb::{Key, Scale, Window, WindowOptions};
 
 struct Emulator {
     ticks: u64,
@@ -37,11 +39,11 @@ struct Emulator {
 
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     dma: Rc<RefCell<dma::Dma>>,
-    display: Rc<RefCell<display::Display>>,
+    //display: Rc<RefCell<display::Display>>,
+    debug_window: minifb::Window,
 
 
-
-    event_pump: EventPump,
+    //event_pump: EventPump,
     previous_frame: u32,
     previous_ly: u8,
 }
@@ -61,20 +63,33 @@ impl Emulator {
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
 
 
-        let display = Rc::new(RefCell::new(display::Display::new(
+        /*let display = Rc::new(RefCell::new(display::Display::new(
             &String::from("RustGB"),
             Rc::clone(&memory_bus),
             display::SCREEN_WIDTH as u32,
             display::SCREEN_HEIGHT as u32,
         )));
-        let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();
+        let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();*/
+
+        let mut debug_screen = vec![display::LIGHTEST_GREEN; display::SCREEN_WIDTH * display::SCREEN_HEIGHT];
+        let mut debug_window = Window::new(
+            "Test - ESC to exit",
+            (16 * 8) + 16,
+            (32 * 8) + 64,
+            WindowOptions {
+                scale: Scale::X2,
+                ..WindowOptions::default()
+            }
+        ).unwrap_or_else(|e| {
+            panic!("{}", e);
+        });
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
         
-        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
         
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
@@ -106,25 +121,24 @@ impl Emulator {
             cpu,
 
             ppu,
+            
             //ppu_experiment,
 
             memory_bus,
-            display,
+            //display,
 
-            event_pump,
+            //event_pump,
             dma,
+
+            debug_window,
+            
             previous_frame: 0,
             previous_ly: 0,
         }
     }
 
     fn cycle(&mut self) {
-        for event in self.event_pump.poll_iter() {
-            match event {
-                sdl2::event::Event::Quit { .. } => break,
-                _ => {}
-            }
-        }
+
         let cpu_cycles = self.cpu.borrow_mut().cycle();
 
         if self.cpu.borrow().registers.pc == 0xC384 {//0xCB89
@@ -152,7 +166,10 @@ impl Emulator {
         }
 
         if self.previous_frame != self.ppu.borrow().current_frame {
-            self.display.borrow_mut().ui_update();
+            //self.display.borrow_mut().ui_update();
+            if self.ppu.borrow().lcd_ppu_enabled() {
+                self.update_debug_window();
+            }
             self.previous_frame = self.ppu.borrow().current_frame;
         }
         
@@ -164,6 +181,24 @@ impl Emulator {
             debug!("LY: {}", new_ly);
             self.previous_ly = new_ly;
         }
+    }
+
+    fn update_debug_window(&mut self) {
+        
+        let mut buffer: [u32; 92160] = [0xFFFFFF; 92160];
+        let tile_set = self.ppu.borrow().get_tile_set();
+        let tile_map = self.ppu.borrow().get_tile_map();
+
+        for (t, tile_map_item) in tile_map.iter().enumerate() {
+            let tile = tile_set[(*tile_map_item) as usize];
+            let minifb_tile = self.ppu.borrow().get_minifb_tile(tile);
+            for (i, pixel) in minifb_tile.iter().enumerate() {
+                let h_offset = (i % 8) + ((t % 32) * 8);//FIXME offset is currently calculated for main display, not debug display
+                let v_offset = ((i / 8) + (t / 32) * 8) * display::SCREEN_WIDTH;//FIXME offset is currently calculated for main display, not debug display
+                buffer[h_offset + v_offset] = *pixel;
+            }
+        }
+        self.debug_window.update_with_buffer(&buffer, display::SCREEN_WIDTH, display::SCREEN_HEIGHT).unwrap();//FIXME offset is currently calculated for main display, not debug display
     }
 
 }
@@ -178,8 +213,8 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    //let boot_rom = Option::None;
+    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
@@ -211,7 +246,7 @@ fn main() {
     /*
      * Graphics
     */
-    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
     
     /*
      * Memory timing
@@ -232,14 +267,18 @@ fn main() {
 
 let mut emulator = Emulator::new(boot_rom, &rom);
 
-    loop {
+    
+
+    while emulator.debug_window.is_open() && !emulator.debug_window.is_key_down(Key::Escape) {
         emulator.cycle();
-        //emulator.display.ui_update();
     }
 
+    /*loop {
+        emulator.cycle();
+        //emulator.display.ui_update();
+    }*/
+
 }
-
-
 
 fn load_rom(file_path: String) -> ROM {
     debug!("Loading ROM: {}", file_path);

@@ -1,4 +1,4 @@
-extern crate sdl2;
+/*extern crate sdl2;
 
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
@@ -14,6 +14,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use sdl2::surface;
 
+
+ */
 const SCALE_FACTOR: u32 = 3;
 const B_W_TOGGLE: bool = false;
 
@@ -25,6 +27,12 @@ pub const COLOUR_LIGHT_GREY: u8 = 0b10;
 pub const COLOUR_DARK_GREY: u8 = 0b01;
 pub const COLOUR_BLACK: u8 = 0b00;
 
+pub const DARKEST_GREEN: u32 = 0xFF0F380F;
+pub const DARK_GREEN: u32 = 0xFF306230;
+pub const LIGHT_GREEN: u32 = 0xFF8BAC0F;
+pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
+
+/*
 pub struct Display /*<'a>*/ {
     //memory_bus: &'a mut MemoryBus,
     memory_bus: Rc<RefCell<MemoryBus>>,
@@ -353,3 +361,4 @@ mod tests {
 
     }*/
 }
+*/

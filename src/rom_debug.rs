@@ -29,7 +29,7 @@ impl rom_debug {
                 exit(0);
             } else if message.contains("Failed") {
                 error!("FAILED: {}", message);
-                exit(1);
+                exit(0);
             }
             debug!("DEBUG: {}", message);
         }

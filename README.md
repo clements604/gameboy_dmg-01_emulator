@@ -32,6 +32,7 @@
 - https://github.com/plorefice/gib/blob/master/src/ui/mod.rs
 - https://github.com/ThomasRinsma/dromaius/blob/4e40e157511a5ce3d85f8438018e657faa714f00/src/cpu.cc#L213
 - https://github.com/rockytriton/LLD_gbemu
+- https://github.com/Gekkio/mooneye-gb
 
 #### ROM header information
 

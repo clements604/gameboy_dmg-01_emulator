@@ -12,6 +12,7 @@ mod lcd;
 mod timer;
 mod ppu_experiment;
 mod joypad;
+mod tile_map_display;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -29,6 +30,7 @@ use std::cell::RefCell;
 use crate::timer::{Timer, TimerFrequency};
 
 use minifb::{Key, Scale, Window, WindowOptions};
+use crate::tile_map_display::DebugDisplay;
 
 struct Emulator {
     ticks: u64,
@@ -40,7 +42,7 @@ struct Emulator {
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     dma: Rc<RefCell<dma::Dma>>,
     //display: Rc<RefCell<display::Display>>,
-    debug_window: minifb::Window,
+    debug_window: DebugDisplay,
 
 
     //event_pump: EventPump,
@@ -62,27 +64,7 @@ impl Emulator {
 
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
 
-
-        /*let display = Rc::new(RefCell::new(display::Display::new(
-            &String::from("RustGB"),
-            Rc::clone(&memory_bus),
-            display::SCREEN_WIDTH as u32,
-            display::SCREEN_HEIGHT as u32,
-        )));
-        let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();*/
-
-        let mut debug_screen = vec![display::LIGHTEST_GREEN; display::SCREEN_WIDTH * display::SCREEN_HEIGHT];
-        let mut debug_window = Window::new(
-            "Test - ESC to exit",
-            (16 * 8) + 16,
-            (32 * 8) + 64,
-            WindowOptions {
-                scale: Scale::X2,
-                ..WindowOptions::default()
-            }
-        ).unwrap_or_else(|e| {
-            panic!("{}", e);
-        });
+        let mut debug_window = DebugDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
@@ -184,21 +166,8 @@ impl Emulator {
     }
 
     fn update_debug_window(&mut self) {
+        self.debug_window.update(&self.ppu.borrow().get_tile_map());
         
-        let mut buffer: [u32; 92160] = [0xFFFFFF; 92160];
-        let tile_set = self.ppu.borrow().get_tile_set();
-        let tile_map = self.ppu.borrow().get_tile_map();
-
-        for (t, tile_map_item) in tile_map.iter().enumerate() {
-            let tile = tile_set[(*tile_map_item) as usize];
-            let minifb_tile = self.ppu.borrow().get_minifb_tile(tile);
-            for (i, pixel) in minifb_tile.iter().enumerate() {
-                let h_offset = (i % 8) + ((t % 32) * 8);//FIXME offset is currently calculated for main display, not debug display
-                let v_offset = ((i / 8) + (t / 32) * 8) * display::SCREEN_WIDTH;//FIXME offset is currently calculated for main display, not debug display
-                buffer[h_offset + v_offset] = *pixel;
-            }
-        }
-        self.debug_window.update_with_buffer(&buffer, display::SCREEN_WIDTH, display::SCREEN_HEIGHT).unwrap();//FIXME offset is currently calculated for main display, not debug display
     }
 
 }
@@ -217,7 +186,7 @@ fn main() {
     let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
-    //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
+    let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
@@ -246,7 +215,7 @@ fn main() {
     /*
      * Graphics
     */
-   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
     
     /*
      * Memory timing
@@ -269,7 +238,7 @@ let mut emulator = Emulator::new(boot_rom, &rom);
 
     
 
-    while emulator.debug_window.is_open() && !emulator.debug_window.is_key_down(Key::Escape) {
+    while emulator.debug_window.window.is_open() && !emulator.debug_window.window.is_key_down(Key::Escape) {
         emulator.cycle();
     }
 

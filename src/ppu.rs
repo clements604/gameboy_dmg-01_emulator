@@ -574,51 +574,23 @@ impl Ppu {
         debug!("Returning tile {:?}", tile);
         tile
     }
-
-    pub fn get_minifb_tile(&self, tile: [u8; 16]) -> Vec<u32> {
-        let mut mfb_tile = vec![0; 64];
-
-        for x in (0..tile.len()).step_by(2) {
-            let pixel_byte_1 = tile[x];
-            let pixel_byte_2 = tile[x + 1];
-
-            for y in 0..8 {
-                let bit_1 = pixel_byte_1 & (1 << y) != 0;
-                let bit_2 = pixel_byte_2 & (1 << y) != 0;
-
-                let bit_pair = ((bit_1 as u8) << 1) | (bit_2 as u8);
-
-                // Get BGP palette
-                let bgp_palette = self.get_bgp_palette(bit_pair);
-                // Convert to MiniFB format
-                let fb_colour = self.get_mififb_colour(bgp_palette);
-
-                mfb_tile[(x / 2 * 8) + (7 - y) as usize] = fb_colour;
-            }
-
-        }
-        debug!("MiniFB tile: {:?}", mfb_tile);
-        mfb_tile
-    }
-
-    fn get_mififb_colour(&self, palette: u8) -> u32{
-        match palette {
-            0b00 => display::LIGHTEST_GREEN,
-            0b01 => display::LIGHT_GREEN,
-            0b10 => display::DARK_GREEN,
-            0b11 => display::DARKEST_GREEN,
-            _ => 0xFFFF0000,
-        }
-    }
     
-    pub fn get_tile_map(&self) -> [u8; 1024]{
-        let mut tile_map: [u8; 1024] = [0; 1024];
+    pub fn get_tile_map(&self) -> Vec<&[u8]>{
+        /*let mut tile_map: [u8; 1024] = [0; 1024];
         
         for i in 0..1024 {
             tile_map[i] = self.cpu.borrow().memory_bus.borrow().read_byte((0x9800 + i) as u16);
         }
         
-        tile_map
+        tile_map*/
+
+        let mut tiles: Vec<&[u8]> = Vec::new();
+        for i in 0..384 {
+            let tile_start = i * 16;
+            tiles.push(&self.vram[tile_start..tile_start + 16]);
+        }
+
+        tiles
     }
 
     fn get_bgp_palette(&self, bit_pair: u8) -> u8 {

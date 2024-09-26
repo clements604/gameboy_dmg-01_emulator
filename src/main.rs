@@ -12,6 +12,8 @@ mod lcd;
 mod timer;
 mod ppu_experiment;
 mod joypad;
+mod tile_map_display;
+mod main_display;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -25,8 +27,12 @@ use std::io::{self, Read};
 use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
-use sdl2::EventPump;
+//use sdl2::EventPump;
 use crate::timer::{Timer, TimerFrequency};
+
+use minifb::{Key, Scale, Window, WindowOptions};
+use crate::main_display::MainDisplay;
+use crate::tile_map_display::DebugDisplay;
 
 struct Emulator {
     ticks: u64,
@@ -37,11 +43,11 @@ struct Emulator {
 
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     dma: Rc<RefCell<dma::Dma>>,
-    display: Rc<RefCell<display::Display>>,
+    //display: Rc<RefCell<display::Display>>,
+    debug_window: DebugDisplay,
+    main_display: MainDisplay,
 
-
-
-    event_pump: EventPump,
+    //event_pump: EventPump,
     previous_frame: u32,
     previous_ly: u8,
 }
@@ -60,21 +66,15 @@ impl Emulator {
 
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
 
-
-        let display = Rc::new(RefCell::new(display::Display::new(
-            &String::from("RustGB"),
-            Rc::clone(&memory_bus),
-            display::SCREEN_WIDTH as u32,
-            display::SCREEN_HEIGHT as u32,
-        )));
-        let event_pump = display.borrow_mut().sdl_context.event_pump().unwrap();
+        let mut debug_window = DebugDisplay::new();
+        let mut main_display= MainDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
         let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
         let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
         
-        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
         
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
@@ -106,40 +106,38 @@ impl Emulator {
             cpu,
 
             ppu,
+            
             //ppu_experiment,
 
             memory_bus,
-            display,
+            //display,
 
-            event_pump,
+            //event_pump,
             dma,
+
+            debug_window,
+            main_display,
+            
             previous_frame: 0,
             previous_ly: 0,
         }
     }
 
     fn cycle(&mut self) {
-        for event in self.event_pump.poll_iter() {
-            match event {
-                sdl2::event::Event::Quit { .. } => break,
-                _ => {}
-            }
-        }
+
         let cpu_cycles = self.cpu.borrow_mut().cycle();
 
-        if self.cpu.borrow().registers.pc == 0xC384 {//0xCB89
-            debug!("{}", self.cpu.borrow().registers);
-            debug!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
+        if self.cpu.borrow().registers.pc == 0xC2C0 {//0xCB89
+            info!("{}", self.cpu.borrow().registers);
+            //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
 
-        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(1) {
             self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }
 
         self.ppu.borrow_mut().tick(cpu_cycles);
-        
-        self.debug_ly();
 
         self.dma.borrow_mut().dma_tick();
 
@@ -152,7 +150,11 @@ impl Emulator {
         }
 
         if self.previous_frame != self.ppu.borrow().current_frame {
-            self.display.borrow_mut().ui_update();
+            //self.display.borrow_mut().ui_update();
+            if self.ppu.borrow().lcd_ppu_enabled() {
+                //self.debug_window.update(&self.ppu.borrow().get_tile_map());
+                self.main_display.update(&self.ppu.borrow().get_background_tile_map());
+            }
             self.previous_frame = self.ppu.borrow().current_frame;
         }
         
@@ -178,8 +180,8 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    //let boot_rom = Option::None;
+    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
@@ -211,7 +213,7 @@ fn main() {
     /*
      * Graphics
     */
-    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
     
     /*
      * Memory timing
@@ -232,14 +234,18 @@ fn main() {
 
 let mut emulator = Emulator::new(boot_rom, &rom);
 
-    loop {
+    
+
+    while emulator.main_display.window.is_open() && !emulator.main_display.window.is_key_down(Key::Escape) {
         emulator.cycle();
-        //emulator.display.ui_update();
     }
 
+    /*loop {
+        emulator.cycle();
+        //emulator.display.ui_update();
+    }*/
+
 }
-
-
 
 fn load_rom(file_path: String) -> ROM {
     debug!("Loading ROM: {}", file_path);

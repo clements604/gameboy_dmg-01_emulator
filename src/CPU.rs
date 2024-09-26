@@ -5,7 +5,7 @@ use std::io::{self, Read};
 use std::{error, fmt, result};
 
 use crate::{constants, rom_debug};
-use crate::display::GPU;
+//use crate::display::GPU;
 use crate::display;
 use crate::rom;
 use crate::memory_bus;
@@ -52,7 +52,7 @@ pub struct CPU/*<'a>*/ {
     pub registers: Registers,
     //work_ram: [u8; 0xFFFFF],
     video_ram: [u16; 8192],
-    gpu: GPU,
+    
     //pub memory_bus: &'a mut MemoryBus,
     pub memory_bus: Rc<RefCell<MemoryBus>>,
     pub halted: bool,
@@ -255,7 +255,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         CPU {
             registers: Registers::new(),
             video_ram: [0; 8192],
-            gpu: GPU::new(),
+            //gpu: GPU::new(),
             memory_bus,
             halted: false,
             stopped: false,

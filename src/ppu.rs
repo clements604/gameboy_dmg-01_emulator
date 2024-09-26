@@ -1,11 +1,12 @@
 use std::cell::RefCell;
-use crate::interupts;
+use crate::{display, interupts};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
 use log::{debug, error, info};
 use std::fmt;
 use std::rc::Rc;
-use crate::display::Display;
+use minifb::Key::P;
+//use crate::display::Display;
 use crate::lcd::LCD;
 use crate::memory_bus::MemoryBus;
 
@@ -35,7 +36,7 @@ pub struct Ppu {
     frame_count: u16,
     cpu: Rc<RefCell<CPU>>,
     lcd: Rc<RefCell<LCD>>,
-    display: Rc<RefCell<Display>>,
+    //display: Rc<RefCell<Display>>,
 
     pub lcdc: u8,
     pub stat: u8,
@@ -50,16 +51,16 @@ impl fmt::Display for Ppu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "LY: {},\
-            LYC: {},\
+            "LY: {:2X},\
+            LYC: {:2X},\
             Mode: {},\
             Line Ticks: {},\
             Current Frame: {},\
             Previous Frame Time: {},\
             Start Time: {},\
             Frame Count: {},\
-            LCDC: {:#b},\
-            STAT: {:#b},\
+            LCDC: {:2X},\
+            STAT: {:2X},\
             Scroll X: {},\
             Scroll Y: {}",
             self.ly,
@@ -215,7 +216,7 @@ impl OamEntry {
 
 }
 impl Ppu {
-    pub fn new(cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>, display: Rc<RefCell<Display>>) -> Ppu {
+    pub fn new(cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>/*, display: Rc<RefCell<Display>>*/) -> Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
             vram: [0x0000; 0x2000],
@@ -227,7 +228,7 @@ impl Ppu {
             frame_count: 0,
             cpu,
             lcd,
-            display,
+            //display,
             lcdc: 0x91,
             stat: 0,
             scroll_x: 0,
@@ -237,7 +238,7 @@ impl Ppu {
         }
     }
 
-    fn lcd_ppu_enabled(&self) -> bool {
+    pub(crate) fn lcd_ppu_enabled(&self) -> bool {
         self.lcdc & 0x80 != 0
     }
 
@@ -279,7 +280,7 @@ impl Ppu {
 
     /**
     Mode 2 int select
-    */
+     */
     fn get_lyc_int_select(&self) -> bool {
         self.stat & 0x40 != 0
     }
@@ -293,7 +294,7 @@ impl Ppu {
 
     /**
     Mode 1 int select
-    */
+     */
     fn get_vblank_int_select(&self) -> bool {
         self.stat & 0x10 != 0
     }
@@ -307,7 +308,7 @@ impl Ppu {
 
     /**
     Mode 0 int select
-    */
+     */
     fn get_hblank_int_select(&self) -> bool {
         self.stat & 0x08 != 0
     }
@@ -321,14 +322,14 @@ impl Ppu {
 
     /**
     LYC == LY
-    */
+     */
     fn lyc_equals_ly(&self) -> bool {
         self.ly == self.ly_compare
     }
 
     /**
     PPU mode
-    */
+     */
     fn get_ppu_mode(&self) -> u8 {
         self.stat & 0x03
     }
@@ -347,19 +348,17 @@ impl Ppu {
     fn bg_window_enabled(&self) -> bool {
         self.lcdc & 0x01 != 0
     }
-    
+
     fn increment_ly(&mut self) {
-        
         self.ly = self.ly.wrapping_add(1);
-        
+
         if self.ly == self.ly_compare {
             self.stat |= 0x04;
             // check for stat interrupt
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
                 self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
             }
-        }
-        else {
+        } else {
             self.stat &= !0x04; // Reset ly coincidence flag
         }
     }
@@ -401,9 +400,8 @@ impl Ppu {
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
                         self.update_stat_interrupts();
                         self.current_frame += 1;
-                        self.calculate_fps();
-                    }
-                    else {
+                        //self.calculate_fps();
+                    } else {
                         self.mode = OAM_MODE;
                     }
                     self.line_ticks = 0;
@@ -419,6 +417,7 @@ impl Ppu {
                     if self.ly >= LINES_PER_FRAME {
                         self.mode = OAM_MODE;
                         self.ly = 0;
+                        //TODO add main display update here
                     }
                     self.line_ticks = 0;
                 }
@@ -470,7 +469,6 @@ impl Ppu {
             (self.stat & 0x08 != 0 && self.mode == 0) { // H-Blank interrupt
             self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
         }
-
     }
 
     pub fn read(&self, address: u16) -> u8 {
@@ -482,7 +480,7 @@ impl Ppu {
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
             0xFF47 => self.lcd.borrow().bg_palette,
-                _ => panic!("Invalid LCD address: {:#X}", address),
+            _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
     pub fn write(&mut self, address: u16, value: u8) {
@@ -557,7 +555,84 @@ impl Ppu {
         }
     }
 
-    fn calculate_fps(&mut self) {
+    pub fn get_tile_set(&self) -> [[u8; 16] ; 256] {
+        let mut tile_set = [[0; 16]; 256];//256 tiles
+
+        for tile_number in 0..256 {
+            debug!("{:4X}", 0x8000 + (tile_number * 16));
+            tile_set[tile_number] = self.get_tile_from_memory((0x8000 + (tile_number * 16)) as u16); // TODO this needs to be dynamic based on tile map value from memory?
+        }
+        debug!("Tile set {:?}", tile_set);
+        tile_set
+    }
+
+    fn get_tile_from_memory(&self, address: u16) -> [u8; 16] {
+        let mut tile = [0; 16];
+
+        for x in 0..16 {
+            tile[x] = self.cpu.borrow().memory_bus.borrow().read_byte(address + x as u16);
+        }
+        debug!("Returning tile {:?}", tile);
+        tile
+    }
+    
+    pub fn get_tile_map(&self) -> Vec<&[u8]>{
+        /*let mut tile_map: [u8; 1024] = [0; 1024];
+        
+        for i in 0..1024 {
+            tile_map[i] = self.cpu.borrow().memory_bus.borrow().read_byte((0x9800 + i) as u16);
+        }
+        
+        tile_map*/
+
+        let mut tiles: Vec<&[u8]> = Vec::new();
+        for i in 0..384 {
+            let tile_start = i * 16;
+            tiles.push(&self.vram[tile_start..tile_start + 16]);
+        }
+
+        tiles
+    }
+
+    fn get_bgp_palette(&self, bit_pair: u8) -> u8 {
+        let palette = self.lcd.borrow().bg_palette;
+        match bit_pair {
+            0b00 => palette & 0b0000_0011,
+            0b01 => (palette & 0b0000_1100) >> 2,
+            0b10 => (palette & 0b0011_0000) >> 4,
+            0b11 => (palette & 0b1100_0000) >> 4,
+            _ => palette & 0b0000_0011,
+        }
+    }
+
+    pub fn get_background_tile_map(&self) -> Vec<&[u8]> {
+        /*
+        This function retrieves the tile data for all 32x32 tiles 
+        in the background tile map for debugging purposes.
+        */
+
+        let mut tiles: Vec<&[u8]> = Vec::new();
+
+        // Background tile map range in VRAM: 0x1800 to 0x1BFF (32x32 = 1024 tiles)
+        for i in 0x1800..=0x1BFF {
+            let tile_index = self.vram[i] as usize; // Fetch tile index
+
+            // The tile data starts at tile_index * 16 (16 bytes per tile)
+            let tile_start = tile_index * 16;
+
+            // Prevent out-of-bounds access
+            if tile_start + 16 <= self.vram.len() {
+                tiles.push(&self.vram[tile_start..tile_start + 16]);
+            }
+        }
+
+        tiles
+    }
+
+
+}
+
+    /*fn calculate_fps(&mut self) {
         let end = self.display.borrow().get_ticks();
         let frame_time = end - self.previous_frame_time;
 
@@ -575,14 +650,14 @@ impl Ppu {
         self.previous_frame_time = self.display.borrow().get_ticks();
     }
 
-}
-
+}*/
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{memory_bus, rom};
 
-    /*#[test]
+    #[test]
     fn test_hblank_cycles() {
         let rom = rom::ROM::new(vec![0; 0x8000]);
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
@@ -609,5 +684,6 @@ mod tests {
         assert_eq!(ppu.cycles, 0);
     }
 
-    }*/
+    }
 }
+*/

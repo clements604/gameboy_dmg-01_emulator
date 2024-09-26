@@ -51,16 +51,16 @@ impl fmt::Display for Ppu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "LY: {},\
-            LYC: {},\
+            "LY: {:2X},\
+            LYC: {:2X},\
             Mode: {},\
             Line Ticks: {},\
             Current Frame: {},\
             Previous Frame Time: {},\
             Start Time: {},\
             Frame Count: {},\
-            LCDC: {:#b},\
-            STAT: {:#b},\
+            LCDC: {:2X},\
+            STAT: {:2X},\
             Scroll X: {},\
             Scroll Y: {}",
             self.ly,
@@ -417,6 +417,7 @@ impl Ppu {
                     if self.ly >= LINES_PER_FRAME {
                         self.mode = OAM_MODE;
                         self.ly = 0;
+                        //TODO add main display update here
                     }
                     self.line_ticks = 0;
                 }
@@ -603,6 +604,31 @@ impl Ppu {
             _ => palette & 0b0000_0011,
         }
     }
+
+    pub fn get_background_tile_map(&self) -> Vec<&[u8]> {
+        /*
+        This function retrieves the tile data for all 32x32 tiles 
+        in the background tile map for debugging purposes.
+        */
+
+        let mut tiles: Vec<&[u8]> = Vec::new();
+
+        // Background tile map range in VRAM: 0x1800 to 0x1BFF (32x32 = 1024 tiles)
+        for i in 0x1800..=0x1BFF {
+            let tile_index = self.vram[i] as usize; // Fetch tile index
+
+            // The tile data starts at tile_index * 16 (16 bytes per tile)
+            let tile_start = tile_index * 16;
+
+            // Prevent out-of-bounds access
+            if tile_start + 16 <= self.vram.len() {
+                tiles.push(&self.vram[tile_start..tile_start + 16]);
+            }
+        }
+
+        tiles
+    }
+
 
 }
 

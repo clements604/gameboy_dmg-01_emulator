@@ -13,6 +13,7 @@ mod timer;
 mod ppu_experiment;
 mod joypad;
 mod tile_map_display;
+mod main_display;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -30,6 +31,7 @@ use std::cell::RefCell;
 use crate::timer::{Timer, TimerFrequency};
 
 use minifb::{Key, Scale, Window, WindowOptions};
+use crate::main_display::MainDisplay;
 use crate::tile_map_display::DebugDisplay;
 
 struct Emulator {
@@ -43,7 +45,7 @@ struct Emulator {
     dma: Rc<RefCell<dma::Dma>>,
     //display: Rc<RefCell<display::Display>>,
     debug_window: DebugDisplay,
-
+    main_display: MainDisplay,
 
     //event_pump: EventPump,
     previous_frame: u32,
@@ -65,6 +67,7 @@ impl Emulator {
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
 
         let mut debug_window = DebugDisplay::new();
+        let mut main_display= MainDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
@@ -113,6 +116,7 @@ impl Emulator {
             dma,
 
             debug_window,
+            main_display,
             
             previous_frame: 0,
             previous_ly: 0,
@@ -123,19 +127,17 @@ impl Emulator {
 
         let cpu_cycles = self.cpu.borrow_mut().cycle();
 
-        if self.cpu.borrow().registers.pc == 0xC384 {//0xCB89
-            debug!("{}", self.cpu.borrow().registers);
-            debug!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
+        if self.cpu.borrow().registers.pc == 0xC2C0 {//0xCB89
+            info!("{}", self.cpu.borrow().registers);
+            //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
 
-        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(1) {
             self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }
 
         self.ppu.borrow_mut().tick(cpu_cycles);
-        
-        self.debug_ly();
 
         self.dma.borrow_mut().dma_tick();
 
@@ -150,7 +152,8 @@ impl Emulator {
         if self.previous_frame != self.ppu.borrow().current_frame {
             //self.display.borrow_mut().ui_update();
             if self.ppu.borrow().lcd_ppu_enabled() {
-                self.update_debug_window();
+                //self.debug_window.update(&self.ppu.borrow().get_tile_map());
+                self.main_display.update(&self.ppu.borrow().get_background_tile_map());
             }
             self.previous_frame = self.ppu.borrow().current_frame;
         }
@@ -163,11 +166,6 @@ impl Emulator {
             debug!("LY: {}", new_ly);
             self.previous_ly = new_ly;
         }
-    }
-
-    fn update_debug_window(&mut self) {
-        self.debug_window.update(&self.ppu.borrow().get_tile_map());
-        
     }
 
 }
@@ -186,7 +184,7 @@ fn main() {
     let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
-    let rom = load_rom(String::from("roms/Dr. Mario.gb"));
+    //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
@@ -215,7 +213,7 @@ fn main() {
     /*
      * Graphics
     */
-   //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
     
     /*
      * Memory timing
@@ -238,7 +236,7 @@ let mut emulator = Emulator::new(boot_rom, &rom);
 
     
 
-    while emulator.debug_window.window.is_open() && !emulator.debug_window.window.is_key_down(Key::Escape) {
+    while emulator.main_display.window.is_open() && !emulator.main_display.window.is_key_down(Key::Escape) {
         emulator.cycle();
     }
 

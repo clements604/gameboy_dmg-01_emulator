@@ -11,13 +11,18 @@ const DARK_GREEN: u32 = 0xFF306230;
 const LIGHT_GREEN: u32 = 0xFF8BAC0F;
 const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
 const RED: u32 = 0xFFFF0000;
-pub struct MainDisplay {
+
+/*
+    * This struct is responsible for rendering the background tiles to the screen.
+    * For debugging purposes only.
+ */
+pub struct BackgroundDisplay {
     pub window: minifb::Window,
     buffer: Vec<u32>,
 }
 
-impl MainDisplay {
-    pub fn new() -> MainDisplay {
+impl BackgroundDisplay {
+    pub fn new() -> BackgroundDisplay {
         let mut window = Window::new(
             "Gameboy DMG Emulator - ESC to exit",
             WIDTH,
@@ -32,7 +37,7 @@ impl MainDisplay {
         });
         window.set_target_fps(FPS);
 
-        MainDisplay { window,
+        BackgroundDisplay { window,
             buffer: vec![RED; WIDTH * HEIGHT]}
     }
     fn get_mififb_colour(&mut self, palette: u8) -> u32 {

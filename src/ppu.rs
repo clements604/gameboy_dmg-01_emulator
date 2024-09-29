@@ -45,6 +45,9 @@ pub struct Ppu {
     pub scroll_y: u8,
     pub ly: u8,
     pub ly_compare: u8,
+
+    pub background_buffer: Vec<u32>,
+    pub viewport: Vec<u32>,
 }
 
 //Display for Ppu
@@ -236,6 +239,9 @@ impl Ppu {
             scroll_y: 0,
             ly: 0,
             ly_compare: 0,
+
+            background_buffer: vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT],
+            viewport: vec![main_display::RED; main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT],
         }
     }
 
@@ -598,6 +604,30 @@ impl Ppu {
         }
     }
 
+    pub fn get_debug_background_tile_map(&self) -> Vec<&[u8]> {
+        /*
+        This function retrieves the tile data for all 32x32 tiles 
+        in the background tile map for debugging purposes.
+        */
+
+        let mut tiles: Vec<&[u8]> = Vec::new();
+
+        // Background tile map range in VRAM: 0x1800 to 0x1BFF (32x32 = 1024 tiles)
+        for i in 0x1800..=0x1BFF {
+            let tile_index = self.vram[i] as usize; // Fetch tile index
+
+            // The tile data starts at tile_index * 16 (16 bytes per tile)
+            let tile_start = tile_index * 16;
+
+            // Prevent out-of-bounds access
+            if tile_start + 16 <= self.vram.len() {
+                tiles.push(&self.vram[tile_start..tile_start + 16]);
+            }
+        }
+
+        tiles
+    }
+
     pub fn get_background_tile_map(&self) -> Vec<u8> {
         /*
         This function gets the memory addresses of the in order tiles that make up the background
@@ -641,10 +671,10 @@ impl Ppu {
         }
         tile_map
     }
-    pub fn populate_background_buffer(&mut self) -> Vec<u32> {
+    pub fn populate_background_buffer(&mut self) {
         let tile_set = self.get_tile_set();
         let tile_map = self.get_bg_tile_map();
-        let mut background_buffer: Vec<u32> = vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT];
+
         for (index, tile_item) in tile_map.iter().enumerate() {
             let tile = tile_set[*tile_item as usize];
             let mfb_tile = self.convert_tile_to_minifb_format(tile);
@@ -652,12 +682,9 @@ impl Ppu {
             for (x, pixel) in mfb_tile.iter().enumerate() {
                 let h_offset = (x % 8) + ((index % 32) * 8);
                 let v_offset = (x / 8) + ((index / 32) * 8) * main_display::WIDTH;
-                background_buffer[h_offset + v_offset] = *pixel;
+                self.background_buffer[h_offset + v_offset] = *pixel;
             }
         }
-        //info!("Background Buffer: {:?}", background_buffer);
-        debug!("");
-        background_buffer
     }
     pub fn convert_tile_to_minifb_format(&mut self, tile_data: [u8; 16]) -> Vec<u32>{
         let mut minifb_tile: Vec<u32> = vec![main_display::RED; 64];
@@ -690,7 +717,7 @@ impl Ppu {
     pub fn get_viewport_pixels(&mut self) -> Vec<u32> {
         //let mut viewport: Vec<u32> = vec![main_display::LIGHTEST_GREEN; main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT];
 
-        let viewport = self.populate_background_buffer().iter().enumerate().filter(|(index, _)| {
+        let viewport = self.background_buffer.iter().enumerate().filter(|(index, _)| {
             let line = index / main_display::WIDTH;
             let col = index % main_display::WIDTH;
             line >= self.scroll_y as usize && line < (self.scroll_y as usize + main_display::VIEWPORT_HEIGHT) && col >= self.scroll_x as usize && col < (self.scroll_x as usize + main_display::VIEWPORT_WIDTH)

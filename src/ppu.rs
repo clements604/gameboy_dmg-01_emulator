@@ -857,39 +857,36 @@ impl Ppu {
 
     // Get the tile data for a given tile index
     pub fn get_tile_data(&self, tile_index: u8) -> TileData {
-        const TILE_DATA_AREA_0: u16 = 0x8800;
-        const TILE_DATA_AREA_1: u16 = 0x8000;
+        const TILE_DATA_AREA_0: u16 = 0x8000; // Unsigned region
+        const TILE_DATA_AREA_1: u16 = 0x8800; // Signed region
         const TILE_SIZE_BYTES: usize = 16; // 16 bytes per tile (2 bytes per row for 8 rows)
-        const TILE_WIDTH: usize = 8;
+
         // Determine the base address of the tile data area (based on LCDC register)
         let tile_data_base: u16 = if self.get_bg_tile_map_area() {
-            TILE_DATA_AREA_0
+            TILE_DATA_AREA_1 // 0x8800 - signed indices
         } else {
-            TILE_DATA_AREA_1
+            TILE_DATA_AREA_0 // 0x8000 - unsigned indices
         };
-
-        // Calculate the address of the tile data
-        // If tile_data_base is 0x9000, the index is signed (tiles -128 to 127).
+        
         let tile_address = if tile_data_base == TILE_DATA_AREA_1 {
-            // Treat tile_index as signed if using the 0x8800-0x97FF region (two's complement)
+            // Treat tile_index as signed if using the 0x8800-0x97FF region
             let signed_tile_index = tile_index as i8 as i16;
-            (tile_data_base as i16 + signed_tile_index * TILE_SIZE_BYTES as i16) as u16
+            // To avoid overflow, cast to i16, then calculate address safely
+            (TILE_DATA_AREA_1 as i16 + signed_tile_index * TILE_SIZE_BYTES as i16) as u16
         } else {
-            // Unsigned tile index if using the 0x8000-0x8FFF region
-            tile_data_base + (tile_index as u16 * TILE_SIZE_BYTES as u16)
+            TILE_DATA_AREA_0 + (tile_index as u16 * TILE_SIZE_BYTES as u16)
         };
-
-        // Fetch the 16 bytes of tile data from VRAM
+        
         let mut tile_data = [0u8; TILE_SIZE_BYTES];
         for i in 0..TILE_SIZE_BYTES {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
 
-        // Return as a TileData struct (see below)
         TileData::new(tile_data)
     }
-    
-    
+
+
+
 
 
     /*

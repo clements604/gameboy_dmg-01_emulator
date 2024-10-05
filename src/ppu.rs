@@ -6,6 +6,7 @@ use log::{debug, error, info};
 use std::fmt;
 use std::rc::Rc;
 use minifb::Key::P;
+use crate::display::LIGHTEST_GREEN;
 //use crate::display::Display;
 use crate::lcd::LCD;
 use crate::main_display::get_mififb_colour;
@@ -799,7 +800,7 @@ impl Ppu {
         let pixel_offset_x = scx % TILE_SIZE;
         let pixel_offset_y = scy % TILE_SIZE;
 
-        let mut framebuffer: Vec<u32> = vec![0; VIEWPORT_WIDTH * VIEWPORT_HEIGHT];
+        let mut framebuffer: Vec<u32> = vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT];
 
         // Loop through the 20x18 tiles visible in the viewport
         for tile_y in 0..18 {
@@ -870,7 +871,7 @@ impl Ppu {
         
         let tile_address = if tile_data_base == TILE_DATA_AREA_1 {
             // Treat tile_index as signed if using the 0x8800-0x97FF region
-            let signed_tile_index = tile_index as i8 as i16;
+            let signed_tile_index = tile_index as i16;
             // To avoid overflow, cast to i16, then calculate address safely
             (TILE_DATA_AREA_1 as i16 + signed_tile_index * TILE_SIZE_BYTES as i16) as u16
         } else {

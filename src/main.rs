@@ -14,6 +14,7 @@ mod ppu_experiment;
 mod joypad;
 mod tile_map_display;
 mod main_display;
+mod background_display;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -45,6 +46,7 @@ struct Emulator {
     dma: Rc<RefCell<dma::Dma>>,
     //display: Rc<RefCell<display::Display>>,
     debug_window: DebugDisplay,
+    background_display: background_display::BackgroundDisplay,
     main_display: MainDisplay,
 
     //event_pump: EventPump,
@@ -68,6 +70,7 @@ impl Emulator {
 
         let mut debug_window = DebugDisplay::new();
         let mut main_display= MainDisplay::new();
+        let mut background_display = background_display::BackgroundDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
@@ -116,6 +119,7 @@ impl Emulator {
             dma,
 
             debug_window,
+            background_display,
             main_display,
             
             previous_frame: 0,
@@ -153,7 +157,21 @@ impl Emulator {
             //self.display.borrow_mut().ui_update();
             if self.ppu.borrow().lcd_ppu_enabled() {
                 //self.debug_window.update(&self.ppu.borrow().get_tile_map());
-                self.main_display.update(&self.ppu.borrow().get_background_tile_map());
+                //self.background_display.update(&self.ppu.borrow().get_debug_background_tile_map());
+
+                //self.main_display.update(&Vec::from(self.ppu.borrow().get_window_tiles()));
+                //info!("{:?}", self.ppu.borrow().get_background_tile_map().len());
+                //self.ppu.borrow().get_window_tiles();
+
+                //info!("{:?}", self.ppu.borrow().populate_background_tiles());
+                //self.ppu.borrow_mut().gpt_get_viewport();
+                self.main_display.update(self.ppu.borrow_mut().gpt_render_viewport());
+                //self.ppu.borrow_mut().get_viewport_pixels();
+                
+                info!("Scroll X: {}", self.ppu.borrow().scroll_x);
+                info!("Scroll Y: {}", self.ppu.borrow().scroll_y);
+                debug!("");
+
             }
             self.previous_frame = self.ppu.borrow().current_frame;
         }
@@ -180,8 +198,8 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    let boot_rom = Option::None;
+    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    //let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));

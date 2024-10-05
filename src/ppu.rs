@@ -1,17 +1,22 @@
 use std::cell::RefCell;
-use crate::{display, interupts};
+use crate::{display, interupts, main, main_display};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
 use log::{debug, error, info};
 use std::fmt;
 use std::rc::Rc;
 use minifb::Key::P;
+use crate::display::LIGHTEST_GREEN;
 //use crate::display::Display;
 use crate::lcd::LCD;
+use crate::main_display::get_mififb_colour;
 use crate::memory_bus::MemoryBus;
 
 const TILE_START: u16 = 0x8000;
 const TILE_END: u16 = 0x97FF;
+
+const TILE_MAP_0_START: u16 = 0x9800;
+const TILE_MAP_1_START: u16 = 0x9C00;
 
 const OAM_MODE: u8 = 2;
 const VRAM_MODE: u8 = 3;
@@ -44,6 +49,9 @@ pub struct Ppu {
     pub scroll_y: u8,
     pub ly: u8,
     pub ly_compare: u8,
+
+    pub background_buffer: Vec<u32>,
+    pub viewport: Vec<u32>,
 }
 
 //Display for Ppu
@@ -235,19 +243,14 @@ impl Ppu {
             scroll_y: 0,
             ly: 0,
             ly_compare: 0,
+
+            background_buffer: vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT],
+            viewport: vec![main_display::RED; main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT],
         }
     }
 
     pub(crate) fn lcd_ppu_enabled(&self) -> bool {
         self.lcdc & 0x80 != 0
-    }
-
-    fn window_tile_map(&self) -> u16 {
-        if self.lcdc & 0x40 != 0 {
-            0x9C00
-        } else {
-            0x9800
-        }
     }
 
     fn window_enabled(&self) -> bool {
@@ -570,7 +573,7 @@ impl Ppu {
         let mut tile = [0; 16];
 
         for x in 0..16 {
-            tile[x] = self.cpu.borrow().memory_bus.borrow().read_byte(address + x as u16);
+            tile[x] = self.vram_read(address + x as u16);
         }
         debug!("Returning tile {:?}", tile);
         tile
@@ -605,7 +608,7 @@ impl Ppu {
         }
     }
 
-    pub fn get_background_tile_map(&self) -> Vec<&[u8]> {
+    pub fn get_debug_background_tile_map(&self) -> Vec<&[u8]> {
         /*
         This function retrieves the tile data for all 32x32 tiles 
         in the background tile map for debugging purposes.
@@ -629,8 +632,297 @@ impl Ppu {
         tiles
     }
 
+    pub fn get_background_tile_map(&self) -> Vec<u8> {
+        /*
+        This function gets the memory addresses of the in order tiles that make up the background
+        */
+
+        let mut tile_map: Vec<u8> = Vec::new();
+        let bg_tile_map = self.bg_tile_map();
+        info!("BG Tile Map: {:#X}", bg_tile_map);
+
+        for x in 0..1024 {
+            tile_map.push(self.vram_read(bg_tile_map + x as u16));
+        }
+        tile_map
+    }
+
+    pub fn populate_background_tiles(&self) -> Vec<[u8;16]>{
+        let mut tiles: Vec<[u8;16]> = Vec::new();
+        let tile_map = self.get_background_tile_map();
+        let background_tile_set = self.get_tile_set();
+
+        for tile in tile_map.iter() {
+            info!("Tile: {:#X}", tile);
+            let tile_data = background_tile_set[*tile as usize].clone();
+            //info!("BG Tiles: {:?}", tile_data);
+
+            tiles.push(tile_data);
+        }
+        //info!("Number of tiles: {}", tiles.len());
+        //info!("Tile Map: {:?}", tiles);
+
+        tiles
+    }
+
+    /*
+    MAIN DISPLAY START
+    */
+    fn get_bg_tile_map(&self) -> [u8; 1024] {
+        let mut tile_map: [u8; 1024] = [0; 1024];
+        let tile_map_base: u16 = if self.get_bg_tile_map_area() {
+            TILE_MAP_1_START
+        } else {
+            TILE_MAP_0_START
+        };
+        info!("Tile Map Base: {:#X}", tile_map_base);
+        for i in 0..1024 {
+            tile_map[i] = self.vram_read((tile_map_base as usize + i) as u16);
+        }
+        tile_map
+    }
+    pub fn populate_background_buffer(&mut self) {
+        let tile_set = self.get_tile_set();
+        let tile_map = self.get_bg_tile_map();
+
+        for (index, tile_item) in tile_map.iter().enumerate() {
+            let tile = tile_set[*tile_item as usize];
+            let mfb_tile = self.convert_tile_to_minifb_format(tile);
+
+            for (x, pixel) in mfb_tile.iter().enumerate() {
+                let h_offset = (x % 8) + ((index % 32) * 8);
+                let v_offset = (x / 8) + ((index / 32) * 8) * main_display::WIDTH;
+                self.background_buffer[h_offset + v_offset] = *pixel;
+            }
+        }
+    }
+    pub fn convert_tile_to_minifb_format(&mut self, tile_data: [u8; 16]) -> Vec<u32>{
+        let mut minifb_tile: Vec<u32> = vec![main_display::RED; 64];
+        for x in (0..tile_data.len()).step_by(2) {
+            let lsb = tile_data[x];
+            let msb = tile_data[x + 1];
+            for bit in 0..8 {
+                let bit_lsb = lsb & (1 << bit) != 0;
+                let bit_msb = msb & (1 << bit) != 0;
+                let pair = ((bit_lsb as u8) << 1) | (bit_msb as u8);
+                let bgp_palette = self.convert_pixel_to_bgb_palette(pair);
+                let mfb_pixel = main_display::get_mififb_colour(bgp_palette);
+                //info!("MFB Pixel: {:#X}", mfb_pixel);
+                minifb_tile[(x / 2 * 8) + (7 - bit) as usize] = mfb_pixel;
+            }
+        }
+    minifb_tile
+    }
+    fn convert_pixel_to_bgb_palette(&self, pixel: u8) -> u8 {
+        let palette = self.lcd.borrow().bg_palette;
+        match pixel {
+            0b00 => palette & 0b0000_0011,
+            0b01 => (palette & 0b0000_1100) >> 2,
+            0b10 => (palette & 0b0011_0000) >> 4,
+            0b11 => (palette & 0b1100_0000) >> 6,
+            _ => palette & 0b0000_0011,
+        }
+    }
+
+    pub fn get_viewport_pixels(&mut self) -> Vec<u32> {
+        //let mut viewport: Vec<u32> = vec![main_display::LIGHTEST_GREEN; main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT];
+
+        let viewport = self.background_buffer.iter().enumerate().filter(|(index, _)| {
+            let line = index / main_display::WIDTH;
+            let col = index % main_display::WIDTH;
+            line >= self.scroll_y as usize && line < (self.scroll_y as usize + main_display::VIEWPORT_HEIGHT) && col >= self.scroll_x as usize && col < (self.scroll_x as usize + main_display::VIEWPORT_WIDTH)
+        }).map(|(_, tile)| *tile).collect();
+
+        //info!("Viewport: {:?}", viewport);
+        viewport
+    }
+    
+    /*
+    Works, but not with scrolling
+     */
+    pub fn gpt_get_viewport(&mut self) -> Vec<u32>{
+        // Constants
+        const VIEWPORT_WIDTH: usize = 160;
+        const VIEWPORT_HEIGHT: usize = 144;
+        const TILE_SIZE: usize = 8;
+        const TILE_MAP_WIDTH: usize = 32;
+
+        // Assume you have access to SCX, SCY, and tile map in memory
+        let scx = self.scroll_x;  // Scroll X
+        let scy = self.scroll_y;  // Scroll Y
+
+        // This buffer will hold the pixel data for the viewport (160x144 pixels)
+        let mut framebuffer: Vec<u32> = vec![0; VIEWPORT_WIDTH * VIEWPORT_HEIGHT];
+
+        // Loop through the 20x18 tiles visible in the viewport
+        for tile_y in 0..18 {
+            for tile_x in 0..20 {
+                // Calculate the position in the tile map
+                let map_x = (tile_x * TILE_SIZE + scx as usize) / TILE_SIZE;
+                let map_y = (tile_y * TILE_SIZE + scy as usize) / TILE_SIZE;
+                let tile_index = self.get_tile_index(map_x, map_y);
+
+                // Fetch the tile data from VRAM
+                let tile_data = self.get_tile_data(tile_index);
+
+                // Extract pixel data and store in framebuffer
+                for row in 0..TILE_SIZE {
+                    let screen_y = tile_y * TILE_SIZE + row;
+                    let screen_x = tile_x * TILE_SIZE;
+
+                    if screen_y < VIEWPORT_HEIGHT {
+                        for col in 0..TILE_SIZE {
+                            let pixel = tile_data.get_pixel(row, col);  // get_pixel decodes bitplanes
+                            let color = main_display::get_mififb_colour(pixel);   // Convert to minifb color format
+                            framebuffer[screen_y * VIEWPORT_WIDTH + screen_x + col] = color;
+                        }
+                    }
+                }
+            }
+        }
+        framebuffer
+    }
+
+    /*
+    EXPERIMENTAL, sort of scrolls, but nothing visible
+     */
+    pub fn gpt_render_viewport(&mut self) -> Vec<u32> {
+        const TILE_SIZE: usize = 8;
+        const VIEWPORT_WIDTH: usize = 160;
+        const VIEWPORT_HEIGHT: usize = 144;
+        const TILE_MAP_WIDTH: usize = 32;
+        let scx = self.scroll_x as usize; // Scroll X
+        let scy = self.scroll_y as usize; // Scroll Y
+
+        // Calculate the starting tile and pixel offsets
+        let start_tile_x = scx / TILE_SIZE;
+        let start_tile_y = scy / TILE_SIZE;
+        let pixel_offset_x = scx % TILE_SIZE;
+        let pixel_offset_y = scy % TILE_SIZE;
+
+        let mut framebuffer: Vec<u32> = vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT];
+
+        // Loop through the 20x18 tiles visible in the viewport
+        for tile_y in 0..18 {
+            for tile_x in 0..20 {
+                // Calculate the position in the tile map
+                let map_x = (start_tile_x + tile_x) % TILE_MAP_WIDTH;
+                let map_y = (start_tile_y + tile_y) % TILE_MAP_WIDTH;
+                let tile_index = self.get_tile_index(map_x, map_y);
+
+                // Fetch the tile data from VRAM
+                let tile_data = self.get_tile_data(tile_index);
+
+                // Extract pixel data, handling partial tiles at the edges
+                for row in 0..TILE_SIZE {
+                    let screen_y = (tile_y * TILE_SIZE + row).wrapping_sub(pixel_offset_y);
+
+                    if screen_y < VIEWPORT_HEIGHT {
+                        for col in 0..TILE_SIZE {
+                            let screen_x = (tile_x * TILE_SIZE + col).wrapping_sub(pixel_offset_x);
+
+                            if screen_x < VIEWPORT_WIDTH {
+                                let pixel = tile_data.get_pixel(row, col);
+                                let color = main_display::get_mififb_colour(pixel);
+                                framebuffer[screen_y * VIEWPORT_WIDTH + screen_x] = color;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        framebuffer
+    }
+
+
+    pub fn get_tile_index(&self, map_x: usize, map_y: usize) -> u8 {
+        const TILE_MAP_WIDTH: usize = 32;  // 32 tiles per row in the tile map
+        // Determine which tile map is being used based on the LCDC register
+        let tile_map_base: u16 = if self.get_bg_tile_map_area() {
+            TILE_MAP_1_START
+        } else {
+            TILE_MAP_0_START
+        };
+
+        // Calculate the position in the tile map
+        let tile_map_offset = map_y * TILE_MAP_WIDTH + map_x;
+        let tile_map_address = tile_map_base + tile_map_offset as u16;
+
+        // Read the tile index from memory (assumes you have a method to read from VRAM)
+        self.vram_read(tile_map_address)
+    }
+    
+    fn get_bg_tile_map_area(&self) -> bool {
+        self.lcdc & 0x08 != 0
+    }
+
+    // Get the tile data for a given tile index
+    pub fn get_tile_data(&self, tile_index: u8) -> TileData {
+        const TILE_DATA_AREA_0: u16 = 0x8000; // Unsigned region
+        const TILE_DATA_AREA_1: u16 = 0x8800; // Signed region
+        const TILE_SIZE_BYTES: usize = 16; // 16 bytes per tile (2 bytes per row for 8 rows)
+
+        // Determine the base address of the tile data area (based on LCDC register)
+        let tile_data_base: u16 = if self.get_bg_tile_map_area() {
+            TILE_DATA_AREA_1 // 0x8800 - signed indices
+        } else {
+            TILE_DATA_AREA_0 // 0x8000 - unsigned indices
+        };
+        
+        let tile_address = if tile_data_base == TILE_DATA_AREA_1 {
+            // Treat tile_index as signed if using the 0x8800-0x97FF region
+            let signed_tile_index = tile_index as i16;
+            // To avoid overflow, cast to i16, then calculate address safely
+            (TILE_DATA_AREA_1 as i16 + signed_tile_index * TILE_SIZE_BYTES as i16) as u16
+        } else {
+            TILE_DATA_AREA_0 + (tile_index as u16 * TILE_SIZE_BYTES as u16)
+        };
+        
+        let mut tile_data = [0u8; TILE_SIZE_BYTES];
+        for i in 0..TILE_SIZE_BYTES {
+            tile_data[i] = self.vram_read(tile_address + i as u16);
+        }
+
+        TileData::new(tile_data)
+    }
+
+
+
+
+
+    /*
+    MAIN DISPLAY END
+    */
 
 }
+
+// Struct to represent the tile data
+pub struct TileData {
+    data: [u8; main_display::TILE_SIZE * 2],
+}
+
+impl TileData {
+    // Constructor for TileData
+    pub fn new(data: [u8; main_display::TILE_SIZE * 2]) -> Self {
+        TileData { data }
+    }
+
+    // Get pixel color (0-3) at row and col
+    pub fn get_pixel(&self, row: usize, col: usize) -> u8 {
+        // Each row is represented by 2 bytes (bitplanes)
+        let plane1 = self.data[row * 2];
+        let plane2 = self.data[row * 2 + 1];
+
+        // Extract the relevant bit for this column
+        let bit_position = 7 - col; // Pixels are stored MSB first
+        let low_bit = (plane1 >> bit_position) & 0x01;
+        let high_bit = (plane2 >> bit_position) & 0x01;
+
+        // Combine the two bits to get the pixel value (0-3)
+        (high_bit << 1) | low_bit
+    }
+}
+
 
     /*fn calculate_fps(&mut self) {
         let end = self.display.borrow().get_ticks();

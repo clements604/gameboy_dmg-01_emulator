@@ -60,7 +60,7 @@ impl IO {
                 self.timer.tma
             },
             0xFF07 => {
-                panic!("Tac register read")
+                self.timer.tac
             }
             0xFF40..=0xFF46 => {
                 self.ppu.as_ref().borrow().read(address)

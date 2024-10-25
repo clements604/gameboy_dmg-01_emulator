@@ -165,12 +165,8 @@ impl Emulator {
 
                 //info!("{:?}", self.ppu.borrow().populate_background_tiles());
                 //self.ppu.borrow_mut().gpt_get_viewport();
-                self.main_display.update(self.ppu.borrow_mut().gpt_render_viewport());
+                self.main_display.update(self.ppu.borrow_mut().render_viewport());
                 //self.ppu.borrow_mut().get_viewport_pixels();
-                
-                info!("Scroll X: {}", self.ppu.borrow().scroll_x);
-                info!("Scroll Y: {}", self.ppu.borrow().scroll_y);
-                debug!("");
 
             }
             self.previous_frame = self.ppu.borrow().current_frame;
@@ -198,8 +194,8 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    //let boot_rom = Option::None;
+    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
@@ -232,6 +228,7 @@ fn main() {
      * Graphics
     */
    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); //TODO LYC
     
     /*
      * Memory timing

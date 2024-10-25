@@ -724,69 +724,10 @@ impl Ppu {
         }
     }
 
-    pub fn get_viewport_pixels(&mut self) -> Vec<u32> {
-        //let mut viewport: Vec<u32> = vec![main_display::LIGHTEST_GREEN; main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT];
-
-        let viewport = self.background_buffer.iter().enumerate().filter(|(index, _)| {
-            let line = index / main_display::WIDTH;
-            let col = index % main_display::WIDTH;
-            line >= self.scroll_y as usize && line < (self.scroll_y as usize + main_display::VIEWPORT_HEIGHT) && col >= self.scroll_x as usize && col < (self.scroll_x as usize + main_display::VIEWPORT_WIDTH)
-        }).map(|(_, tile)| *tile).collect();
-
-        //info!("Viewport: {:?}", viewport);
-        viewport
-    }
-    
     /*
-    Works, but not with scrolling
+    Returns the framebuffer for the Gameboy's visible viewport
      */
-    pub fn gpt_get_viewport(&mut self) -> Vec<u32>{
-        // Constants
-        const VIEWPORT_WIDTH: usize = 160;
-        const VIEWPORT_HEIGHT: usize = 144;
-        const TILE_SIZE: usize = 8;
-        const TILE_MAP_WIDTH: usize = 32;
-
-        // Assume you have access to SCX, SCY, and tile map in memory
-        let scx = self.scroll_x;  // Scroll X
-        let scy = self.scroll_y;  // Scroll Y
-
-        // This buffer will hold the pixel data for the viewport (160x144 pixels)
-        let mut framebuffer: Vec<u32> = vec![0; VIEWPORT_WIDTH * VIEWPORT_HEIGHT];
-
-        // Loop through the 20x18 tiles visible in the viewport
-        for tile_y in 0..18 {
-            for tile_x in 0..20 {
-                // Calculate the position in the tile map
-                let map_x = (tile_x * TILE_SIZE + scx as usize) / TILE_SIZE;
-                let map_y = (tile_y * TILE_SIZE + scy as usize) / TILE_SIZE;
-                let tile_index = self.get_tile_index(map_x, map_y);
-
-                // Fetch the tile data from VRAM
-                let tile_data = self.get_tile_data(tile_index);
-
-                // Extract pixel data and store in framebuffer
-                for row in 0..TILE_SIZE {
-                    let screen_y = tile_y * TILE_SIZE + row;
-                    let screen_x = tile_x * TILE_SIZE;
-
-                    if screen_y < VIEWPORT_HEIGHT {
-                        for col in 0..TILE_SIZE {
-                            let pixel = tile_data.get_pixel(row, col);  // get_pixel decodes bitplanes
-                            let color = main_display::get_mififb_colour(pixel);   // Convert to minifb color format
-                            framebuffer[screen_y * VIEWPORT_WIDTH + screen_x + col] = color;
-                        }
-                    }
-                }
-            }
-        }
-        framebuffer
-    }
-
-    /*
-    EXPERIMENTAL, sort of scrolls, but nothing visible
-     */
-    pub fn gpt_render_viewport(&mut self) -> Vec<u32> {
+    pub fn render_viewport(&mut self) -> Vec<u32> {
         const TILE_SIZE: usize = 8;
         const VIEWPORT_WIDTH: usize = 160;
         const VIEWPORT_HEIGHT: usize = 144;
@@ -833,8 +774,6 @@ impl Ppu {
         }
         framebuffer
     }
-
-
     pub fn get_tile_index(&self, map_x: usize, map_y: usize) -> u8 {
         const TILE_MAP_WIDTH: usize = 32;  // 32 tiles per row in the tile map
         // Determine which tile map is being used based on the LCDC register
@@ -885,10 +824,6 @@ impl Ppu {
 
         TileData::new(tile_data)
     }
-
-
-
-
 
     /*
     MAIN DISPLAY END

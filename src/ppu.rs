@@ -88,7 +88,7 @@ impl fmt::Display for Ppu {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct OamEntry {
+pub struct Sprite {
     y: u8,
     x: u8,
     tile_number: u8,
@@ -212,9 +212,9 @@ impl OAMFlags {
     }
 }
 
-impl OamEntry {
-    pub fn new() -> OamEntry {
-        OamEntry {
+impl Sprite {
+    pub fn new() -> Sprite {
+        Sprite {
             y: 0,
             x: 0,
             tile_number: 0,
@@ -821,12 +821,33 @@ impl Ppu {
         for i in 0..TILE_SIZE_BYTES {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
-
+        self.get_sprites();
         TileData::new(tile_data)
     }
 
     /*
     MAIN DISPLAY END
+    */
+    
+    /*
+    SPRITE DISPLAY START
+    */
+    fn get_sprites(&self) -> Vec<Sprite> {
+        let mut sprites: Vec<Sprite> = Vec::new();
+        for i in 0..40 {
+            //let address = 0xFE00 + i * 4;
+            let address = i * 4;
+            let y = self.oam_read(address) as u8;
+            let x = self.oam_read(address + 1) as u8;
+            let tile_number = self.oam_read(address + 2) as u8;
+            let flags = OAMFlags::from(self.oam_read(address + 3));
+            sprites.push(Sprite { y, x, tile_number, flags });
+        }
+        info!("Sprites: {:?}", sprites);
+        sprites
+    }
+    /*
+    SPRITE DISPLAY END
     */
 
 }

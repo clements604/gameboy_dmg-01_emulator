@@ -795,7 +795,7 @@ impl Ppu {
                             if pixel_x >= 0 && pixel_x < 160 && pixel_y >= 0 && pixel_y < 144 {
                                 // Calculate the index in the frame buffer
                                 let index = pixel_y as usize * 160 + pixel_x as usize;
-                                //framebuffer[index] = colour;
+                                framebuffer[index] = colour;
                             }
                         }
                     }

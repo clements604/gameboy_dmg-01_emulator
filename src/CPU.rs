@@ -3109,19 +3109,19 @@ impl/*<'a>*/ CPU/*<'a>*/ {
             self.op_rst_address(0x40);
         }
         else if self.check_interrupt(Interrupt::LCDSTAT) {
-            info!("LCDSTAT interrupt");
+            debug!("LCDSTAT interrupt");
             self.op_rst_address(0x48);
         }
         else if self.check_interrupt(Interrupt::TIMER) {
             self.op_rst_address(0x50);
-            info!("TIMER interrupt")
+            debug!("TIMER interrupt")
         }
         else if self.check_interrupt(Interrupt::SERIAL) {
-            info!("SERIAL interrupt");
+            debug!("SERIAL interrupt");
             self.op_rst_address(0x58);
         }
         else if self.check_interrupt(Interrupt::JOYPAD) {
-            info!("JOYPAD interrupt");
+            debug!("JOYPAD interrupt");
             self.op_rst_address(0x60);
         }
     }

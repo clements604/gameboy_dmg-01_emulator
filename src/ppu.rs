@@ -753,19 +753,49 @@ impl Ppu {
 
                 // Fetch the tile data from VRAM
                 let tile_data = self.get_tile_data(tile_index);
+                let sprite_data = self.get_sprites();
 
                 // Extract pixel data, handling partial tiles at the edges
                 for row in 0..TILE_SIZE {
                     let screen_y = (tile_y * TILE_SIZE + row).wrapping_sub(pixel_offset_y);
-
                     if screen_y < VIEWPORT_HEIGHT {
                         for col in 0..TILE_SIZE {
                             let screen_x = (tile_x * TILE_SIZE + col).wrapping_sub(pixel_offset_x);
 
                             if screen_x < VIEWPORT_WIDTH {
                                 let pixel = tile_data.get_pixel(row, col);
-                                let color = main_display::get_mififb_colour(pixel);
-                                framebuffer[screen_y * VIEWPORT_WIDTH + screen_x] = color;
+                                let colour = main_display::get_mififb_colour(pixel);
+                                framebuffer[screen_y * VIEWPORT_WIDTH + screen_x] = colour;
+                            }
+                        }
+                    }
+                }
+                
+                // Draw sprites
+                for sprite in sprite_data.iter() {
+                    let sprite_tile_data = self.get_sprite_data(sprite);
+
+                    let screen_x = sprite.x as isize - 8;
+                    let screen_y = sprite.y as isize - 16;
+
+                    for row in 0..8 {
+                        for col in 0..8 {
+                            // Calculate the color ID from the sprite tile data
+                            let pixel = sprite_tile_data.get_pixel(row, col);
+                            if pixel == 0 {
+                                continue; // Skip transparent pixels
+                            }
+                            let colour = main_display::get_mififb_colour(pixel);
+                            
+                            // Calculate the pixel's position on the screen
+                            let pixel_x = screen_x + col as isize;
+                            let pixel_y = screen_y + row as isize;
+
+                            // Check screen bounds
+                            if pixel_x >= 0 && pixel_x < 160 && pixel_y >= 0 && pixel_y < 144 {
+                                // Calculate the index in the frame buffer
+                                let index = pixel_y as usize * 160 + pixel_x as usize;
+                                //framebuffer[index] = colour;
                             }
                         }
                     }
@@ -821,8 +851,18 @@ impl Ppu {
         for i in 0..TILE_SIZE_BYTES {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
-        self.get_sprites();
+        
         TileData::new(tile_data)
+    }
+    
+    fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
+        const SPRITE_SIZE: usize = 16; // 16 bytes per sprite (2 bytes per row for 8 rows)
+        let mut sprite_tile_data = [0u8; SPRITE_SIZE];
+        let sprite_tile_address = 0x8000 + (sprite.tile_number as u16 * SPRITE_SIZE as u16);
+        for i in 0..SPRITE_SIZE {
+            sprite_tile_data[i] = self.vram_read(sprite_tile_address + i as u16);
+        }
+        TileData::new(sprite_tile_data)
     }
 
     /*
@@ -843,7 +883,7 @@ impl Ppu {
             let flags = OAMFlags::from(self.oam_read(address + 3));
             sprites.push(Sprite { y, x, tile_number, flags });
         }
-        info!("Sprites: {:?}", sprites);
+
         sprites
     }
     /*

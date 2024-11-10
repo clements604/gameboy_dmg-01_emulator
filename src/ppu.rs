@@ -761,7 +761,6 @@ impl Ppu {
                     if screen_y < VIEWPORT_HEIGHT {
                         for col in 0..TILE_SIZE {
                             let screen_x = (tile_x * TILE_SIZE + col).wrapping_sub(pixel_offset_x);
-
                             if screen_x < VIEWPORT_WIDTH {
                                 let pixel = tile_data.get_pixel(row, col);
                                 let colour = main_display::get_mififb_colour(pixel);
@@ -795,7 +794,11 @@ impl Ppu {
                             if pixel_x >= 0 && pixel_x < 160 && pixel_y >= 0 && pixel_y < 144 {
                                 // Calculate the index in the frame buffer
                                 let index = pixel_y as usize * 160 + pixel_x as usize;
-                                framebuffer[index] = colour;
+                                
+                                // Draw the pixel if it has higher priority
+                                if colour != LIGHTEST_GREEN && (sprite.flags.priority || (framebuffer[index] == LIGHTEST_GREEN) ){//FIXME possibly correct but removes mouth entirely
+                                    framebuffer[index] = colour;
+                                }
                             }
                         }
                     }

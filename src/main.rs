@@ -156,18 +156,8 @@ impl Emulator {
         if self.previous_frame != self.ppu.borrow().current_frame {
             //self.display.borrow_mut().ui_update();
             if self.ppu.borrow().lcd_ppu_enabled() {
-                //self.debug_window.update(&self.ppu.borrow().get_tile_map());
-                //self.background_display.update(&self.ppu.borrow().get_debug_background_tile_map());
-
-                //self.main_display.update(&Vec::from(self.ppu.borrow().get_window_tiles()));
-                //info!("{:?}", self.ppu.borrow().get_background_tile_map().len());
-                //self.ppu.borrow().get_window_tiles();
-
-                //info!("{:?}", self.ppu.borrow().populate_background_tiles());
-                //self.ppu.borrow_mut().gpt_get_viewport();
-                self.main_display.update(self.ppu.borrow_mut().render_viewport());
-                //self.ppu.borrow_mut().get_viewport_pixels();
-
+                //self.main_display.update(self.ppu.borrow_mut().render_viewport()); // THIS IS THE MAIN DISPLAY ACTUAL (NOT TEST)
+                self.main_display.update(self.ppu.borrow().framebuffer.clone());
             }
             self.previous_frame = self.ppu.borrow().current_frame;
         }

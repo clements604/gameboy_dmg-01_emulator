@@ -1,12 +1,12 @@
-use std::cell::RefCell;
-use crate::{display, interupts, main, main_display};
+use crate::display::LIGHTEST_GREEN;
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
+use crate::{display, interupts, main, main_display};
 use log::{debug, error, info};
+use minifb::Key::P;
+use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
-use minifb::Key::P;
-use crate::display::LIGHTEST_GREEN;
 //use crate::display::Display;
 use crate::lcd::LCD;
 use crate::main_display::get_mififb_colour;
@@ -26,7 +26,10 @@ const LINES_PER_FRAME: u8 = 153;
 const TICKS_PER_LINE: u16 = 456;
 const Y_RES: u8 = 144;
 const X_RES: u8 = 160;
-const TARGET_FRAME_TIME : u32 = 1000 / 60; // 60 FPS
+const TARGET_FRAME_TIME: u32 = 1000 / 60; // 60 FPS
+
+const VIEWPORT_WIDTH: usize = 160;
+const VIEWPORT_HEIGHT: usize = 144;
 
 pub struct Ppu {
     oam_ram: [u8; 0xA0],
@@ -42,7 +45,6 @@ pub struct Ppu {
     cpu: Rc<RefCell<CPU>>,
     lcd: Rc<RefCell<LCD>>,
     //display: Rc<RefCell<Display>>,
-
     pub lcdc: u8,
     pub stat: u8,
     pub scroll_x: u8,
@@ -51,6 +53,7 @@ pub struct Ppu {
     pub ly_compare: u8,
 
     pub background_buffer: Vec<u32>,
+    pub framebuffer: Vec<u32>,
     pub viewport: Vec<u32>,
 }
 
@@ -221,10 +224,12 @@ impl Sprite {
             flags: OAMFlags::from(0),
         }
     }
-
 }
 impl Ppu {
-    pub fn new(cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>/*, display: Rc<RefCell<Display>>*/) -> Ppu {
+    pub fn new(
+        cpu: Rc<RefCell<CPU>>,
+        lcd: Rc<RefCell<LCD>>, /*, display: Rc<RefCell<Display>>*/
+    ) -> Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
             vram: [0x0000; 0x2000],
@@ -243,9 +248,12 @@ impl Ppu {
             scroll_y: 0,
             ly: 0,
             ly_compare: 0,
-
+            framebuffer: vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT],
             background_buffer: vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT],
-            viewport: vec![main_display::RED; main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT],
+            viewport: vec![
+                main_display::RED;
+                main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT
+            ],
         }
     }
 
@@ -382,7 +390,7 @@ impl Ppu {
 
         // Handle full line completion (ticks >= 456)
         if self.line_ticks > 456 && self.mode != VBLANK_MODE {
-            self.ly = self.ly.wrapping_add(1);  // Move to the next line
+            self.ly = self.ly.wrapping_add(1); // Move to the next line
 
             // Handle mode transitions based on the line (LY)
             if self.ly <= 144 {
@@ -395,17 +403,20 @@ impl Ppu {
                 if self.stat & 0x08 != 0 || self.stat & 0x40 != 0 {
                     self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
                 }
-                if self.line_ticks >= 204 { // 376 - mode 3’s (VRAM_MODE) duration
-                    //self.ly = self.ly.wrapping_add(1);
+                if self.line_ticks >= 204 {
+                    // HBlank duration
+
+                    self.render_scanline();
+
                     self.increment_ly();
                     if self.ly >= Y_RES {
                         self.mode = VBLANK_MODE;
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
                         self.update_stat_interrupts();
                         self.current_frame += 1;
-                        //self.calculate_fps();
+                        // self.calculate_fps(); // Optional frame timing logic
                     } else {
-                        self.mode = OAM_MODE;
+                        self.mode = OAM_MODE; // Start processing the next line
                     }
                     self.line_ticks = 0;
                 }
@@ -414,7 +425,8 @@ impl Ppu {
                 if self.stat & 0x10 != 0 || self.stat & 0x40 != 0 {
                     self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
                 }
-                if self.line_ticks >= TICKS_PER_LINE { // 4560 / 10 scanlines
+                if self.line_ticks >= TICKS_PER_LINE {
+                    // 4560 / 10 scanlines
                     //self.ly = self.ly.wrapping_add(1);
                     self.increment_ly();
                     if self.ly >= LINES_PER_FRAME {
@@ -437,7 +449,8 @@ impl Ppu {
                 if self.stat & 0x30 != 0 || self.stat & 0x40 != 0 {
                     self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
                 }
-                if self.line_ticks >= 172 { // Between 172 and 289 line_ticks (with conditions).
+                if self.line_ticks >= 172 {
+                    // Between 172 and 289 line_ticks (with conditions).
                     self.mode = HBLANK_MODE;
                     self.update_stat_interrupts();
                 }
@@ -469,7 +482,9 @@ impl Ppu {
         if (self.stat & 0x40 != 0 && lyc_ly_coincidence) || // LYC=LY interrupt
             (self.stat & 0x20 != 0 && self.mode == 2) || // OAM interrupt
             (self.stat & 0x10 != 0 && self.mode == 1) || // V-Blank interrupt
-            (self.stat & 0x08 != 0 && self.mode == 0) { // H-Blank interrupt
+            (self.stat & 0x08 != 0 && self.mode == 0)
+        {
+            // H-Blank interrupt
             self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
         }
     }
@@ -499,8 +514,14 @@ impl Ppu {
             0xFF45 => self.ly_compare = value,
             0xFF46 => {
                 debug!("DMA transfer start: {:#X}", value);
-                self.lcd.borrow_mut().dma.upgrade().unwrap().borrow_mut().dma_start(value);
-            },
+                self.lcd
+                    .borrow_mut()
+                    .dma
+                    .upgrade()
+                    .unwrap()
+                    .borrow_mut()
+                    .dma_start(value);
+            }
             0xFF47 => self.lcd.borrow_mut().bg_palette = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
@@ -558,12 +579,13 @@ impl Ppu {
         }
     }
 
-    pub fn get_tile_set(&self) -> [[u8; 16] ; 256] {
-        let mut tile_set = [[0; 16]; 256];//256 tiles
+    pub fn get_tile_set(&self) -> [[u8; 16]; 256] {
+        let mut tile_set = [[0; 16]; 256]; //256 tiles
 
         for tile_number in 0..256 {
             debug!("{:4X}", 0x8000 + (tile_number * 16));
-            tile_set[tile_number] = self.get_tile_from_memory((0x8000 + (tile_number * 16)) as u16); // TODO this needs to be dynamic based on tile map value from memory?
+            tile_set[tile_number] = self.get_tile_from_memory((0x8000 + (tile_number * 16)) as u16);
+            // TODO this needs to be dynamic based on tile map value from memory?
         }
         debug!("Tile set {:?}", tile_set);
         tile_set
@@ -578,14 +600,14 @@ impl Ppu {
         debug!("Returning tile {:?}", tile);
         tile
     }
-    
-    pub fn get_tile_map(&self) -> Vec<&[u8]>{
+
+    pub fn get_tile_map(&self) -> Vec<&[u8]> {
         /*let mut tile_map: [u8; 1024] = [0; 1024];
-        
+
         for i in 0..1024 {
             tile_map[i] = self.cpu.borrow().memory_bus.borrow().read_byte((0x9800 + i) as u16);
         }
-        
+
         tile_map*/
 
         let mut tiles: Vec<&[u8]> = Vec::new();
@@ -610,7 +632,7 @@ impl Ppu {
 
     pub fn get_debug_background_tile_map(&self) -> Vec<&[u8]> {
         /*
-        This function retrieves the tile data for all 32x32 tiles 
+        This function retrieves the tile data for all 32x32 tiles
         in the background tile map for debugging purposes.
         */
 
@@ -647,8 +669,8 @@ impl Ppu {
         tile_map
     }
 
-    pub fn populate_background_tiles(&self) -> Vec<[u8;16]>{
-        let mut tiles: Vec<[u8;16]> = Vec::new();
+    pub fn populate_background_tiles(&self) -> Vec<[u8; 16]> {
+        let mut tiles: Vec<[u8; 16]> = Vec::new();
         let tile_map = self.get_background_tile_map();
         let background_tile_set = self.get_tile_set();
 
@@ -696,7 +718,7 @@ impl Ppu {
             }
         }
     }
-    pub fn convert_tile_to_minifb_format(&mut self, tile_data: [u8; 16]) -> Vec<u32>{
+    pub fn convert_tile_to_minifb_format(&mut self, tile_data: [u8; 16]) -> Vec<u32> {
         let mut minifb_tile: Vec<u32> = vec![main_display::RED; 64];
         for x in (0..tile_data.len()).step_by(2) {
             let lsb = tile_data[x];
@@ -711,7 +733,7 @@ impl Ppu {
                 minifb_tile[(x / 2 * 8) + (7 - bit) as usize] = mfb_pixel;
             }
         }
-    minifb_tile
+        minifb_tile
     }
     fn convert_pixel_to_bgb_palette(&self, pixel: u8) -> u8 {
         let palette = self.lcd.borrow().bg_palette;
@@ -769,7 +791,7 @@ impl Ppu {
                         }
                     }
                 }
-                
+
                 // Draw sprites
                 for sprite in sprite_data.iter() {
                     let sprite_tile_data = self.get_sprite_data(sprite);
@@ -785,7 +807,7 @@ impl Ppu {
                                 continue; // Skip transparent pixels
                             }
                             let colour = main_display::get_mififb_colour(pixel);
-                            
+
                             // Calculate the pixel's position on the screen
                             let pixel_x = screen_x + col as isize;
                             let pixel_y = screen_y + row as isize;
@@ -794,9 +816,13 @@ impl Ppu {
                             if pixel_x >= 0 && pixel_x < 160 && pixel_y >= 0 && pixel_y < 144 {
                                 // Calculate the index in the frame buffer
                                 let index = pixel_y as usize * 160 + pixel_x as usize;
-                                
+
                                 // Draw the pixel if it has higher priority
-                                if colour != LIGHTEST_GREEN && (sprite.flags.priority || (framebuffer[index] == LIGHTEST_GREEN) ){//FIXME possibly correct but removes mouth entirely
+                                if colour != LIGHTEST_GREEN
+                                    && (sprite.flags.priority
+                                        || (framebuffer[index] == LIGHTEST_GREEN))
+                                {
+                                    //FIXME possibly correct but removes mouth entirely
                                     framebuffer[index] = colour;
                                 }
                             }
@@ -808,8 +834,8 @@ impl Ppu {
         framebuffer
     }
     pub fn get_tile_index(&self, map_x: usize, map_y: usize) -> u8 {
-        const TILE_MAP_WIDTH: usize = 32;  // 32 tiles per row in the tile map
-        // Determine which tile map is being used based on the LCDC register
+        const TILE_MAP_WIDTH: usize = 32; // 32 tiles per row in the tile map
+                                          // Determine which tile map is being used based on the LCDC register
         let tile_map_base: u16 = if self.get_bg_tile_map_area() {
             TILE_MAP_1_START
         } else {
@@ -823,7 +849,7 @@ impl Ppu {
         // Read the tile index from memory (assumes you have a method to read from VRAM)
         self.vram_read(tile_map_address)
     }
-    
+
     fn get_bg_tile_map_area(&self) -> bool {
         self.lcdc & 0x08 != 0
     }
@@ -840,7 +866,7 @@ impl Ppu {
         } else {
             TILE_DATA_AREA_0 // 0x8000 - unsigned indices
         };
-        
+
         let tile_address = if tile_data_base == TILE_DATA_AREA_1 {
             // Treat tile_index as signed if using the 0x8800-0x97FF region
             let signed_tile_index = tile_index as i16;
@@ -849,15 +875,15 @@ impl Ppu {
         } else {
             TILE_DATA_AREA_0 + (tile_index as u16 * TILE_SIZE_BYTES as u16)
         };
-        
+
         let mut tile_data = [0u8; TILE_SIZE_BYTES];
         for i in 0..TILE_SIZE_BYTES {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
-        
+
         TileData::new(tile_data)
     }
-    
+
     fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
         const SPRITE_SIZE: usize = 16; // 16 bytes per sprite (2 bytes per row for 8 rows)
         let mut sprite_tile_data = [0u8; SPRITE_SIZE];
@@ -868,10 +894,60 @@ impl Ppu {
         TileData::new(sprite_tile_data)
     }
 
+    fn render_scanline(&mut self) {
+        let tile_set = self.get_tile_set();
+        info!("Tile Set: {:?}", tile_set);
+        let tile_map = self.get_bg_tile_map();
+        info!("Tile Map: {:?}", tile_map);
+        let bg_palette = self.lcd.borrow().bg_palette;
+        info!("BG Palette: {:#X}", bg_palette);
+
+        // Get current scanline (LY) and viewport offsets
+        let ly = self.ly as usize;
+        let scroll_x = self.scroll_x as usize;
+        let scroll_y = self.scroll_y as usize;
+
+        // Create an array to represent the current line of pixels
+        let mut line = [LIGHTEST_GREEN; 160];
+
+        for x in 0..160 {
+            // Calculate the global coordinates in the background map
+            let global_x = (x + scroll_x) % 256; // Wrap around at 256 (background map width)
+            let global_y = (ly + scroll_y) % 256; // Wrap around at 256 (background map height)
+
+            // Determine which tile and pixel within the tile corresponds to these coordinates
+            let tile_x = global_x / 8;
+            let tile_y = global_y / 8;
+            let tile_index = tile_map[tile_y * 32 + tile_x]; // Each map row has 32 tiles
+
+            // Fetch the tile data
+            let tile = self.get_tile_data(tile_index);
+
+            // Determine the pixel's row and column within the tile
+            let row = global_y % 8;
+            let col = global_x % 8;
+
+            // Get the pixel's color ID from the tile
+            let pixel = tile.get_pixel(row, col);
+
+            // Convert the color ID to an actual color
+            let colour = main_display::get_mififb_colour(pixel);
+
+            // Write the pixel to the line buffer
+            line[x] = colour;
+        }
+
+        info!("Line: {:?}", line);
+
+        // Transfer the line to the framebuffer
+        self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
+    }
+
+
     /*
     MAIN DISPLAY END
     */
-    
+
     /*
     SPRITE DISPLAY START
     */
@@ -884,7 +960,12 @@ impl Ppu {
             let x = self.oam_read(address + 1) as u8;
             let tile_number = self.oam_read(address + 2) as u8;
             let flags = OAMFlags::from(self.oam_read(address + 3));
-            sprites.push(Sprite { y, x, tile_number, flags });
+            sprites.push(Sprite {
+                y,
+                x,
+                tile_number,
+                flags,
+            });
         }
 
         sprites
@@ -892,7 +973,6 @@ impl Ppu {
     /*
     SPRITE DISPLAY END
     */
-
 }
 
 // Struct to represent the tile data
@@ -922,8 +1002,7 @@ impl TileData {
     }
 }
 
-
-    /*fn calculate_fps(&mut self) {
+/*fn calculate_fps(&mut self) {
         let end = self.display.borrow().get_ticks();
         let frame_time = end - self.previous_frame_time;
 

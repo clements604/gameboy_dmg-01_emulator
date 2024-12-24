@@ -356,8 +356,8 @@ impl Ppu {
         self.lcdc & 0x02 != 0
     }
 
-    fn bg_window_enabled(&self) -> bool {
-        self.lcdc & 0x01 != 0
+    fn is_background_enabled(&self) -> bool {
+        (self.lcdc & 0x01) != 0
     }
 
     fn increment_ly(&mut self) {
@@ -669,13 +669,26 @@ impl Ppu {
         tile_map
     }
 
+    fn get_window_tile_map(&self) -> Vec<u8> {
+        let mut tile_map: Vec<u8> = Vec::new();
+        let tile_map_base = if self.lcdc & (1 << 6) != 0 {
+            0x9C00
+        } else {
+            0x9800
+        };
+        for x in 0..1024 {
+            tile_map.push(self.vram_read(tile_map_base + x as u16));
+        }
+        tile_map
+    }
+
     pub fn populate_background_tiles(&self) -> Vec<[u8; 16]> {
         let mut tiles: Vec<[u8; 16]> = Vec::new();
         let tile_map = self.get_background_tile_map();
         let background_tile_set = self.get_tile_set();
 
         for tile in tile_map.iter() {
-            info!("Tile: {:#X}", tile);
+            //info!("Tile: {:#X}", tile);
             let tile_data = background_tile_set[*tile as usize].clone();
             //info!("BG Tiles: {:?}", tile_data);
 
@@ -697,7 +710,7 @@ impl Ppu {
         } else {
             TILE_MAP_0_START
         };
-        info!("Tile Map Base: {:#X}", tile_map_base);
+        debug!("Tile Map Base: {:#X}", tile_map_base);
         for i in 0..1024 {
             tile_map[i] = self.vram_read((tile_map_base as usize + i) as u16);
         }
@@ -895,12 +908,33 @@ impl Ppu {
     }
 
     fn render_scanline(&mut self) {
+        let sprite_data = self.get_sprites();
+        
+        let mut sprite_count = 0;
+        let mut sprites_to_render:Vec<Sprite> = Vec::with_capacity(10);
+        for sprite in sprite_data.iter() {
+            let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
+
+            // Check if the sprite is on the current scanline
+            if screen_y <= self.ly as isize && (screen_y + 8) > self.ly as isize {
+                // Increment sprite count for this line and add to rendering list
+                if sprite_count < 10 {
+                    &sprites_to_render.push(*sprite);
+                    sprite_count += 1;
+                } else {
+                    // If we've hit the limit, stop adding sprites
+                    break;
+                }
+            }
+        }
+
         let tile_set = self.get_tile_set();
-        info!("Tile Set: {:?}", tile_set);
         let tile_map = self.get_bg_tile_map();
-        info!("Tile Map: {:?}", tile_map);
+        
+        let window_map = self.get_window_tile_map();
+        //info!("Window Map: {:?}", window_map);
         let bg_palette = self.lcd.borrow().bg_palette;
-        info!("BG Palette: {:#X}", bg_palette);
+
 
         // Get current scanline (LY) and viewport offsets
         let ly = self.ly as usize;
@@ -910,35 +944,77 @@ impl Ppu {
         // Create an array to represent the current line of pixels
         let mut line = [LIGHTEST_GREEN; 160];
 
+        let current_scanline = ly; // Assuming 'ly' is the current scanline
+        let scroll_x = scroll_x as usize;
+        let scroll_y = scroll_y as usize;
+
         for x in 0..160 {
-            // Calculate the global coordinates in the background map
-            let global_x = (x + scroll_x) % 256; // Wrap around at 256 (background map width)
-            let global_y = (ly + scroll_y) % 256; // Wrap around at 256 (background map height)
+            let mut colour = LIGHTEST_GREEN;
 
-            // Determine which tile and pixel within the tile corresponds to these coordinates
-            let tile_x = global_x / 8;
-            let tile_y = global_y / 8;
-            let tile_index = tile_map[tile_y * 32 + tile_x]; // Each map row has 32 tiles
+            if ! self.is_background_enabled() {
+                panic!("test");
+            }
+            // Background rendering
+            if self.is_background_enabled() { // Replace with actual method to check bit 0 of LCDC register
+                // Background rendering
+                let global_x = (x + scroll_x) % 256;
+                let global_y = (current_scanline + scroll_y) % 256;
 
-            // Fetch the tile data
-            let tile = self.get_tile_data(tile_index);
+                let tile_x = global_x / 8;
+                let tile_y = global_y / 8;
+                let tile_index = tile_map[tile_y * 32 + tile_x];
+                let tile = self.get_tile_data(tile_index);
 
-            // Determine the pixel's row and column within the tile
-            let row = global_y % 8;
-            let col = global_x % 8;
+                let row = global_y % 8;
+                let col = global_x % 8;
+                let pixel = tile.get_pixel(row, col);
+                colour = main_display::get_mififb_colour(pixel);
+            }
+            
+            // Sprite rendering
+            for sprite in &sprites_to_render {
+                let sprite_tile_data = self.get_sprite_data(&sprite);
 
-            // Get the pixel's color ID from the tile
-            let pixel = tile.get_pixel(row, col);
+                let screen_x = sprite.x as isize - 8;
+                let screen_y = sprite.y as isize - 16;
 
-            // Convert the color ID to an actual color
-            let colour = main_display::get_mififb_colour(pixel);
+                // Check if the sprite is on the current scanline
+                if screen_y <= current_scanline as isize && (screen_y + 8) > current_scanline as isize {
+                    let mut sprite_row = current_scanline as isize - screen_y;
+                    let mut sprite_col = x as isize - screen_x;
 
-            // Write the pixel to the line buffer
+                    // Apply Y-flip if flag is set
+                    if sprite.flags.y_flip {
+                        sprite_row = 7 - sprite_row;
+                    }
+
+                    // Apply X-flip if flag is set
+                    if sprite.flags.x_flip {
+                        sprite_col = 7 - sprite_col;
+                    }
+
+                    // Check if the pixel is within sprite bounds after flipping
+                    if sprite_col >= 0 && sprite_col < 8 {
+                        let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
+                        if sprite_pixel == 0 {
+                            continue; // Skip transparent pixels
+                        }
+
+                        // Map the 2-bit color to the actual color using the palette
+                        let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
+
+                        // Draw the pixel if it has higher priority
+                        if sprite_colour != LIGHTEST_GREEN
+                            && (sprite.flags.priority || (colour == LIGHTEST_GREEN)) {
+                            colour = sprite_colour;
+                        }
+                        break; // Only one sprite per pixel, so break once we've found a match
+                    }
+                }
+            }
+
             line[x] = colour;
         }
-
-        info!("Line: {:?}", line);
-
         // Transfer the line to the framebuffer
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
     }

@@ -536,6 +536,10 @@ impl Ppu {
         }
     }
 
+    fn lcdc_background_priority(&self) -> bool {
+        self.lcdc & 0x01 != 0
+    }
+    
     pub fn oam_read(&self, address: u16) -> u8 {
         //debug!("OAM read at address: {:#X}", address);
         /*if address < 0xFE00 || address >= 0xFEA0 {
@@ -716,6 +720,25 @@ impl Ppu {
         }
         tile_map
     }
+
+    fn get_bg_tile_map_for_scanline(&self, scanline: u8) -> [u8; 32] {
+        let tile_map_base: u16 = if self.get_bg_tile_map_area() {
+            TILE_MAP_1_START
+        } else {
+            TILE_MAP_0_START
+        };
+        info!("Tile Map Base for scanline {}: {:#X}", scanline, tile_map_base);
+
+        let row = ((scanline as u16 + self.scroll_y as u16) / 8) % 32; // Adjust for scroll_y
+        let start_address = tile_map_base + row * 32;
+
+        let mut tile_row: [u8; 32] = [0; 32];
+        for i in 0..32 {
+            tile_row[i] = self.vram_read(start_address + i as u16);
+        }
+        tile_row
+    }
+    
     pub fn populate_background_buffer(&mut self) {
         let tile_set = self.get_tile_set();
         let tile_map = self.get_bg_tile_map();
@@ -919,7 +942,7 @@ impl Ppu {
             if screen_y <= self.ly as isize && (screen_y + 8) > self.ly as isize {
                 // Increment sprite count for this line and add to rendering list
                 if sprite_count < 10 {
-                    &sprites_to_render.push(*sprite);
+                    sprites_to_render.push(*sprite);
                     sprite_count += 1;
                 } else {
                     // If we've hit the limit, stop adding sprites
@@ -996,19 +1019,25 @@ impl Ppu {
                     // Check if the pixel is within sprite bounds after flipping
                     if sprite_col >= 0 && sprite_col < 8 {
                         let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
-                        if sprite_pixel == 0 {
-                            continue; // Skip transparent pixels
-                        }
+                        if sprite_pixel != 0 { // Non-transparent
+                            let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
 
-                        // Map the 2-bit color to the actual color using the palette
-                        let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
-
-                        // Draw the pixel if it has higher priority
-                        if sprite_colour != LIGHTEST_GREEN
-                            && (sprite.flags.priority || (colour == LIGHTEST_GREEN)) {
-                            colour = sprite_colour;
+                            // Here's where we implement the priority check:
+                            if sprite_colour != LIGHTEST_GREEN { // Not transparent
+                                if sprite.flags.priority {
+                                    // If priority bit is set (sprite behind background), only draw if the background is transparent
+                                    if colour == LIGHTEST_GREEN {
+                                        colour = sprite_colour;
+                                    }
+                                } else {
+                                    // If priority bit is not set (sprite in front), draw over the background unless background is non-transparent and has priority
+                                    if colour == LIGHTEST_GREEN || !self.lcdc_background_priority() {
+                                        colour = sprite_colour;
+                                    }
+                                }
+                                break; // Only one sprite per pixel
+                            }
                         }
-                        break; // Only one sprite per pixel, so break once we've found a match
                     }
                 }
             }

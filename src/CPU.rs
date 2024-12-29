@@ -278,6 +278,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         if !self.halted {
 
             let opcode = self.memory_bus.borrow().read_byte(self.registers.pc);
+            debug!("opcode = {:#4X}", opcode);
 
             self.registers.pc = self.registers.pc.wrapping_add(1);
 
@@ -3080,6 +3081,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     fn op_ret(&mut self) {
         debug!("op_ret");
         let address = self.op_pop_stack();
+        debug!("Return address: 0x{:04X}", address);
         self.registers.pc = address;
     }
 
@@ -3091,51 +3093,69 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      */
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
-        debug!("set_interrupt {:?}", interrupt);
-        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow().interrupt_flags);
+        let mut interrupts: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
         match interrupt {
-            Interrupt::VBLANK => interrupt_flags |= 0x01,
-            Interrupt::LCDSTAT => interrupt_flags |= 0x02,
-            Interrupt::TIMER => interrupt_flags |= 0x04,
-            Interrupt::SERIAL => interrupt_flags |= 0x08,
-            Interrupt::JOYPAD => interrupt_flags |= 0x10,
+            Interrupt::VBLANK => interrupts.vblank = true,
+            Interrupt::LCDSTAT => interrupts.lcd_stat = true,
+            Interrupt::TIMER => interrupts.timer = true,
+            Interrupt::SERIAL => interrupts.serial = true,
+            Interrupt::JOYPAD => interrupts.joypad = true,
         }
-        self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
+        self.memory_bus.borrow_mut().interrupt_flags = interrupts.into();
+    }
+    pub fn check_interrupts(&mut self) {
+        if self.memory_bus.borrow().interrupt_master_enable {
+            let interrupt_flags: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
+            let interrupt_enable_register = self.memory_bus.borrow().interrupt_enable_register;
+
+            // Check if the interrupt is both flagged and enabled
+            if interrupt_flags.vblank && (interrupt_enable_register & 0x01) != 0 {
+                error!("VBLANK interrupt");
+                self.service_interrupt(Interrupt::VBLANK);
+            } else if interrupt_flags.lcd_stat && (interrupt_enable_register & 0x02) != 0 {
+                error!("LCDSTAT interrupt");
+                self.service_interrupt(Interrupt::LCDSTAT);
+            } else if interrupt_flags.timer && (interrupt_enable_register & 0x04) != 0 {
+                error!("TIMER interrupt");
+                self.service_interrupt(Interrupt::TIMER);
+            } else if interrupt_flags.serial && (interrupt_enable_register & 0x08) != 0 {
+                error!("SERIAL interrupt");
+                self.service_interrupt(Interrupt::SERIAL);
+            } else if interrupt_flags.joypad && (interrupt_enable_register & 0x10) != 0 {
+                error!("JOYPAD interrupt");
+                self.service_interrupt(Interrupt::JOYPAD);
+            }
+        }
     }
 
-    pub fn handle_interrupts(&mut self) {
-        if self.check_interrupt(Interrupt::VBLANK) {
-            debug!("VBLANK interrupt");
-            self.op_rst_address(0x40);
-        }
-        else if self.check_interrupt(Interrupt::LCDSTAT) {
-            debug!("LCDSTAT interrupt");
-            self.op_rst_address(0x48);
-        }
-        else if self.check_interrupt(Interrupt::TIMER) {
-            self.op_rst_address(0x50);
-            debug!("TIMER interrupt")
-        }
-        else if self.check_interrupt(Interrupt::SERIAL) {
-            debug!("SERIAL interrupt");
-            self.op_rst_address(0x58);
-        }
-        else if self.check_interrupt(Interrupt::JOYPAD) {
-            debug!("JOYPAD interrupt");
-            self.op_rst_address(0x60);
-        }
-    }
-    pub fn check_interrupt(&mut self, interrupt: Interrupt) -> bool {
-        let interrupt = interrupt as u8;
+    fn service_interrupt(&mut self, interrupt: Interrupt) {
+        let mut interrupts: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
+        self.memory_bus.borrow_mut().interrupt_master_enable = false;
+        let vector_address = match interrupt {
+            Interrupt::VBLANK => 0x0040,
+            Interrupt::LCDSTAT => 0x0048,
+            Interrupt::TIMER => 0x0050,
+            Interrupt::SERIAL => 0x0058,
+            Interrupt::JOYPAD => 0x0060,
+        };
 
-        if self.memory_bus.borrow().interrupt_flags & interrupt != 0 && self.memory_bus.borrow().interrupt_enable_register & interrupt != 0{
-           let updated_interrupt_flags = self.memory_bus.borrow().interrupt_flags & !interrupt;
-            self.memory_bus.borrow_mut().interrupt_flags = updated_interrupt_flags.into();
-            self.halted = false;
-            self.memory_bus.borrow_mut().interrupt_master_enable = false;
-            return true;
+        // Push the current PC to the stack
+        self.op_push_stack(self.registers.pc);
+
+        // Set PC to the interrupt vector
+        self.registers.pc = vector_address;
+
+        // Clear the interrupt flag
+        match interrupt {
+            Interrupt::VBLANK => interrupts.vblank = false,
+            Interrupt::LCDSTAT => interrupts.lcd_stat = false,
+            Interrupt::TIMER => interrupts.timer = false,
+            Interrupt::SERIAL => interrupts.serial = false,
+            Interrupt::JOYPAD => interrupts.joypad = false,
         }
-        false
+
+        // Update interrupt flags in memory
+        self.memory_bus.borrow_mut().interrupt_flags = interrupts.into();
     }
 
     fn op_halt(&mut self) {

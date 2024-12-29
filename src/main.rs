@@ -131,6 +131,11 @@ impl Emulator {
 
         let cpu_cycles = self.cpu.borrow_mut().cycle();
 
+        if self.memory_bus.borrow().enabling_ime {
+            self.memory_bus.borrow_mut().interrupt_master_enable = true;
+            self.memory_bus.borrow_mut().enabling_ime = false;
+        }
+
         if self.cpu.borrow().registers.pc == 0xC2C0 {//0xCB89
             info!("{}", self.cpu.borrow().registers);
             //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
@@ -145,13 +150,7 @@ impl Emulator {
 
         self.dma.borrow_mut().dma_tick();
 
-        if self.memory_bus.borrow().interrupt_master_enable {
-            self.cpu.borrow_mut().handle_interrupts();
-            self.memory_bus.borrow_mut().enabling_ime = false;
-        }
-        if self.memory_bus.borrow().enabling_ime {
-            self.memory_bus.borrow_mut().interrupt_master_enable = true;
-        }
+        self.cpu.borrow_mut().check_interrupts();
 
         if self.previous_frame != self.ppu.borrow().current_frame {
             //self.display.borrow_mut().ui_update();
@@ -197,7 +196,7 @@ fn main() {
      * CPU instructions
     */
     //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
+    let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
     //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
@@ -217,10 +216,10 @@ fn main() {
     /*
      * Graphics
     */
-   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
    //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); //TODO LYC
    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
-    
+
     /*
      * Memory timing
     */

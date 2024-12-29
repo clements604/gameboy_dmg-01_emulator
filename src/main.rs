@@ -219,6 +219,7 @@ fn main() {
     */
    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
    //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); //TODO LYC
+   //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
     
     /*
      * Memory timing

@@ -362,11 +362,25 @@ impl Ppu {
 
     fn increment_ly(&mut self) {
         self.ly = self.ly.wrapping_add(1);
-        if self.ly >= 144 {
-            self.set_ppu_mode(VBLANK_MODE);
-            self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
-            self.ly = 0;
+        if self.ly == self.ly_compare {
+            self.stat |= 0x04; // Set coincidence flag
+        } else {
+            self.stat &= !0x04; // Clear coincidence flag
         }
+        /*if self.ly >= LINES_PER_FRAME {
+            self.ly = 0;
+        }*/
+        self.update_stat_interrupts(); // Ensure this is called to check for interrupts
+    }
+
+    fn get_current_mode(&self) -> u8 {
+        // TODO: Implement this
+        //unimplemented!("get_current_mode")
+        return self.mode
+    }
+    fn change_mode(&mut self, mode: u8) {
+        self.mode = mode;
+        self.update_stat_interrupts();
     }
 
     pub fn tick(&mut self, cycles: u8) {
@@ -376,70 +390,87 @@ impl Ppu {
 
         if !self.lcd_ppu_enabled() {
             debug!("LCD is disabled");
-            self.ly = 0;
+            //self.ly = 0;
             //self.line_ticks = 0;
             //self.set_ppu_mode(OAM_MODE);
             return;
         }
 
-        //self.line_ticks += cycles as u16;
-        //debug!("Line ticks: {}", self.line_ticks);
+        self.line_ticks += (cycles * 4) as u16;
+        debug!("Line ticks: {}", self.line_ticks);
 
-        // 4 cycles per cpu cycle, the cycles input param
-        for _ in 0..(cycles as u16 * 1) { // TODO change back to 4
-            match self.mode {
-                OAM_MODE => {
-                    if self.line_ticks >= 80 {
-                        //self.line_ticks = 0;
-                        //self.ly = 0;
-                        self.mode = VRAM_MODE;
-                    }
-                }
-                VRAM_MODE => {
-                    if self.line_ticks >= 172 {
-                        // Between 172 and 289 line_ticks (with conditions).
-                        //self.line_ticks = 0;
-                        self.mode = HBLANK_MODE;
-                        //self.update_stat_interrupts();
-                    }
-                    /*else {
-                        self.render_scanline();
-                    }*/
-                }
-                HBLANK_MODE => {
-                        //self.line_ticks = 0;
-                        if self.ly >= Y_RES {
-                            self.mode = VBLANK_MODE;
-                            self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+        self.mode = self.get_current_mode();
 
-                        } else {
-                            self.mode = OAM_MODE;
-                            if self.line_ticks >= 204 {
-                                //self.increment_ly();
-                                self.render_scanline();
-                                self.ly += 1;
-                        }
+        match self.mode {
+            OAM_MODE => {
+                if self.line_ticks >= 80 {
+                    // Check for OAM interrupt
+                    if self.is_stat_interrupt_enabled(StatInterrupt::OAM) {
+                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
                     }
-                }
-                VBLANK_MODE => {
-                    //self.current_frame += 1;
-                    if self.line_ticks < 4560 {
-                        //self.current_frame += 1;
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+
+                    // Check for LYC=LY interrupt
+                    if self.ly == self.ly_compare {
+                        self.stat |= 0x04;
                     } else {
-                        self.current_frame += 1;
-                        //self.line_ticks = 0;
-                        self.mode = OAM_MODE;
-                        self.ly = 0;
-                        //TODO update frame buffer
+                        self.stat &= !0x04;
                     }
-                }
-                _ => {
-                    panic!("Invalid PPU mode: {}", self.mode);
+
+                    // Mode transition
+                    self.line_ticks -= 80;
+                    self.change_mode(VRAM_MODE);
                 }
             }
-            self.line_ticks = self.line_ticks.wrapping_add(1);
-            self.update_stat_interrupts();
+            VRAM_MODE => {
+                if self.line_ticks >= 172 {
+                    // Mode transition
+                    self.line_ticks -= 172;
+                    self.change_mode(HBLANK_MODE);
+                }
+            }
+            HBLANK_MODE => {
+                if self.line_ticks >= 204 {
+                    // Check for H-Blank interrupt
+                    if self.is_stat_interrupt_enabled(StatInterrupt::HBLANK) {
+                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                    }
+
+                    // Render scanline
+                    self.render_scanline();
+
+                    // Mode transition
+                    if self.ly == 143 {
+                        self.change_mode(VBLANK_MODE);
+                    } else {
+                        self.change_mode(OAM_MODE);
+                    }
+
+                    self.increment_ly();
+                    self.line_ticks -= 204;
+                }
+            }
+            VBLANK_MODE => {
+                if self.line_ticks >= 456 {
+                    if self.ly == 144 {
+                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                        // TODO: Copy buffer to display
+                    }
+
+                    // Final line of V-Blank
+                    if self.ly == 153 {
+                        self.change_mode(OAM_MODE);
+                        self.ly = 0;
+                        self.current_frame += 1;
+                    }
+                    else {
+                        self.increment_ly();
+                    }
+                    self.line_ticks -= 456;
+                }
+            }
+            _ => {
+                panic!("Invalid PPU mode: {}", self.mode);
+            }
         }
     }
 
@@ -454,7 +485,6 @@ impl Ppu {
         {
             self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
         }
-
     }
 
     pub fn read(&self, address: u16) -> u8 {
@@ -466,7 +496,10 @@ impl Ppu {
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
             0xFF47 => self.lcd.borrow().bg_palette,
-            _ => {error!("Invalid LCD address: {:#X}", address); 0xFF},
+            _ => {
+                error!("Invalid LCD address: {:#X}", address);
+                0xFF
+            }
         }
     }
     pub fn write(&mut self, address: u16, value: u8) {
@@ -478,7 +511,7 @@ impl Ppu {
                 if self.lcdc & 0x10 == 0 {
                     error!("Bit 4 of LCDC is set low");
                 }
-            },
+            }
             0xFF41 => self.stat = value,
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
@@ -701,7 +734,10 @@ impl Ppu {
         } else {
             TILE_MAP_0_START
         };
-        debug!("Tile Map Base for scanline {}: {:#X}", scanline, tile_map_base);
+        debug!(
+            "Tile Map Base for scanline {}: {:#X}",
+            scanline, tile_map_base
+        );
 
         let row = ((scanline as u16 + self.scroll_y as u16) / 8) % 32; // Adjust for scroll_y
         let start_address = tile_map_base + row * 32;
@@ -830,7 +866,7 @@ impl Ppu {
                                 // Draw the pixel if it has higher priority
                                 if colour != LIGHTEST_GREEN
                                     && (sprite.flags.priority
-                                    || (framebuffer[index] == LIGHTEST_GREEN))
+                                        || (framebuffer[index] == LIGHTEST_GREEN))
                                 {
                                     //FIXME possibly correct but removes mouth entirely
                                     framebuffer[index] = colour;
@@ -845,7 +881,7 @@ impl Ppu {
     }
     pub fn get_tile_index(&self, map_x: usize, map_y: usize) -> u8 {
         const TILE_MAP_WIDTH: usize = 32; // 32 tiles per row in the tile map
-        // Determine which tile map is being used based on the LCDC register
+                                          // Determine which tile map is being used based on the LCDC register
         let tile_map_base: u16 = if self.get_bg_tile_map_area() {
             TILE_MAP_1_START
         } else {
@@ -917,7 +953,7 @@ impl Ppu {
         let sprite_data = self.get_sprites();
 
         let mut sprite_count = 0;
-        let mut sprites_to_render:Vec<Sprite> = Vec::with_capacity(10);
+        let mut sprites_to_render: Vec<Sprite> = Vec::with_capacity(10);
         for sprite in sprite_data.iter() {
             let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
 
@@ -941,7 +977,6 @@ impl Ppu {
         //info!("Window Map: {:?}", window_map);
         let bg_palette = self.lcd.borrow().bg_palette;
 
-
         // Get current scanline (LY) and viewport offsets
         let ly = self.ly as usize;
         let scroll_x = self.scroll_x as usize;
@@ -957,6 +992,7 @@ impl Ppu {
         for x in 0..160 {
             let mut colour = LIGHTEST_GREEN;
 
+            //TODO uncomment this, commented for debugging of sprite rendering
             // Background rendering
             if self.is_background_enabled() { // Replace with actual method to check bit 0 of LCDC register
                 // Background rendering
@@ -982,7 +1018,9 @@ impl Ppu {
                 let screen_y = sprite.y as isize - 16;
 
                 // Check if the sprite is on the current scanline
-                if screen_y <= current_scanline as isize && (screen_y + 8) > current_scanline as isize {
+                if screen_y <= current_scanline as isize
+                    && (screen_y + 8) > current_scanline as isize
+                {
                     let mut sprite_row = current_scanline as isize - screen_y;
                     let mut sprite_col = x as isize - screen_x;
 
@@ -998,12 +1036,27 @@ impl Ppu {
 
                     // Check if the pixel is within sprite bounds after flipping
                     if sprite_col >= 0 && sprite_col < 8 {
-                        let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
-                        if sprite_pixel != 0 { // Non-transparent
-                            let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
+                        let sprite_pixel =
+                            sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
+                        if sprite_pixel != 0 {
+                            // Non-transparent
+                            //let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
+                            let palette = if sprite.flags.dmg_palette {
+                                self.lcd.borrow().obj_palette[1]
+                            } else {
+                                self.lcd.borrow().obj_palette[0]
+                            };
+                            let sprite_colour = match sprite_pixel {
+                                0 => LIGHTEST_GREEN, // Transparent, shouldn't reach here due to the previous check
+                                1 => main_display::get_mififb_colour(palette & 0x03),
+                                2 => main_display::get_mififb_colour((palette >> 2) & 0x03),
+                                3 => main_display::get_mififb_colour((palette >> 4) & 0x03),
+                                _ => LIGHTEST_GREEN, // Fallback for unexpected cases
+                            };
 
                             // Here's where we implement the priority check:
-                            if sprite_colour != LIGHTEST_GREEN { // Not transparent
+                            if sprite_colour != LIGHTEST_GREEN {
+                                // Not transparent
                                 if sprite.flags.priority {
                                     // If priority bit is set (sprite behind background), only draw if the background is transparent
                                     if colour == LIGHTEST_GREEN {
@@ -1011,7 +1064,8 @@ impl Ppu {
                                     }
                                 } else {
                                     // If priority bit is not set (sprite in front), draw over the background unless background is non-transparent and has priority
-                                    if colour == LIGHTEST_GREEN || !self.lcdc_background_priority() {
+                                    if colour == LIGHTEST_GREEN || self.lcdc_background_priority()
+                                    {
                                         colour = sprite_colour;
                                     }
                                 }
@@ -1027,7 +1081,6 @@ impl Ppu {
         // Transfer the line to the framebuffer
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
     }
-
 
     /*
     MAIN DISPLAY END

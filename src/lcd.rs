@@ -3,7 +3,17 @@ use std::rc::{Rc, Weak};
 use log::{debug, error};
 use crate::dma::Dma;
 
-pub const DEFAULT_COLOURS: [u32; 4] = [0xFFFFFFFF, 0xFFAAAAAA, 0xFF555555, 0xFF000000];
+const DARKEST_GREEN: u32 = 0xFF0F380F;
+const DARK_GREEN: u32 = 0xFF306230;
+const LIGHT_GREEN: u32 = 0xFF8BAC0F;
+pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
+pub(crate) const RED: u32 = 0xFFFF0000;
+pub const DEFAULT_COLOURS: [u32; 4] = [
+    LIGHTEST_GREEN, // This would be the color for palette 00
+    LIGHT_GREEN,    // This would be the color for palette 01
+    DARK_GREEN,     // This would be the color for palette 10
+    DARKEST_GREEN   // This would be the color for palette 11
+];
 pub struct LCD {
     pub dma: Weak<RefCell<Dma>>,
     pub bg_palette: u8,
@@ -54,9 +64,17 @@ impl LCD{
             //0xFF47 => self.bg_palette = value,
             0xFF47 => self.update_palette(value, 0),
             //0xFF48 => self.obj_palette[0] = value,
-            0xFF48 => self.update_palette(value& 0b11111100, 1),
+            //0xFF48 => self.update_palette(value& 0b11111100, 1),
             //0xFF49 => self.obj_palette[1] = value,
-            0xFF49 => self.update_palette(value& 0b11111100, 2),
+            //0xFF49 => self.update_palette(value& 0b11111100, 2),
+            0xFF48 => {
+                self.obj_palette[0] = value;
+                self.update_palette(value, 1);  // Update sp1_colours
+            },
+            0xFF49 => {
+                self.obj_palette[1] = value;
+                self.update_palette(value, 2);  // Update sp2_colours
+            },
             0xFF4A => self.window_y = value,
             0xFF4B => self.window_x = value,
             _ => panic!("Invalid LCD address: {:#X}", address),

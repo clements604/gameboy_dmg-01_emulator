@@ -2488,7 +2488,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 12;
                 }
                 0xD3 => {
-                    panic!("Unsupported opcode: 0xD3");
+                    error!("Unsupported opcode: 0xD3");
+                    4
                 }
                 0xD4 => {
                     let nn: u16 = self.read_immediate_short();
@@ -2531,7 +2532,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 12;
                 }
                 0xDB => {
-                    panic!("Unsupported opcode: 0xDB");
+                    error!("Unsupported opcode: 0xDB");
+                    4
                 }
                 0xDC => {
                     let nn: u16 = self.read_immediate_short();
@@ -2542,7 +2544,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 12;
                 }
                 0xDD => {
-                    panic!("Unsupported opcode: 0xDD");
+                    error!("Unsupported opcode: 0xDD");
+                    4
                 }
                 0xDE => {
                     let value = self.memory_bus.borrow().read_byte(self.registers.pc);
@@ -2572,10 +2575,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0xE3 => {
-                    panic!("Unsupported opcode: 0xE3");
+                    error!("Unsupported opcode: 0xE3");
+                    4
                 }
                 0xE4 => {
-                    panic!("Unsupported opcode: 0xE4");
+                    error!("Unsupported opcode: 0xE4");
+                    4
                 }
                 0xE5 => {
                     self.op_push_stack(self.registers.get_hl());
@@ -2603,13 +2608,16 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xEB => {
-                    panic!("Unsupported opcode: 0xEB");
+                    error!("Unsupported opcode: 0xEB");
+                    4
                 }
                 0xEC => {
-                    panic!("Unsupported opcode: 0xEC");
+                    error!("Unsupported opcode: 0xEC");
+                    4
                 }
                 0xED => {
-                    panic!("Unsupported opcode: 0xED");
+                    error!("Unsupported opcode: 0xED");
+                    4
                 }
                 0xEE => {
                     let value = self.read_immediate_byte();
@@ -2641,7 +2649,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0xF4 => {
-                    panic!("Unsupported opcode: 0xF4");
+                    error!("Unsupported opcode: 0xF4");
+                    4
                 }
                 0xF5 => {
                     self.op_push_stack(self.registers.get_af());

@@ -991,8 +991,7 @@ impl Ppu {
 
         for x in 0..160 {
             let mut colour = LIGHTEST_GREEN;
-
-            //TODO uncomment this, commented for debugging of sprite rendering
+            
             // Background rendering
             if self.is_background_enabled() { // Replace with actual method to check bit 0 of LCDC register
                 // Background rendering
@@ -1040,19 +1039,19 @@ impl Ppu {
                             sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
                         if sprite_pixel != 0 {
                             // Non-transparent
-                            //let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
-                            let palette = if sprite.flags.dmg_palette {
+                            let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
+                            /*let palette = if sprite.flags.dmg_palette {
                                 self.lcd.borrow().obj_palette[1]
                             } else {
                                 self.lcd.borrow().obj_palette[0]
                             };
-                            let sprite_colour = match sprite_pixel {
+                            let sprite_colour = match palette {
                                 0 => LIGHTEST_GREEN, // Transparent, shouldn't reach here due to the previous check
                                 1 => main_display::get_mififb_colour(palette & 0x03),
                                 2 => main_display::get_mififb_colour((palette >> 2) & 0x03),
                                 3 => main_display::get_mififb_colour((palette >> 4) & 0x03),
-                                _ => LIGHTEST_GREEN, // Fallback for unexpected cases
-                            };
+                                _ => main_display::RED, // Fallback for unexpected cases
+                            };*/
 
                             // Here's where we implement the priority check:
                             if sprite_colour != LIGHTEST_GREEN {

@@ -1,4 +1,4 @@
-use crate::display::LIGHTEST_GREEN;
+use crate::display::{LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
 use crate::{display, interupts, main, main_display};
@@ -497,7 +497,7 @@ impl Ppu {
             0xFF45 => self.ly_compare,
             0xFF47 => self.lcd.borrow().bg_palette,
             _ => {
-                error!("Invalid LCD address: {:#X}", address);
+                debug!("Invalid LCD address: {:#X}", address);
                 0xFF
             }
         }
@@ -680,7 +680,7 @@ impl Ppu {
         tile_map
     }
 
-    fn get_window_tile_map(&self) -> Vec<u8> {
+    /*fn get_window_tile_map(&self) -> Vec<u8> {
         let mut tile_map: Vec<u8> = Vec::new();
         let tile_map_base = if self.lcdc & (1 << 6) != 0 {
             0x9C00
@@ -691,6 +691,14 @@ impl Ppu {
             tile_map.push(self.vram_read(tile_map_base + x as u16));
         }
         tile_map
+    }*/
+    fn get_window_tile_map(&self) -> Vec<u8> {
+        let tile_map_base = if self.lcdc & (1 << 6) != 0 {
+            0x9C00
+        } else {
+            0x9800
+        };
+        (0..1024).map(|x| self.vram_read(tile_map_base + x as u16)).collect()
     }
 
     pub fn populate_background_tiles(&self) -> Vec<[u8; 16]> {
@@ -948,32 +956,84 @@ impl Ppu {
         }
         TileData::new(sprite_tile_data)
     }
+    
+    /*
+    Renders the PPU window (not background or sprites).
+     */
+    fn render_window(&mut self) {
+        if !self.window_enabled() {
+            debug!("Window is disabled");
+            return;
+        }
+
+        let lcd_y = self.ly;
+        let window_y = self.lcd.borrow().window_y as i16;
+        let window_x = (self.lcd.borrow().window_x as i16) - 7;
+
+        if lcd_y as i16 >= window_y {
+            let window_tile_map = self.get_window_tile_map();
+            let tile_set = self.get_tile_set();
+            let bg_palette = self.lcd.borrow().bg_palette;
+            let mut stop_offscreen = false;
+
+            for tile_x in 0..32 {
+                let tile_y = ((lcd_y as i16 - window_y) / 8) as usize;
+                let tile_index = window_tile_map[tile_y * 32 + tile_x];
+                let tile_data = self.get_tile_data(tile_index);
+
+                for pixel_x in 0..8 {
+                    // Check if we're offscreen to the right
+                    if (tile_x * 8 + pixel_x) as i16 + window_x > 159 {
+                        stop_offscreen = true;
+                        break;
+                    }
+
+                    let pixel_y_in_tile = ((lcd_y as i16 - window_y) % 8) as usize;
+                    let pixel = tile_data.get_pixel(pixel_y_in_tile, pixel_x);
+                    let color = self.get_bgp_palette(pixel);
+
+                    // Here you would update your framebuffer with the window pixel color
+                    // Example:
+                    self.framebuffer[lcd_y as usize * 160 + (tile_x * 8 + pixel_x + window_x as usize)] = get_mififb_colour(color);
+                }
+
+                if stop_offscreen {
+                    break;
+                }
+            }
+        }
+    }
 
     fn render_scanline(&mut self) {
-        let sprite_data = self.get_sprites();
+        
+        let mut sprites_to_render: Vec<Sprite> = Vec::new();
+        if self.sprites_enabled() {
+            let sprite_data = self.get_sprites();
 
-        let mut sprite_count = 0;
-        let mut sprites_to_render: Vec<Sprite> = Vec::with_capacity(10);
-        for sprite in sprite_data.iter() {
-            let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
+            let mut sprite_count = 0;
+            sprites_to_render = Vec::with_capacity(10);
+            for sprite in sprite_data.iter() {
+                let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
 
-            // Check if the sprite is on the current scanline
-            if screen_y <= self.ly as isize && (screen_y + 8) > self.ly as isize {
-                // Increment sprite count for this line and add to rendering list
-                if sprite_count < 10 {
-                    sprites_to_render.push(*sprite);
-                    sprite_count += 1;
-                } else {
-                    // If we've hit the limit, stop adding sprites
-                    break;
+                // Check if the sprite is on the current scanline
+                if screen_y <= self.ly as isize && (screen_y + 8) > self.ly as isize {
+                    // Increment sprite count for this line and add to rendering list
+                    if sprite_count < 10 {
+                        sprites_to_render.push(*sprite);
+                        sprite_count += 1;
+                    } else {
+                        // If we've hit the limit, stop adding sprites
+                        break;
+                    }
                 }
             }
         }
 
         let tile_set = self.get_tile_set();
         let tile_map = self.get_bg_tile_map();
+        // Get the window tile map
+        let window_tile_map = self.get_window_tile_map();
 
-        let window_map = self.get_window_tile_map();
         //info!("Window Map: {:?}", window_map);
         let bg_palette = self.lcd.borrow().bg_palette;
 
@@ -991,10 +1051,9 @@ impl Ppu {
 
         for x in 0..160 {
             let mut colour = LIGHTEST_GREEN;
-            
+
             // Background rendering
-            if self.is_background_enabled() { // Replace with actual method to check bit 0 of LCDC register
-                // Background rendering
+            if self.is_background_enabled() {
                 let global_x = (x + scroll_x) % 256;
                 let global_y = (current_scanline + scroll_y) % 256;
 
@@ -1006,75 +1065,86 @@ impl Ppu {
                 let row = global_y % 8;
                 let col = global_x % 8;
                 let pixel = tile.get_pixel(row, col);
-                colour = main_display::get_mififb_colour(pixel);
+                colour = self.lcd.borrow().get_bg_color(pixel);
+            }
+            
+            // Window rendering
+            /*
+                TODO, for the ACID2 test Y is always 40, and X is always 249.
+                I suspect that the issue is the fact the stat interrupts are not correct, resulting in synchronisation issues. 
+            */
+            if self.window_enabled() {
+                let window_x: i16 = self.lcd.borrow().window_x.wrapping_sub(7) as i16;
+                debug!("Window X: {}", window_x);
+                let window_y = self.lcd.borrow().window_y as i16;
+                debug!("Window Y: {}", window_y);
+
+                if window_x >= 0 && window_x <= 166 && window_y >= 0 && window_y <= 143 {
+                    info!("Window is visible area");
+                    
+                }
+                
             }
 
             // Sprite rendering
-            for sprite in &sprites_to_render {
-                let sprite_tile_data = self.get_sprite_data(&sprite);
+            if self.sprites_enabled() {
+                for sprite in &sprites_to_render {
+                    let sprite_tile_data = self.get_sprite_data(&sprite);
 
-                let screen_x = sprite.x as isize - 8;
-                let screen_y = sprite.y as isize - 16;
+                    let screen_x = sprite.x as isize - 8;
+                    let screen_y = sprite.y as isize - 16;
 
-                // Check if the sprite is on the current scanline
-                if screen_y <= current_scanline as isize
-                    && (screen_y + 8) > current_scanline as isize
-                {
-                    let mut sprite_row = current_scanline as isize - screen_y;
-                    let mut sprite_col = x as isize - screen_x;
+                    // Check if the sprite is on the current scanline
+                    if screen_y <= current_scanline as isize
+                        && (screen_y + 8) > current_scanline as isize
+                    {
+                        let mut sprite_row = current_scanline as isize - screen_y;
+                        let mut sprite_col = x as isize - screen_x;
 
-                    // Apply Y-flip if flag is set
-                    if sprite.flags.y_flip {
-                        sprite_row = 7 - sprite_row;
-                    }
+                        // Apply Y-flip if flag is set
+                        if sprite.flags.y_flip {
+                            sprite_row = 7 - sprite_row;
+                        }
 
-                    // Apply X-flip if flag is set
-                    if sprite.flags.x_flip {
-                        sprite_col = 7 - sprite_col;
-                    }
+                        // Apply X-flip if flag is set
+                        if sprite.flags.x_flip {
+                            sprite_col = 7 - sprite_col;
+                        }
 
-                    // Check if the pixel is within sprite bounds after flipping
-                    if sprite_col >= 0 && sprite_col < 8 {
-                        let sprite_pixel =
-                            sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
-                        if sprite_pixel != 0 {
-                            // Non-transparent
-                            let sprite_colour = main_display::get_mififb_colour(sprite_pixel);
-                            /*let palette = if sprite.flags.dmg_palette {
-                                self.lcd.borrow().obj_palette[1]
-                            } else {
-                                self.lcd.borrow().obj_palette[0]
-                            };
-                            let sprite_colour = match palette {
-                                0 => LIGHTEST_GREEN, // Transparent, shouldn't reach here due to the previous check
-                                1 => main_display::get_mififb_colour(palette & 0x03),
-                                2 => main_display::get_mififb_colour((palette >> 2) & 0x03),
-                                3 => main_display::get_mififb_colour((palette >> 4) & 0x03),
-                                _ => main_display::RED, // Fallback for unexpected cases
-                            };*/
+                        // Check if the pixel is within sprite bounds after flipping
+                        if sprite_col >= 0 && sprite_col < 8 {
+                            let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
+                            if sprite_pixel != 0 { // Non-transparent
+                                let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
+                                let sprite_colour = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
 
-                            // Here's where we implement the priority check:
-                            if sprite_colour != LIGHTEST_GREEN {
-                                // Not transparent
-                                if sprite.flags.priority {
-                                    // If priority bit is set (sprite behind background), only draw if the background is transparent
-                                    if colour == LIGHTEST_GREEN {
-                                        colour = sprite_colour;
+                                // Here's where we implement the priority check:
+                                if sprite_colour != LIGHTEST_GREEN {
+                                    // Not transparent
+                                    if sprite.flags.priority {
+                                        // If priority bit is set (sprite behind background), only draw if the background is transparent
+                                        if colour == LIGHTEST_GREEN {
+                                            colour = sprite_colour;
+                                        }
+                                    } else {
+                                        // If priority bit is not set (sprite in front), draw over the background unless background is non-transparent and has priority
+                                        if colour != LIGHTEST_GREEN || self.lcdc_background_priority() {
+                                            colour = sprite_colour;
+                                        }
                                     }
-                                } else {
-                                    // If priority bit is not set (sprite in front), draw over the background unless background is non-transparent and has priority
-                                    if colour == LIGHTEST_GREEN || self.lcdc_background_priority()
-                                    {
-                                        colour = sprite_colour;
-                                    }
+                                    break; // Only one sprite per pixel
                                 }
-                                break; // Only one sprite per pixel
                             }
                         }
                     }
                 }
             }
-
+            else {
+                debug!("Sprites are disabled");
+            }
+            
+           
+            
             line[x] = colour;
         }
         // Transfer the line to the framebuffer

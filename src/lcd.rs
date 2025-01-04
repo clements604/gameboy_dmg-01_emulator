@@ -94,7 +94,6 @@ impl LCD{
 
     pub fn get_bg_color(&self, pixel: u8) -> u32 {
         debug_assert!(pixel < 4, "Pixel value should be between 0 and 3");
-        info!("pixel: {}", pixel);
         let color_index = match pixel {
             0 => self.bg_palette & 0x03,
             1 => (self.bg_palette >> 2) & 0x03,

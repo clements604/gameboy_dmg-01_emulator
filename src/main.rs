@@ -142,7 +142,9 @@ impl Emulator {
             debug!("hello");
         }
 
-        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(1) {
+        // Update the timer with the number of CPU cycles
+        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+            // If timer overflows, trigger a Timer interrupt
             self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }
 
@@ -232,6 +234,7 @@ fn main() {
     * Interrupt timing
     */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/interrupts/interrupt_time.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb"));
 
     /*let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
     let mut cpu = CPU::CPU::new(Rc::clone(&memory_bus));

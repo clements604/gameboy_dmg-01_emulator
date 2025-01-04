@@ -3115,6 +3115,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         self.memory_bus.borrow_mut().interrupt_flags = interrupts.into();
     }
     pub fn check_interrupts(&mut self) {
+        // Check if interrupts are scheduled to be enabled
+        if self.memory_bus.borrow().enabling_ime {
+            self.memory_bus.borrow_mut().interrupt_master_enable = true;
+            self.memory_bus.borrow_mut().enabling_ime = false;
+        }
+
         if self.memory_bus.borrow().interrupt_master_enable {
             let interrupt_flags: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
             let interrupt_enable_register = self.memory_bus.borrow().interrupt_enable_register;
@@ -3151,7 +3157,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         };
         
         // Added for mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb
-        self.registers.pc += 1;
+        //self.registers.pc += 1;
 
         // Push the current PC to the stack
         self.op_push_stack(self.registers.pc);

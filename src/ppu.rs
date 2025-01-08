@@ -28,8 +28,8 @@ const Y_RES: u8 = 144;
 const X_RES: u8 = 160;
 const TARGET_FRAME_TIME: u32 = 1000 / 60; // 60 FPS
 
-const VIEWPORT_WIDTH: usize = 160;
-const VIEWPORT_HEIGHT: usize = 144;
+pub(crate) const VIEWPORT_WIDTH: usize = 160;
+pub(crate) const VIEWPORT_HEIGHT: usize = 144;
 
 pub struct Ppu {
     oam_ram: [u8; 0xA0],
@@ -362,11 +362,14 @@ impl Ppu {
 
     fn increment_ly(&mut self) {
         self.ly = self.ly.wrapping_add(1);
-        if self.ly == self.ly_compare {
+        /*if self.ly == self.ly_compare {
             self.stat |= 0x04; // Set coincidence flag
+            if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
+                self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+            }
         } else {
             self.stat &= !0x04; // Clear coincidence flag
-        }
+        }*/
         /*if self.ly >= LINES_PER_FRAME {
             self.ly = 0;
         }*/
@@ -386,17 +389,15 @@ impl Ppu {
     pub fn tick(&mut self, cycles: u8) {
         debug!("PPU tick with cycles: {}", cycles);
 
-        //self.lcdc &= 0b1110_1111;
-
         if !self.lcd_ppu_enabled() {
             debug!("LCD is disabled");
-            //self.ly = 0;
-            //self.line_ticks = 0;
+            self.ly = 0;
+            self.line_ticks = 0;
             //self.set_ppu_mode(OAM_MODE);
             return;
         }
 
-        self.line_ticks += (cycles * 4) as u16;
+        self.line_ticks += cycles as u16;
         debug!("Line ticks: {}", self.line_ticks);
 
         self.mode = self.get_current_mode();
@@ -450,7 +451,7 @@ impl Ppu {
                 }
             }
             VBLANK_MODE => {
-                if self.line_ticks >= 456 {
+                if self.line_ticks >= 4560 {
                     if self.ly == 144 {
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
                         // TODO: Copy buffer to display
@@ -465,7 +466,7 @@ impl Ppu {
                     else {
                         self.increment_ly();
                     }
-                    self.line_ticks -= 456;
+                    self.line_ticks -= 4560;
                 }
             }
             _ => {
@@ -504,20 +505,13 @@ impl Ppu {
     }
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
-            0xFF40 => {
-                debug!("LCDC write: {:08b}", value);
-                self.lcdc = value;
-                // check to see if bit 4 is set low
-                if self.lcdc & 0x10 == 0 {
-                    error!("Bit 4 of LCDC is set low");
-                }
-            }
+            0xFF40 => self.lcdc = value,
             0xFF41 => self.stat = value,
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
             0xFF44 => {
                 error!("Attempt to write to read-only register: {:#X}", address);
-                self.ly = value;
+                self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
             0xFF46 => {
@@ -918,25 +912,20 @@ impl Ppu {
 
     // Get the tile data for a given tile index
     pub fn get_tile_data(&self, tile_index: u8) -> TileData {
-        const TILE_DATA_AREA_0: u16 = 0x8000; // Unsigned region
-        const TILE_DATA_AREA_1: u16 = 0x8800; // Signed region
         const TILE_SIZE_BYTES: usize = 16; // 16 bytes per tile (2 bytes per row for 8 rows)
-
-        // Determine the base address of the tile data area (based on LCDC register)
-        /*let tile_data_base: u16 = if self.get_bg_tile_map_area() {
-            TILE_DATA_AREA_1 // 0x8800 - signed indices
-        } else {
-            TILE_DATA_AREA_0 // 0x8000 - unsigned indices
-        };*/
         let tile_data_base: u16 = self.get_tile_data_base();
 
-        let tile_address = if tile_data_base == TILE_DATA_AREA_1 {
-            // Treat tile_index as signed if using the 0x8800-0x97FF region
-            let signed_tile_index = tile_index as i16;
-            // To avoid overflow, cast to i16, then calculate address safely
-            (TILE_DATA_AREA_1 as i16 + signed_tile_index * TILE_SIZE_BYTES as i16) as u16
+        let tile_address = if tile_data_base == 0x8800 {
+            // For signed indexing, adjust the base to start from 0x9000 for index 0
+            let adjusted_index = if tile_index < 128 {
+                tile_index + 128 // Map 0-127 to 128-255
+            } else {
+                tile_index - 128 // Map 128-255 to 0-127
+            };
+            0x8800 + (adjusted_index as u16 * TILE_SIZE_BYTES as u16)
         } else {
-            TILE_DATA_AREA_0 + (tile_index as u16 * TILE_SIZE_BYTES as u16)
+            // Unsigned indexing
+            tile_data_base + (tile_index as u16 * TILE_SIZE_BYTES as u16)
         };
 
         let mut tile_data = [0u8; TILE_SIZE_BYTES];
@@ -1069,22 +1058,7 @@ impl Ppu {
             }
             
             // Window rendering
-            /*
-                TODO, for the ACID2 test Y is always 40, and X is always 249.
-                I suspect that the issue is the fact the stat interrupts are not correct, resulting in synchronisation issues. 
-            */
-            if self.window_enabled() {
-                let window_x: i16 = self.lcd.borrow().window_x.wrapping_sub(7) as i16;
-                debug!("Window X: {}", window_x);
-                let window_y = self.lcd.borrow().window_y as i16;
-                debug!("Window Y: {}", window_y);
-
-                if window_x >= 0 && window_x <= 166 && window_y >= 0 && window_y <= 143 {
-                    info!("Window is visible area");
-                    
-                }
-                
-            }
+            
 
             // Sprite rendering
             if self.sprites_enabled() {

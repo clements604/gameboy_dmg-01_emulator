@@ -3070,9 +3070,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     fn op_jr_e(&mut self, offset: i8) {
         debug!("Program counter before jump: 0x{:04X}", self.registers.pc);
         debug!("Offset: 0x{:02X}", offset);
-        let address = (self.registers.pc as i16).wrapping_add(offset as i16);
-        debug!("Jumping to 0x{:04X}", address);
-        self.registers.pc = address as u16;
+        let new_pc = self.registers.pc.wrapping_add(offset as u16);
+        debug!("Jumping to 0x{:04X}", new_pc);
+        self.registers.pc = new_pc;
     }
 
     /*

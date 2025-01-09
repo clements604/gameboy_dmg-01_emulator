@@ -11,7 +11,7 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
-use crate::{ppu_experiment, timer};
+use crate::{timer};
 use crate::timer::{Timer, TimerFrequency};
 
 const BOOT_ROM_START: u16 = 0x0000;
@@ -73,7 +73,6 @@ pub struct MemoryBus {
     pub hram: [u8; HRAM_SIZE],
     
     pub ppu: Option<Rc<RefCell<Ppu>>>,
-    pub ppu_experiment: Option<Rc<RefCell<ppu_experiment::PPU>>>,
     
     rom_debug: rom_debug,
     pub dmg_io: Option<Rc<RefCell<IO>>>,
@@ -117,7 +116,6 @@ impl MemoryBus {
             hram: [0; HRAM_SIZE],
             
             ppu: None,
-            ppu_experiment: None,
             
             rom_debug: rom_debug::new(),
             dmg_io: io,

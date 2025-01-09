@@ -27,6 +27,7 @@ use std::io::{self, Read};
 use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::time::Instant;
 //use sdl2::EventPump;
 use crate::timer::{Timer, TimerFrequency};
 
@@ -52,6 +53,9 @@ struct Emulator {
     //event_pump: EventPump,
     previous_frame: u32,
     previous_ly: u8,
+    
+    last_time: Instant, // Used for FPS calculation
+    frame_count: u32, // Used for FPS calculation
 }
 
 impl Emulator {
@@ -107,23 +111,16 @@ impl Emulator {
         Emulator {
             ticks: 0,
             cpu,
-
             ppu,
-            
-            //ppu_experiment,
-
             memory_bus,
-            //display,
-
-            //event_pump,
             dma,
-
             debug_window,
             background_display,
             main_display,
-            
             previous_frame: 0,
             previous_ly: 0,
+            last_time: Instant::now(),
+            frame_count: 0,
         }
     }
 
@@ -162,7 +159,18 @@ impl Emulator {
                 self.main_display.update(self.ppu.borrow().framebuffer.clone());
                 //self.background_display.update(&self.ppu.borrow().get_debug_background_tile_map());
                 //self.debug_window.update(&self.ppu.borrow().get_tile_map());
-            //}
+
+            self.frame_count += 1;  // Increment frame count each frame
+
+            let now = Instant::now();
+            let elapsed = now.duration_since(self.last_time);
+
+            if elapsed.as_secs() >= 1 {
+                info!("FPS: {}", self.frame_count);
+                self.frame_count = 0;  // Reset frame count
+                self.last_time = now;
+            }
+
             self.previous_frame = self.ppu.borrow().current_frame;
         }
         

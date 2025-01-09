@@ -10,7 +10,6 @@ mod interupts;
 mod dma;
 mod lcd;
 mod timer;
-mod ppu_experiment;
 mod joypad;
 mod tile_map_display;
 mod main_display;

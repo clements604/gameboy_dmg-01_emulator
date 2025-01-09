@@ -1056,9 +1056,36 @@ impl Ppu {
                 let pixel = tile.get_pixel(row, col);
                 colour = self.lcd.borrow().get_bg_color(pixel);
             }
-            
+
             // Window rendering
-            
+            if self.window_enabled() {
+                let window_y = self.lcd.borrow().window_y as usize;
+                let window_x = self.lcd.borrow().window_x.wrapping_sub(8) as usize;
+                debug!("Current Scanline: {}, Scroll X: {}, Scroll Y: {}", current_scanline, scroll_x, scroll_y);
+                debug!("Window Y: {}, Window X: {}", window_y, window_x);
+                let adjusted_window_y = window_y % 144;  // Y wraps at 144
+                let adjusted_window_x = window_x % 160;  // X wraps at 160
+
+                if current_scanline >= adjusted_window_y && x >= adjusted_window_x {
+                    let window_tile_y = (current_scanline - adjusted_window_y) / 8;
+                    let window_tile_x = (x + (160 - adjusted_window_x)) % 160 / 8;
+                    let tile_index = window_tile_map[window_tile_y * 32 + window_tile_x];
+;
+                    let tile_data = self.get_tile_data(tile_index);
+
+                    if window_tile_x < 32 {
+                        let pixel_y_in_tile = (current_scanline - adjusted_window_y) % 8;
+                        let pixel_x_in_tile = (x + (160 - adjusted_window_x)) % 160 % 8;
+                        let pixel_value = tile_data.get_pixel(pixel_y_in_tile, pixel_x_in_tile);
+
+                        // Check if the window should be rendered over the background (or if background is transparent)
+                        if colour == LIGHTEST_GREEN || !self.lcdc_background_priority() {
+                            colour = self.lcd.borrow().get_bg_color(pixel_value);
+                        }
+                    }
+                }
+            }
+
 
             // Sprite rendering
             if self.sprites_enabled() {

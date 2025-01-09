@@ -32,6 +32,7 @@ use std::cell::RefCell;
 use crate::timer::{Timer, TimerFrequency};
 
 use minifb::{Key, Scale, Window, WindowOptions};
+use crate::display::LIGHTEST_GREEN;
 use crate::main_display::MainDisplay;
 use crate::tile_map_display::DebugDisplay;
 
@@ -136,8 +137,8 @@ impl Emulator {
             self.memory_bus.borrow_mut().enabling_ime = false;
         }
 
-        if self.cpu.borrow().registers.pc == 0xC2C0 {//0xCB89
-            info!("{}", self.cpu.borrow().registers);
+        if self.cpu.borrow().registers.pc == 0xC4A9 {//0xCB89
+            debug!("{}", self.cpu.borrow().registers);
             //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
@@ -150,16 +151,19 @@ impl Emulator {
 
         self.ppu.borrow_mut().tick(cpu_cycles);
 
-        self.dma.borrow_mut().dma_tick();
+        for _ in 0..cpu_cycles {
+            self.dma.borrow_mut().dma_tick();
+        }
 
         self.cpu.borrow_mut().check_interrupts();
 
         if self.previous_frame != self.ppu.borrow().current_frame {
             //self.display.borrow_mut().ui_update();
-            if self.ppu.borrow().lcd_ppu_enabled() {
-                //self.main_display.update(self.ppu.borrow_mut().render_viewport()); // THIS IS THE MAIN DISPLAY ACTUAL (NOT TEST)
+            //if self.ppu.borrow().lcd_ppu_enabled() {
                 self.main_display.update(self.ppu.borrow().framebuffer.clone());
-            }
+                //self.background_display.update(&self.ppu.borrow().get_debug_background_tile_map());
+                //self.debug_window.update(&self.ppu.borrow().get_tile_map());
+            //}
             self.previous_frame = self.ppu.borrow().current_frame;
         }
         
@@ -185,8 +189,8 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    let boot_rom = Option::None;
+    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    //let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
@@ -198,9 +202,9 @@ fn main() {
      * CPU instructions
     */
     //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
-    let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
+    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
+    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // PASSED
@@ -208,7 +212,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to joypad interrupt?
+    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to no MBC implementation
     
     /*
     * CPU timing
@@ -218,8 +222,8 @@ fn main() {
     /*
      * Graphics
     */
-   //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
-   //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); //TODO LYC
+   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
 
     /*

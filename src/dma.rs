@@ -42,7 +42,6 @@ impl Dma {
         //memory_bus.write_byte(self.dma_byte as u16, value);
         
         self.memory_bus.borrow_mut().ppu.as_ref().unwrap().borrow_mut().oam_write(self.dma_byte as u16, value);
-        //self.memory_bus.borrow().ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(self.dma_byte as u16, value);
         
         debug!(
             "DMA transfer: {:#X} -> {:#X}",
@@ -53,7 +52,7 @@ impl Dma {
         self.active = self.dma_byte < 0xA0;
 
         if !self.active {
-            error!("DMA transfer complete");
+            debug!("DMA transfer complete");
         }
     }
 

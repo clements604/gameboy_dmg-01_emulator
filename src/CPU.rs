@@ -3130,16 +3130,16 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 debug!("VBLANK interrupt");
                 self.service_interrupt(Interrupt::VBLANK);
             } else if interrupt_flags.lcd_stat && (interrupt_enable_register & 0x02) != 0 {
-                error!("LCDSTAT interrupt");
+                debug!("LCDSTAT interrupt");
                 self.service_interrupt(Interrupt::LCDSTAT);
             } else if interrupt_flags.timer && (interrupt_enable_register & 0x04) != 0 {
-                error!("TIMER interrupt");
+                debug!("TIMER interrupt");
                 self.service_interrupt(Interrupt::TIMER);
             } else if interrupt_flags.serial && (interrupt_enable_register & 0x08) != 0 {
-                error!("SERIAL interrupt");
+                debug!("SERIAL interrupt");
                 self.service_interrupt(Interrupt::SERIAL);
             } else if interrupt_flags.joypad && (interrupt_enable_register & 0x10) != 0 {
-                error!("JOYPAD interrupt");
+                debug!("JOYPAD interrupt");
                 self.service_interrupt(Interrupt::JOYPAD);
             }
         }

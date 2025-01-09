@@ -32,6 +32,7 @@ use std::cell::RefCell;
 use crate::timer::{Timer, TimerFrequency};
 
 use minifb::{Key, Scale, Window, WindowOptions};
+use crate::display::LIGHTEST_GREEN;
 use crate::main_display::MainDisplay;
 use crate::tile_map_display::DebugDisplay;
 
@@ -131,48 +132,38 @@ impl Emulator {
 
         let cpu_cycles = self.cpu.borrow_mut().cycle();
 
-        if self.cpu.borrow().registers.pc == 0xC2C0 {//0xCB89
-            info!("{}", self.cpu.borrow().registers);
+        if self.memory_bus.borrow().enabling_ime {
+            self.memory_bus.borrow_mut().interrupt_master_enable = true;
+            self.memory_bus.borrow_mut().enabling_ime = false;
+        }
+
+        if self.cpu.borrow().registers.pc == 0xC4A9 {//0xCB89
+            debug!("{}", self.cpu.borrow().registers);
             //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
 
-        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(1) {
+        // Update the timer with the number of CPU cycles
+        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+            // If timer overflows, trigger a Timer interrupt
             self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }
 
         self.ppu.borrow_mut().tick(cpu_cycles);
 
-        self.dma.borrow_mut().dma_tick();
+        for _ in 0..cpu_cycles {
+            self.dma.borrow_mut().dma_tick();
+        }
 
-        if self.memory_bus.borrow().interrupt_master_enable {
-            self.cpu.borrow_mut().handle_interrupts();
-            self.memory_bus.borrow_mut().enabling_ime = false;
-        }
-        if self.memory_bus.borrow().enabling_ime {
-            self.memory_bus.borrow_mut().interrupt_master_enable = true;
-        }
+        self.cpu.borrow_mut().check_interrupts();
 
         if self.previous_frame != self.ppu.borrow().current_frame {
             //self.display.borrow_mut().ui_update();
-            if self.ppu.borrow().lcd_ppu_enabled() {
-                //self.debug_window.update(&self.ppu.borrow().get_tile_map());
+            //if self.ppu.borrow().lcd_ppu_enabled() {
+                self.main_display.update(self.ppu.borrow().framebuffer.clone());
                 //self.background_display.update(&self.ppu.borrow().get_debug_background_tile_map());
-
-                //self.main_display.update(&Vec::from(self.ppu.borrow().get_window_tiles()));
-                //info!("{:?}", self.ppu.borrow().get_background_tile_map().len());
-                //self.ppu.borrow().get_window_tiles();
-
-                //info!("{:?}", self.ppu.borrow().populate_background_tiles());
-                //self.ppu.borrow_mut().gpt_get_viewport();
-                self.main_display.update(self.ppu.borrow_mut().gpt_render_viewport());
-                //self.ppu.borrow_mut().get_viewport_pixels();
-                
-                info!("Scroll X: {}", self.ppu.borrow().scroll_x);
-                info!("Scroll Y: {}", self.ppu.borrow().scroll_y);
-                debug!("");
-
-            }
+                //self.debug_window.update(&self.ppu.borrow().get_tile_map());
+            //}
             self.previous_frame = self.ppu.borrow().current_frame;
         }
         
@@ -211,9 +202,9 @@ fn main() {
      * CPU instructions
     */
     //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); //TODO infinate loop due to joypad interrupt?
+    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // TODO never finishes
+    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // PASSED
@@ -221,7 +212,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to joypad interrupt?
+    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to no MBC implementation
     
     /*
     * CPU timing
@@ -232,7 +223,9 @@ fn main() {
      * Graphics
     */
    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
-    
+   //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
+   //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
+
     /*
      * Memory timing
     */
@@ -245,6 +238,7 @@ fn main() {
     * Interrupt timing
     */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/interrupts/interrupt_time.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb"));
 
     /*let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
     let mut cpu = CPU::CPU::new(Rc::clone(&memory_bus));

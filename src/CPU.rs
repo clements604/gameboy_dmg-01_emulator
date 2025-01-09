@@ -278,6 +278,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
         if !self.halted {
 
             let opcode = self.memory_bus.borrow().read_byte(self.registers.pc);
+            debug!("opcode = {:#4X}", opcode);
+            debug!("PC = {:#4X}", self.registers.pc);
 
             self.registers.pc = self.registers.pc.wrapping_add(1);
 
@@ -2487,7 +2489,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 12;
                 }
                 0xD3 => {
-                    panic!("Unsupported opcode: 0xD3");
+                    error!("Unsupported opcode: 0xD3");
+                    4
                 }
                 0xD4 => {
                     let nn: u16 = self.read_immediate_short();
@@ -2530,7 +2533,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 12;
                 }
                 0xDB => {
-                    panic!("Unsupported opcode: 0xDB");
+                    error!("Unsupported opcode: 0xDB");
+                    4
                 }
                 0xDC => {
                     let nn: u16 = self.read_immediate_short();
@@ -2541,10 +2545,11 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     return 12;
                 }
                 0xDD => {
-                    panic!("Unsupported opcode: 0xDD");
+                    error!("Unsupported opcode: 0xDD");
+                    4
                 }
                 0xDE => {
-                    let value = self.memory_bus.borrow().read_byte(self.registers.pc);
+                    let value = self.read_immediate_byte();
                     self.op_sbc_r8(value);
                     8
                 }
@@ -2571,10 +2576,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     8
                 }
                 0xE3 => {
-                    panic!("Unsupported opcode: 0xE3");
+                    error!("Unsupported opcode: 0xE3");
+                    4
                 }
                 0xE4 => {
-                    panic!("Unsupported opcode: 0xE4");
+                    error!("Unsupported opcode: 0xE4");
+                    4
                 }
                 0xE5 => {
                     self.op_push_stack(self.registers.get_hl());
@@ -2602,13 +2609,16 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     16
                 }
                 0xEB => {
-                    panic!("Unsupported opcode: 0xEB");
+                    error!("Unsupported opcode: 0xEB");
+                    4
                 }
                 0xEC => {
-                    panic!("Unsupported opcode: 0xEC");
+                    error!("Unsupported opcode: 0xEC");
+                    4
                 }
                 0xED => {
-                    panic!("Unsupported opcode: 0xED");
+                    error!("Unsupported opcode: 0xED");
+                    4
                 }
                 0xEE => {
                     let value = self.read_immediate_byte();
@@ -2627,7 +2637,14 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                 }
                 0xF1 => {
                     let value = self.op_pop_stack();
-                    self.registers.set_af(value & 0xFFF0);
+                    self.registers.a = (value >> 8) as u8; // Upper byte to A
+
+                    // Set flags directly
+                    self.registers.f.set_flag(Flag::Z, (value & 0x80) != 0); // Bit 7 of F
+                    self.registers.f.set_flag(Flag::N, (value & 0x40) != 0); // Bit 6 of F
+                    self.registers.f.set_flag(Flag::H, (value & 0x20) != 0); // Bit 5 of F
+                    self.registers.f.set_flag(Flag::C, (value & 0x10) != 0); // Bit 4 of F
+
                     12
                 }
                 0xF2 => {
@@ -2640,7 +2657,8 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0xF4 => {
-                    panic!("Unsupported opcode: 0xF4");
+                    error!("Unsupported opcode: 0xF4");
+                    4
                 }
                 0xF5 => {
                     self.op_push_stack(self.registers.get_af());
@@ -2679,10 +2697,12 @@ impl/*<'a>*/ CPU/*<'a>*/ {
                     4
                 }
                 0xFC => {
-                    panic!("Unsupported opcode: 0xFC");
+                    error!("Unsupported opcode: 0xFC");
+                    4
                 }
                 0xFD => {
-                    panic!("Unsupported opcode: 0xFD");
+                    error!("Unsupported opcode: 0xFD");
+                    4
                 }
                 0xFE => {
                     let value = self.read_immediate_byte();
@@ -2971,21 +2991,13 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     }
 
     fn op_sbc_r8(&mut self, r: u8) {
-        let carry = if self.registers.f.get_flag(Flag::C) {
-            1
-        } else {
-            0
-        } as u8;
+        let carry = if self.registers.f.get_flag(Flag::C) { 1 } else { 0 } as u8;
         let result = self.registers.a.wrapping_sub(r).wrapping_sub(carry);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, true);
-        self.registers
-            .f
-            .set_flag(Flag::H, (self.registers.a & 0x0F) < (r & 0x0F) + carry);
-        self.registers.f.set_flag(
-            Flag::C,
-            (self.registers.a as u16) < (r as u16) + (carry as u16),
-        );
+        // Check for half carry by comparing lower nibbles before subtraction
+        self.registers.f.set_flag(Flag::H, (self.registers.a & 0x0F) < (r & 0x0F) + carry);
+        self.registers.f.set_flag(Flag::C, (self.registers.a as u16) < (r as u16) + (carry as u16));
         self.registers.a = result;
     }
 
@@ -3058,9 +3070,9 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     fn op_jr_e(&mut self, offset: i8) {
         debug!("Program counter before jump: 0x{:04X}", self.registers.pc);
         debug!("Offset: 0x{:02X}", offset);
-        let address = (self.registers.pc as i16).wrapping_add(offset as i16);
-        debug!("Jumping to 0x{:04X}", address);
-        self.registers.pc = address as u16;
+        let new_pc = self.registers.pc.wrapping_add(offset as u16);
+        debug!("Jumping to 0x{:04X}", new_pc);
+        self.registers.pc = new_pc;
     }
 
     /*
@@ -3080,6 +3092,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
     fn op_ret(&mut self) {
         debug!("op_ret");
         let address = self.op_pop_stack();
+        debug!("Return address: 0x{:04X}", address);
         self.registers.pc = address;
     }
 
@@ -3091,51 +3104,78 @@ impl/*<'a>*/ CPU/*<'a>*/ {
      */
 
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
-        debug!("set_interrupt {:?}", interrupt);
-        let mut interrupt_flags: u8 = u8::from(self.memory_bus.borrow().interrupt_flags);
+        let mut interrupts: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
         match interrupt {
-            Interrupt::VBLANK => interrupt_flags |= 0x01,
-            Interrupt::LCDSTAT => interrupt_flags |= 0x02,
-            Interrupt::TIMER => interrupt_flags |= 0x04,
-            Interrupt::SERIAL => interrupt_flags |= 0x08,
-            Interrupt::JOYPAD => interrupt_flags |= 0x10,
+            Interrupt::VBLANK => interrupts.vblank = true,
+            Interrupt::LCDSTAT => interrupts.lcd_stat = true,
+            Interrupt::TIMER => interrupts.timer = true,
+            Interrupt::SERIAL => interrupts.serial = true,
+            Interrupt::JOYPAD => interrupts.joypad = true,
         }
-        self.memory_bus.borrow_mut().interrupt_flags = interrupt_flags.into();
+        self.memory_bus.borrow_mut().interrupt_flags = interrupts.into();
+    }
+    pub fn check_interrupts(&mut self) {
+        // Check if interrupts are scheduled to be enabled
+        if self.memory_bus.borrow().enabling_ime {
+            self.memory_bus.borrow_mut().interrupt_master_enable = true;
+            self.memory_bus.borrow_mut().enabling_ime = false;
+        }
+
+        if self.memory_bus.borrow().interrupt_master_enable {
+            let interrupt_flags: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
+            let interrupt_enable_register = self.memory_bus.borrow().interrupt_enable_register;
+
+            // Check if the interrupt is both flagged and enabled
+            if interrupt_flags.vblank && (interrupt_enable_register & 0x01) != 0 {
+                debug!("VBLANK interrupt");
+                self.service_interrupt(Interrupt::VBLANK);
+            } else if interrupt_flags.lcd_stat && (interrupt_enable_register & 0x02) != 0 {
+                debug!("LCDSTAT interrupt");
+                self.service_interrupt(Interrupt::LCDSTAT);
+            } else if interrupt_flags.timer && (interrupt_enable_register & 0x04) != 0 {
+                debug!("TIMER interrupt");
+                self.service_interrupt(Interrupt::TIMER);
+            } else if interrupt_flags.serial && (interrupt_enable_register & 0x08) != 0 {
+                debug!("SERIAL interrupt");
+                self.service_interrupt(Interrupt::SERIAL);
+            } else if interrupt_flags.joypad && (interrupt_enable_register & 0x10) != 0 {
+                debug!("JOYPAD interrupt");
+                self.service_interrupt(Interrupt::JOYPAD);
+            }
+        }
     }
 
-    pub fn handle_interrupts(&mut self) {
-        if self.check_interrupt(Interrupt::VBLANK) {
-            debug!("VBLANK interrupt");
-            self.op_rst_address(0x40);
-        }
-        else if self.check_interrupt(Interrupt::LCDSTAT) {
-            info!("LCDSTAT interrupt");
-            self.op_rst_address(0x48);
-        }
-        else if self.check_interrupt(Interrupt::TIMER) {
-            self.op_rst_address(0x50);
-            info!("TIMER interrupt")
-        }
-        else if self.check_interrupt(Interrupt::SERIAL) {
-            info!("SERIAL interrupt");
-            self.op_rst_address(0x58);
-        }
-        else if self.check_interrupt(Interrupt::JOYPAD) {
-            info!("JOYPAD interrupt");
-            self.op_rst_address(0x60);
-        }
-    }
-    pub fn check_interrupt(&mut self, interrupt: Interrupt) -> bool {
-        let interrupt = interrupt as u8;
+    fn service_interrupt(&mut self, interrupt: Interrupt) {
+        let mut interrupts: InterruptFlags = self.memory_bus.borrow().interrupt_flags.into();
+        self.memory_bus.borrow_mut().interrupt_master_enable = false;
+        let vector_address = match interrupt {
+            Interrupt::VBLANK => 0x0040,
+            Interrupt::LCDSTAT => 0x0048,
+            Interrupt::TIMER => 0x0050,
+            Interrupt::SERIAL => 0x0058,
+            Interrupt::JOYPAD => 0x0060,
+        };
+        
+        // Added for mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb
+        //self.registers.pc += 1;
 
-        if self.memory_bus.borrow().interrupt_flags & interrupt != 0 && self.memory_bus.borrow().interrupt_enable_register & interrupt != 0{
-           let updated_interrupt_flags = self.memory_bus.borrow().interrupt_flags & !interrupt;
-            self.memory_bus.borrow_mut().interrupt_flags = updated_interrupt_flags.into();
-            self.halted = false;
-            self.memory_bus.borrow_mut().interrupt_master_enable = false;
-            return true;
+        // Push the current PC to the stack
+        self.op_push_stack(self.registers.pc);
+
+        // Set PC to the interrupt vector
+        self.registers.pc = vector_address;
+
+        // Clear the interrupt flag
+        match interrupt {
+            Interrupt::VBLANK => interrupts.vblank = false,
+            Interrupt::LCDSTAT => interrupts.lcd_stat = false,
+            Interrupt::TIMER => interrupts.timer = false,
+            Interrupt::SERIAL => interrupts.serial = false,
+            Interrupt::JOYPAD => interrupts.joypad = false,
         }
-        false
+
+        // Update interrupt flags in memory
+        self.memory_bus.borrow_mut().interrupt_flags = interrupts.into();
     }
 
     fn op_halt(&mut self) {
@@ -3363,7 +3403,7 @@ impl/*<'a>*/ CPU/*<'a>*/ {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{memory_bus, rom};
+    use crate::{dma, dmg_io, lcd, load_rom, memory_bus, ppu, rom};
 
     #[test]
     fn test_scratchpad() {
@@ -3371,282 +3411,716 @@ mod tests {
     }
 
     #[test]
-    fn test_op_inc_r8() {
-        let rom = ROM::new(vec![0; 500]);
+    fn test_ld_hl_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x0;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.registers.a = cpu.op_inc_r8(cpu.registers.a);
-        assert_eq!(cpu.registers.a, 0x01);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        
+        
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+
+        //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
+
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+        
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0x36); // LD (HL), $12
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x12);
+        cpu.borrow_mut().registers.h = 0x00;
+        cpu.borrow_mut().registers.l = 0x00;
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute LD (HL), $12
+        assert_eq!(cpu.borrow_mut().memory_bus.borrow().read_byte(0x0000), 0x12);
+    }
+
+
+    #[test]
+    fn test_ld_r_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+
+
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+
+        //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
+
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        // Write opcodes and values to memory
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0x06); // LD B, $12
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x12);
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0102, 0x0E); // LD C, $13
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0103, 0x13);
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0104, 0x16); // LD D, $14
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0105, 0x14);
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0106, 0x1E); // LD E, $15
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0107, 0x15);
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0108, 0x26); // LD H, $16
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0109, 0x16);
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x010A, 0x2E); // LD L, $17
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x010B, 0x17);
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x010C, 0x3E); // LD A, $18
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x010D, 0x18);
+
+        // Execute each LD r, n instruction and check
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // LD B, $12
+        assert_eq!(cpu.borrow_mut().registers.b, 0x12);
+
+        cpu.borrow_mut().cycle(); // LD C, $13
+        assert_eq!(cpu.borrow_mut().registers.c, 0x13);
+
+        cpu.borrow_mut().cycle(); // LD D, $14
+        assert_eq!(cpu.borrow_mut().registers.d, 0x14);
+
+        cpu.borrow_mut().cycle(); // LD E, $15
+        assert_eq!(cpu.borrow_mut().registers.e, 0x15);
+
+        cpu.borrow_mut().cycle(); // LD H, $16
+        assert_eq!(cpu.borrow_mut().registers.h, 0x16);
+
+        cpu.borrow_mut().cycle(); // LD L, $17
+        assert_eq!(cpu.borrow_mut().registers.l, 0x17);
+
+        cpu.borrow_mut().cycle(); // LD A, $18
+        assert_eq!(cpu.borrow_mut().registers.a, 0x18);
+    }
+
+    #[test]
+    fn test_or_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+
+
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+
+        //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
+
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
+
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xF6); // OR $0F
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x0F);
+        cpu.borrow_mut().registers.a = 0xF0; // A = 11110000
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute OR $0F
+        assert_eq!(cpu.borrow_mut().registers.a, 0xFF); // A should be 11111111
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_cp_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xFE); // CP $01
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x01);
+        cpu.borrow_mut().registers.a = 0x01; // A = 1
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute CP $01
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_add_a_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xC6); // ADD A, $01
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x01);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute ADD A, $01
+        assert_eq!(cpu.borrow_mut().registers.a, 0x02);
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_adc_a_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xCE); // ADC A, $01
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x01);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true); // Setting carry flag
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute ADC A, $01
+        assert_eq!(cpu.borrow_mut().registers.a, 0x03); // Should be 0x01 + 0x01 + carry(1)
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_sub_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xD6); // SUB $01
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x01);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute SUB $01
+        assert_eq!(cpu.borrow_mut().registers.a, 0x00);
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_sbc_a_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xDE); // SBC A, $01
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x01);
+        cpu.borrow_mut().registers.a = 0x02;
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true); // Setting carry flag
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute SBC A, $01
+        assert_eq!(cpu.borrow_mut().registers.a, 0x00); // Should be 0x02 - 0x01 - carry(1)
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_and_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xE6); // AND $0F
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0x0F);
+        cpu.borrow_mut().registers.a = 0xF0; // A = 11110000
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute AND $0F
+        assert_eq!(cpu.borrow_mut().registers.a, 0x00); // A should be 0
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+
+    #[test]
+    fn test_xor_n() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0100, 0xEE); // XOR $FF
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0101, 0xFF);
+        cpu.borrow_mut().registers.a = 0xFF; // A = 11111111
+        cpu.borrow_mut().registers.pc = 0x0100;
+        cpu.borrow_mut().cycle(); // Execute XOR $FF
+        assert_eq!(cpu.borrow_mut().registers.a, 0x00); // A should be 0
+        assert!(cpu.borrow_mut().registers.f.get_flag(Flag::Z));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::N));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::H));
+        assert!(!cpu.borrow_mut().registers.f.get_flag(Flag::C));
+    }
+    
+    #[test]
+    fn test_op_inc_r8() {
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x0;
+        let cpu_a = cpu.borrow().registers.a;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        let result = cpu.borrow_mut().op_inc_r8(cpu_a);
+        cpu.borrow_mut().registers.a = result;
+        assert_eq!(cpu.borrow_mut().registers.a, 0x01);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), true);
     }
 
     #[test]
     fn test_op_dec_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.registers.a = cpu.op_dec_r8(cpu.registers.a);
-        assert_eq!(cpu.registers.a, 0x00);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        let cpu_a = cpu.borrow().registers.a;
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        let result = cpu.borrow_mut().op_dec_r8(cpu_a);
+        cpu.borrow_mut().registers.a = result;
+        assert_eq!(cpu.borrow_mut().registers.a, 0x00);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), true);
     }
 
     #[test]
     fn test_op_add_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_add_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x2);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_add_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x2);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_sub_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_sub_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x0);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_sub_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x0);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_or_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_or_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x1);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_or_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x1);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_and_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_and_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x1);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_and_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x1);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_cp_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_cp_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x1);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_cp_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x1);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_xor_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_xor_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x0);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_xor_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x0);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_adc_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_adc_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x3);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x14;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_adc_r8(0x12);
-        assert_eq!(cpu.registers.a, 0x26);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_adc_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x3);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
 
-        cpu.registers.a = 0xFF;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_adc_r8(0x01);
-        assert_eq!(cpu.registers.a, 0x01);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+        cpu.borrow_mut().registers.a = 0x14;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_adc_r8(0x12);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x26);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
+
+        cpu.borrow_mut().registers.a = 0xFF;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_adc_r8(0x01);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x01);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), true);
     }
 
     #[test]
     fn test_op_cpl() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-        cpu.registers.a = 0xCC;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, false);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_cpl();
-        assert_eq!(cpu.registers.a, 0x33);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+
+        cpu.borrow_mut().registers.a = 0xCC;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_cpl();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x33);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_ccf() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_ccf();
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_ccf();
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
 
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_ccf();
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_ccf();
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), true);
     }
 
     #[test]
     fn test_op_scf() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, true);
-        cpu.op_scf();
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, true);
+        cpu.borrow_mut().op_scf();
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), true);
     }
 
     #[test]
     fn test_op_daa() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x45;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, false);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_daa();
-        assert_eq!(cpu.registers.a, 0x45);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.a = 0x45;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_daa();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x45);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
 
-        cpu.registers.a = 0x09;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, false);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_daa();
-        assert_eq!(cpu.registers.a, 0x09);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.a = 0x09;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_daa();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x09);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
 
         /*cpu.registers.a = 0x99; //FIXME this corner case is not working
         cpu.registers.f.set_flag(Flag::Z, false);
@@ -3663,149 +4137,220 @@ mod tests {
 
     #[test]
     fn test_op_sbc_r8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x1;
-        cpu.registers.f.set_flag(Flag::Z, false);
-        cpu.registers.f.set_flag(Flag::N, false);
-        cpu.registers.f.set_flag(Flag::H, false);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_sbc_r8(0x1);
-        assert_eq!(cpu.registers.a, 0x0);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.a = 0x1;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, false);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_sbc_r8(0x1);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x0);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
 
-        cpu.registers.a = 0x14;
-        cpu.registers.f.set_flag(Flag::Z, true);
-        cpu.registers.f.set_flag(Flag::N, true);
-        cpu.registers.f.set_flag(Flag::H, true);
-        cpu.registers.f.set_flag(Flag::C, false);
-        cpu.op_sbc_r8(0x12);
-        assert_eq!(cpu.registers.a, 0x02);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.a = 0x14;
+        cpu.borrow_mut().registers.f.set_flag(Flag::Z, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::N, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::H, true);
+        cpu.borrow_mut().registers.f.set_flag(Flag::C, false);
+        cpu.borrow_mut().op_sbc_r8(0x12);
+        assert_eq!(cpu.borrow_mut().registers.a, 0x02);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
 
     #[test]
     fn test_op_inc_hl() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.h = 0x00;
-        cpu.registers.l = 0x00;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_inc_hl();
-        assert_eq!(cpu.memory_bus.borrow().read_byte(0x0000), 0x02);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        cpu.borrow_mut().registers.h = 0x00;
+        cpu.borrow_mut().registers.l = 0x00;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_inc_hl();
+        assert_eq!(cpu.borrow_mut().memory_bus.borrow().read_byte(0x0000), 0x02);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
     }
 
     #[test]
     fn test_op_dec_hl() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
-
-        cpu.registers.h = 0x00;
-        cpu.registers.l = 0x00;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_dec_hl();
-        assert_eq!(cpu.memory_bus.borrow().read_byte(0x0000), 0x00);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), true);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+        cpu.borrow_mut().registers.h = 0x00;
+        cpu.borrow_mut().registers.l = 0x00;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_dec_hl();
+        assert_eq!(cpu.borrow_mut().memory_bus.borrow().read_byte(0x0000), 0x00);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), true);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
     }
 
     #[test]
     fn test_op_add_r16() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
         let register = 0x0000;
         let value = 0x0001;
-        let result = cpu.op_add_r16(register, value);
+        let result = cpu.borrow_mut().op_add_r16(register, value);
         assert_eq!(result, 0x0001);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
     
     #[test]
     fn test_op_add_sp_d8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.sp = 0x0000;
-        cpu.registers.pc = 0x0000;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_add_sp_d8();
-        assert_eq!(cpu.registers.sp, 0x0001);
-        assert_eq!(cpu.registers.f.get_flag(Flag::Z), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::N), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::H), false);
-        assert_eq!(cpu.registers.f.get_flag(Flag::C), false);
+        cpu.borrow_mut().registers.sp = 0x0000;
+        cpu.borrow_mut().registers.pc = 0x0000;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_add_sp_d8();
+        assert_eq!(cpu.borrow_mut().registers.sp, 0x0001);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::Z), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::N), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::H), false);
+        assert_eq!(cpu.borrow_mut().registers.f.get_flag(Flag::C), false);
     }
     
     #[test]
     fn test_op_add_d8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x01;
-        cpu.registers.pc = 0x0000;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_add_d8();
-        assert_eq!(cpu.registers.a, 0x02);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.pc = 0x0000;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_add_d8();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x02);
     }
     
     #[test]
     fn test_op_sub_d8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x01;
-        cpu.registers.pc = 0x0000;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_sub_d8();
-        assert_eq!(cpu.registers.a, 0x00);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.pc = 0x0000;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_sub_d8();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x00);
     }
     
     #[test]
     fn test_op_and_d8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x01;
-        cpu.registers.pc = 0x0000;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_and_d8();
-        assert_eq!(cpu.registers.a, 0x01);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.pc = 0x0000;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_and_d8();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x01);
     }
     
     #[test]
     fn test_op_or_d8() {
-        let rom = ROM::new(vec![0; 500]);
+        let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb"));
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom, None, None, None)));
-        let mut cpu = CPU::new(memory_bus);
+        let cpu = Rc::new(RefCell::new(crate::CPU::CPU::new(memory_bus.clone())));
+        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        memory_bus.borrow_mut().dma = Some(dma.clone());
+        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        memory_bus.borrow_mut().cpu = Some(cpu.clone());
 
-        cpu.registers.a = 0x01;
-        cpu.registers.pc = 0x0000;
-        cpu.memory_bus.borrow_mut().write_byte(0x0000, 0x01);
-        cpu.op_or_d8();
-        assert_eq!(cpu.registers.a, 0x01);
+        cpu.borrow_mut().registers.a = 0x01;
+        cpu.borrow_mut().registers.pc = 0x0000;
+        cpu.borrow_mut().memory_bus.borrow_mut().write_byte(0x0000, 0x01);
+        cpu.borrow_mut().op_or_d8();
+        assert_eq!(cpu.borrow_mut().registers.a, 0x01);
     }
 
 }

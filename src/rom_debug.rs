@@ -26,7 +26,7 @@ impl rom_debug {
             let message: String = self.message.iter().collect();
             if message.contains("Passed") {
                 info!("PASSED: {}", message);
-                exit(0);
+                //exit(0);
             } else if message.contains("Failed") {
                 error!("FAILED: {}", message);
                 exit(1);

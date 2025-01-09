@@ -33,43 +33,34 @@ impl IO {
             ppu,
             joypad: joypad::Joypad::new(),
             //timer: Timer::new(cpu.clone()),
-            timer: Timer::new(timer::TimerFrequency::Hz4096),//TODO why have four variants if this is a constant?
+            timer: Timer::new(),//TODO why have four variants if this is a constant? timer::TimerFrequency::Hz4096
         }
     }
 
-    pub fn read(&mut self, address: u16) -> u8 {//FIXME remove mut
-        //debug!("Read from IO address: {:#X}", address);
+    pub fn read(&mut self, address: u16) -> u8 {
+        debug!("Read from IO address: {:#X}", address);
         match address {
-            0xFF00 => {
-                //unimplemented!("Read from JOYPAD");
-                u8::from(self.joypad.clone())
-            }
-            0xFF01 => {
-                self.serial_data[0] as u8
-            },
-            0xFF02 => {
-                self.serial_data[1] as u8
-            },
+            0xFF00 => u8::from(self.joypad.clone()),
+            0xFF01 => self.serial_data[0] as u8,
+            0xFF02 => self.serial_data[1] as u8,
             0xFF04 => {
-                self.timer.div as u8
+                let low_byte = (self.timer.div & 0xFF) as u8;
+                low_byte
             },
-            0xFF05 => {
-                self.timer.tima
-            },
-            0xFF06 => {
-                self.timer.tma
-            },
+            0xFF05 => self.timer.tima,
+            0xFF06 => self.timer.tma,
             0xFF07 => {
-                panic!("Tac register read")
-            }
-            0xFF40..=0xFF46 => {
-                self.ppu.as_ref().borrow().read(address)
+                let mut value = self.timer.tac;
+                // Frequency is now determined by the lower 2 bits of tac directly
+                if self.timer.enabled {
+                    value |= 0b100; // Set the enable bit
+                }
+                value
             },
-            0xFF47..0xFF4B => {
-                self.lcd.as_ref().borrow().read(address)
-            },
+            0xFF40..=0xFF46 => self.ppu.as_ref().borrow().read(address),
+            0xFF47..=0xFF4B => self.lcd.as_ref().borrow().read(address),
             _ => {
-                //debug!("Read from IO address: {:#X}", address);
+                debug!("Reading from IO address: {:#X}", address);
                 self.io_registers[(address - IO_REGISTERS_START) as usize]
             }
         }
@@ -87,25 +78,14 @@ impl IO {
                 self.serial_data[1] = value as char;
             },
             0xFF04 => {
-                self.timer.div = 0;
+                self.timer.div = 0; // Reset DIV when written to
             },
-            0xFF05 => {
-                self.timer.tima = value;
-            },
-            0xFF06 => {
-                self.timer.tma = value;
-            },
+            0xFF05 => self.timer.tima = value,
+            0xFF06 => self.timer.tma = value,
             0xFF07 => {
-                self.timer.frequency = match value & 0b11 {
-                    0b00 => TimerFrequency::Hz4096,
-                    0b11 => TimerFrequency::Hz16384,
-                    0b10 => TimerFrequency::Hz65536,
-                    0b01 => TimerFrequency::Hz262144,
-                    //_ => TimerFrequency::Hz262144,
-                    _ => panic!("Invalid timer frequency: {:#X}", value),
-                };
-                self.timer.enabled = (value & 0b100) == 0b100;
-            }
+                self.timer.tac = value;
+                self.timer.enabled = (value & 0b100) != 0; // Check if bit 2 is set
+            },
             0xFF40..=0xFF46 => {
                 self.ppu.as_ref().borrow_mut().write(address, value);
             },

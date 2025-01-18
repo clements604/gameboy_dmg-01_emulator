@@ -133,8 +133,9 @@ impl Emulator {
             self.memory_bus.borrow_mut().enabling_ime = false;
         }
 
-        if self.cpu.borrow().registers.pc == 0xC4A9 {//0xCB89
+        if self.cpu.borrow().registers.pc == 0x0B7D {//0xCB89
             debug!("{}", self.cpu.borrow().registers);
+            self.ppu.borrow_mut().stat = 0x80;
             //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
@@ -196,11 +197,11 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    //let boot_rom = Option::None;
+    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
-    //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
+    let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
@@ -225,19 +226,23 @@ fn main() {
     * CPU timing
      */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/add_sp_e_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/boot_div2-S.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/call_timing.gb"));// TODO FAILED
 
     /*
      * Graphics
     */
-   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
    //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
+   //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED
 
     /*
      * Memory timing
     */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/mem_timing.gb")); // TODO no debug output
-    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/01-read_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/01-read_timing.gb")); // TODO
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/02-write_timing.gb")); // TODO no debug output
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/03-modify_timing.gb")); // TODO no debug output
 

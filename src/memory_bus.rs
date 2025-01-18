@@ -199,7 +199,7 @@ impl MemoryBus {
                 if self.boot_rom_enabled && address <= BOOT_ROM_END {
                     self.boot_rom[address as usize] = value;
                 } else {
-                    self.rom_bank_0[address as usize] = value;
+                    //self.rom_bank_0[address as usize] = value;
                 }
             },
             ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize] = value,

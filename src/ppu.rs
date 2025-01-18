@@ -994,7 +994,7 @@ impl Ppu {
     }
 
     fn render_scanline(&mut self) {
-        
+
         let mut sprites_to_render: Vec<Sprite> = Vec::new();
         if self.sprites_enabled() {
             let sprite_data = self.get_sprites();
@@ -1089,6 +1089,7 @@ impl Ppu {
 
             // Sprite rendering
             if self.sprites_enabled() {
+                sprites_to_render.sort_by_key(|sprite| sprite.x); // Required to ensure that sprites are drawn in the correct order, with the limit per line implicitly enforced
                 for sprite in &sprites_to_render {
                     let sprite_tile_data = self.get_sprite_data(&sprite);
 
@@ -1143,9 +1144,9 @@ impl Ppu {
             else {
                 debug!("Sprites are disabled");
             }
-            
-           
-            
+
+
+
             line[x] = colour;
         }
         // Transfer the line to the framebuffer

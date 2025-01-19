@@ -363,17 +363,22 @@ impl Ppu {
 
     fn increment_ly(&mut self) {
         self.ly = self.ly.wrapping_add(1);
-        /*if self.ly == self.ly_compare {
+
+        // Check for LYC coincidence
+        if self.ly == self.ly_compare {
             self.stat |= 0x04; // Set coincidence flag
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
                 self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
             }
         } else {
             self.stat &= !0x04; // Clear coincidence flag
-        }*/
-        /*if self.ly >= LINES_PER_FRAME {
+        }
+
+        if self.ly >= LINES_PER_FRAME {
             self.ly = 0;
-        }*/
+            self.current_frame += 1;
+            self.change_mode(OAM_MODE);
+        }
         self.update_stat_interrupts(); // Ensure this is called to check for interrupts
     }
 
@@ -459,14 +464,15 @@ impl Ppu {
                     }
 
                     // Final line of V-Blank
-                    if self.ly == 153 {
+                    /*if self.ly == 153 {
                         self.change_mode(OAM_MODE);
                         self.ly = 0;
                         self.current_frame += 1;
                     }
                     else {
                         self.increment_ly();
-                    }
+                    }*/
+                    self.increment_ly();
                     self.line_ticks -= 456;
                 }
             }
@@ -568,6 +574,7 @@ impl Ppu {
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
         //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
+        //TODO this won't work when boot rom is enabled
         /*if self.mode == VRAM_MODE || self.mode == OAM_MODE {
             debug!("Attempt to write to VRAM during mode {}", self.mode);
             return;

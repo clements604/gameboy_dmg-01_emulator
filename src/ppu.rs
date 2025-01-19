@@ -11,6 +11,7 @@ use std::rc::Rc;
 use crate::lcd::LCD;
 use crate::main_display::get_mififb_colour;
 use crate::memory_bus::MemoryBus;
+use crate::ppu::StatInterrupt::OAM;
 
 const TILE_START: u16 = 0x8000;
 const TILE_END: u16 = 0x97FF;
@@ -511,7 +512,7 @@ impl Ppu {
             0xFF43 => self.scroll_x = value,
             0xFF44 => {
                 error!("Attempt to write to read-only register: {:#X}", address);
-                self.ly = 90;
+                //self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
             0xFF46 => {
@@ -552,9 +553,10 @@ impl Ppu {
 
     pub fn oam_write(&mut self, address: u16, value: u8) {
         //debug!("OAM write at address: {:#X}", address);
-        /*if address < 0xFE00 || address >= 0xFEA0 {
-            panic!("Attempt to write to invalid OAM address: {:#X}", address);
-        }*/
+        if self.mode == OAM_MODE || self.mode == VRAM_MODE {
+            debug!("Attempt to write to OAM during mode {}", self.mode);
+            return;
+        }
         self.oam_ram[(address) as usize] = value;
         //debug!("OAM data: {:?}", self.oam_ram);
     }
@@ -566,6 +568,10 @@ impl Ppu {
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
         //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
+        if self.mode == VRAM_MODE || self.mode == OAM_MODE {
+            debug!("Attempt to write to VRAM during mode {}", self.mode);
+            return;
+        }
         self.vram[(address - 0x8000) as usize] = value;
         //debug!("VRAM data: {:?}", self.vram);
     }

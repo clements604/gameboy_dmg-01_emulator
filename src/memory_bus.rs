@@ -165,7 +165,8 @@ impl MemoryBus {
                 self.ppu.as_ref().unwrap().borrow().oam_read(address - OAM_START)
                 //self.ppu_experiment.as_ref().unwrap().borrow().oam_read(address - OAM_START)
             },
-            UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
+            //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
+            UNUSED_START..=UNUSED_END => 0xFF,
             IO_REGISTERS_START..=IO_REGISTERS_END => {
                 //debug!("IO register value {:X}", self.io_registers[(address - IO_REGISTERS_START) as usize]);
                 //self.io_registers[(address - IO_REGISTERS_START) as usize]
@@ -221,7 +222,8 @@ impl MemoryBus {
                     //self.ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                 }
             },
-            UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
+            //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
+            UNUSED_START..=UNUSED_END => error!("Write to unused memory"),
             IO_REGISTERS_START..=IO_REGISTERS_END => {
                 if address == 0xFF0F {
                     self.interrupt_flags = value;

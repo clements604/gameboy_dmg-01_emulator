@@ -452,7 +452,7 @@ impl Ppu {
                 }
             }
             VBLANK_MODE => {
-                if self.line_ticks >= 4560 {
+                if self.line_ticks >= 456 {
                     if self.ly == 144 {
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
                         // TODO: Copy buffer to display
@@ -467,7 +467,7 @@ impl Ppu {
                     else {
                         self.increment_ly();
                     }
-                    self.line_ticks -= 4560;
+                    self.line_ticks -= 456;
                 }
             }
             _ => {

@@ -568,10 +568,10 @@ impl Ppu {
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
         //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
-        if self.mode == VRAM_MODE || self.mode == OAM_MODE {
+        /*if self.mode == VRAM_MODE || self.mode == OAM_MODE {
             debug!("Attempt to write to VRAM during mode {}", self.mode);
             return;
-        }
+        }*/
         self.vram[(address - 0x8000) as usize] = value;
         //debug!("VRAM data: {:?}", self.vram);
     }

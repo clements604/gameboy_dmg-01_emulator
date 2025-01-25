@@ -244,7 +244,7 @@ impl Ppu {
             lcd,
             //display,
             lcdc: 0x91,
-            stat: 0,
+            stat: 0x85,
             scroll_x: 0,
             scroll_y: 0,
             ly: 0,
@@ -346,7 +346,7 @@ impl Ppu {
         self.stat & 0x03
     }
     fn set_ppu_mode(&mut self, mode: u8) {
-        self.stat = (self.stat & 0xFC) | mode;
+        self.stat = (self.stat & 0xFC) | (mode & 0x03); // Update only mode bits
     }
 
     fn get_oam_int_select(&self) -> bool {
@@ -389,6 +389,8 @@ impl Ppu {
     }
     fn change_mode(&mut self, mode: u8) {
         self.mode = mode;
+        debug!("PPU mode changed to: {}. STAT before change: {:2X}, STAT after change: {:2X}", mode, self.stat, (self.stat & 0xFC) | mode);
+        self.stat = (self.stat & 0xFC) | mode; // Only change mode bits
         self.update_stat_interrupts();
     }
 
@@ -399,7 +401,7 @@ impl Ppu {
             debug!("LCD is disabled");
             self.ly = 0;
             self.line_ticks = 0;
-            //self.set_ppu_mode(OAM_MODE);
+            self.set_ppu_mode(HBLANK_MODE);
             return;
         }
 
@@ -447,7 +449,9 @@ impl Ppu {
 
                     // Mode transition
                     if self.ly == 143 {
+                        debug!("Transition to VBLANK, STAT before: {:#X}, {:8b}", self.stat, self.stat);
                         self.change_mode(VBLANK_MODE);
+                        debug!("STAT after: {:#X}, {:8b}", self.stat, self.stat);
                     } else {
                         self.change_mode(OAM_MODE);
                     }
@@ -460,6 +464,7 @@ impl Ppu {
                 if self.line_ticks >= 456 {
                     if self.ly == 144 {
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                        //self.set_vblank_int_select(true);
                         // TODO: Copy buffer to display
                     }
 
@@ -513,7 +518,7 @@ impl Ppu {
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
             0xFF40 => self.lcdc = value,
-            0xFF41 => self.stat = value,
+            0xFF41 => self.stat = (self.stat & 0x87) | (value & 0x78),
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
             0xFF44 => {
@@ -714,14 +719,14 @@ impl Ppu {
         let background_tile_set = self.get_tile_set();
 
         for tile in tile_map.iter() {
-            //info!("Tile: {:#X}", tile);
+            //debug!("Tile: {:#X}", tile);
             let tile_data = background_tile_set[*tile as usize].clone();
-            //info!("BG Tiles: {:?}", tile_data);
+            //debug!("BG Tiles: {:?}", tile_data);
 
             tiles.push(tile_data);
         }
-        //info!("Number of tiles: {}", tiles.len());
-        //info!("Tile Map: {:?}", tiles);
+        //debug!("Number of tiles: {}", tiles.len());
+        //debug!("Tile Map: {:?}", tiles);
 
         tiles
     }
@@ -790,7 +795,7 @@ impl Ppu {
                 let pair = ((bit_lsb as u8) << 1) | (bit_msb as u8);
                 let bgp_palette = self.convert_pixel_to_bgb_palette(pair);
                 let mfb_pixel = main_display::get_mififb_colour(bgp_palette);
-                //info!("MFB Pixel: {:#X}", mfb_pixel);
+                //debug!("MFB Pixel: {:#X}", mfb_pixel);
                 minifb_tile[(x / 2 * 8) + (7 - bit) as usize] = mfb_pixel;
             }
         }
@@ -1036,7 +1041,7 @@ impl Ppu {
         // Get the window tile map
         let window_tile_map = self.get_window_tile_map();
 
-        //info!("Window Map: {:?}", window_map);
+        //debug!("Window Map: {:?}", window_map);
         let bg_palette = self.lcd.borrow().bg_palette;
 
         // Get current scanline (LY) and viewport offsets

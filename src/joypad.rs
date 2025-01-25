@@ -33,15 +33,15 @@ pub enum Button {
 impl Joypad {
     pub fn new() -> Joypad {
         Joypad {
-            select_buttons: true,
+            select_buttons: true, // No selection of buttons or d-pad at start
             select_dpad: true,
-            start_down: true,
+            start_down: true, // True means not pressed (inverted logic for Game Boy)
             select_up: true,
             b_left: true,
             a_right: true,
         }
     }
-    
+
     pub fn is_pressed(&self, button: Button) -> bool {
         match button {
             Button::Start => !self.select_buttons & !self.start_down,
@@ -54,53 +54,55 @@ impl Joypad {
             Button::Right => !self.select_dpad & !self.a_right,
         }
     }
-    
+
     pub fn button_pressed(&mut self, button: Button) {
         match button {
             Button::Start => {
                 self.select_buttons = false;
                 self.start_down = false;
-            },
+            }
             Button::Select => {
                 self.select_buttons = false;
                 self.select_up = false;
-            },
+            }
             Button::A => {
                 self.select_buttons = false;
                 self.a_right = false;
-            },
+            }
             Button::B => {
                 self.select_buttons = false;
                 self.b_left = false;
-            },
+            }
             Button::Up => {
                 self.select_dpad = false;
                 self.select_up = false;
-            },
+            }
             Button::Down => {
                 self.select_dpad = false;
                 self.start_down = false;
-            },
+            }
             Button::Left => {
                 self.select_dpad = false;
                 self.b_left = false;
-            },
+            }
             Button::Right => {
                 self.select_dpad = false;
                 self.a_right = false;
-            },
+            }
         }
     }
 }
 
 impl std::convert::From<Joypad> for u8 {
     fn from(joypad: Joypad) -> u8 {
-            (joypad.select_buttons as u8) << 5
-            | (joypad.select_dpad as u8) << 4
-            | (joypad.start_down as u8) << 3
-            | (joypad.select_up as u8) << 2
-            | (joypad.b_left as u8) << 1
-            | (joypad.a_right as u8)
+        1 << 7
+            | 1 << 6
+            | !(joypad.select_buttons as u8) << 5
+            | !(joypad.select_dpad as u8) << 4
+            | !(joypad.start_down as u8) << 3
+            | !(joypad.select_up as u8) << 2
+            | !(joypad.b_left as u8) << 1
+            | !(joypad.a_right as u8)
     }
 }
 
@@ -122,69 +124,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_joypad_init() {
+        let joypad = Joypad::new();
+        assert_eq!(u8::from(joypad), 0xFF);
+    }
+
+    #[test]
     fn test_start_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_buttons = false;
         joypad.start_down = false;
-        assert_eq!(u8::from(joypad), 0b0001_0111);
+        assert_eq!(u8::from(joypad), 0b1101_0111);
     }
-    
+
     #[test]
     fn test_select_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_buttons = false;
         joypad.select_up = false;
-        assert_eq!(u8::from(joypad), 0b00011011);
+        assert_eq!(u8::from(joypad), 0b11011011);
     }
-    
+
     #[test]
     fn test_a_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_buttons = false;
         joypad.a_right = false;
-        assert_eq!(u8::from(joypad), 0b0001_1110);
+        assert_eq!(u8::from(joypad), 0b1101_1110);
     }
-    
+
     #[test]
     fn test_b_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_buttons = false;
         joypad.b_left = false;
-        assert_eq!(u8::from(joypad), 0b0001_1101);
+        assert_eq!(u8::from(joypad), 0b1101_1101);
     }
-    
+
     #[test]
     fn test_dpad_up_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_dpad = false;
         joypad.select_up = false;
-        assert_eq!(u8::from(joypad), 0b00101011);
+        assert_eq!(u8::from(joypad), 0b11101011);
     }
-    
+
     #[test]
     fn test_dpad_down_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_dpad = false;
         joypad.start_down = false;
-        assert_eq!(u8::from(joypad), 0b0010_0111);
+        assert_eq!(u8::from(joypad), 0b1110_0111);
     }
-    
+
     #[test]
     fn test_dpad_left_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_dpad = false;
         joypad.b_left = false;
-        assert_eq!(u8::from(joypad), 0b0010_1101);
+        assert_eq!(u8::from(joypad), 0b1110_1101);
     }
-    
+
     #[test]
     fn test_dpad_right_pressed() {
         let mut joypad = Joypad::new();
         joypad.select_dpad = false;
         joypad.a_right = false;
-        assert_eq!(u8::from(joypad), 0b0010_1110);
+        assert_eq!(u8::from(joypad), 0b1110_1110);
     }
-    
+
     #[test]
     fn test_is_pressed_true() {
         let mut joypad = Joypad::new();
@@ -192,7 +200,7 @@ mod tests {
         joypad.start_down = false;
         assert_eq!(joypad.is_pressed(Button::Start), true);
     }
-    
+
     #[test]
     fn test_is_pressed_false() {
         let mut joypad = Joypad::new();
@@ -201,19 +209,18 @@ mod tests {
         joypad.b_left = false;
         assert_eq!(joypad.is_pressed(Button::B), false);
     }
-    
+
     #[test]
     fn test_press_start() {
         let mut joypad = Joypad::new();
         joypad.button_pressed(Button::Start);
-        assert_eq!(u8::from(joypad), 0b0001_0111);
+        assert_eq!(u8::from(joypad), 0b1101_0111);
     }
-    
+
     #[test]
     fn test_press_a() {
         let mut joypad = Joypad::new();
         joypad.button_pressed(Button::A);
-        assert_eq!(u8::from(joypad), 0b0001_1110);
+        assert_eq!(u8::from(joypad), 0b1101_1110);
     }
-    
 }

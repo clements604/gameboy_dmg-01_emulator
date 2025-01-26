@@ -91,6 +91,43 @@ impl Joypad {
             }
         }
     }
+    
+    pub fn button_released(&mut self, button: Button) {
+        match button {
+            Button::Start => {
+                self.select_buttons = true;
+                self.start_down = true;
+            }
+            Button::Select => {
+                self.select_buttons = true;
+                self.select_up = true;
+            }
+            Button::A => {
+                self.select_buttons = true;
+                self.a_right = true;
+            }
+            Button::B => {
+                self.select_buttons = true;
+                self.b_left = true;
+            }
+            Button::Up => {
+                self.select_dpad = true;
+                self.select_up = true;
+            }
+            Button::Down => {
+                self.select_dpad = true;
+                self.start_down = true;
+            }
+            Button::Left => {
+                self.select_dpad = true;
+                self.b_left = true;
+            }
+            Button::Right => {
+                self.select_dpad = true;
+                self.a_right = true;
+            }
+        }
+    }
 }
 
 impl std::convert::From<Joypad> for u8 {

@@ -44,7 +44,7 @@ pub struct Ppu {
     start_time: u32,
     frame_count: u16,
     cpu: Rc<RefCell<CPU>>,
-    lcd: Rc<RefCell<LCD>>,
+    pub lcd: Rc<RefCell<LCD>>,
     //display: Rc<RefCell<Display>>,
     pub lcdc: u8,
     pub stat: u8,
@@ -464,8 +464,6 @@ impl Ppu {
                 if self.line_ticks >= 456 {
                     if self.ly == 144 {
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
-                        //self.set_vblank_int_select(true);
-                        // TODO: Copy buffer to display
                     }
 
                     // Final line of V-Blank
@@ -704,7 +702,7 @@ impl Ppu {
         }
         tile_map
     }*/
-    fn get_window_tile_map(&self) -> Vec<u8> {
+    pub(crate) fn get_window_tile_map(&self) -> Vec<u8> {
         let tile_map_base = if self.lcdc & (1 << 6) != 0 {
             0x9C00
         } else {
@@ -946,22 +944,37 @@ impl Ppu {
             tile_data_base + (tile_index as u16 * TILE_SIZE_BYTES as u16)
         };
 
-        let mut tile_data = [0u8; TILE_SIZE_BYTES];
+        // Background/window tiles are always 8x8
+        let mut tile_data = vec![0u8; TILE_SIZE_BYTES];
         for i in 0..TILE_SIZE_BYTES {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
 
-        TileData::new(tile_data)
+        TileData::new(&tile_data, 8) // Always 8 pixels tall for background/window tiles
     }
 
-    fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
-        const SPRITE_SIZE: usize = 16; // 16 bytes per sprite (2 bytes per row for 8 rows)
-        let mut sprite_tile_data = [0u8; SPRITE_SIZE];
-        let sprite_tile_address = 0x8000 + (sprite.tile_number as u16 * SPRITE_SIZE as u16); // ALWAYS 0x8000 for sprites
-        for i in 0..SPRITE_SIZE {
+    pub fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
+        let is_tall = (self.lcdc & 0x04) != 0; // LCDC bit 2: 0 = 8x8, 1 = 8x16
+        let sprite_size = if is_tall { 32 } else { 16 }; // 32 bytes for 8x16, 16 bytes for 8x8
+        let height = if is_tall { 16 } else { 8 };
+
+        let mut sprite_tile_data = vec![0u8; sprite_size];
+        // Sprite tiles always start at 0x8000, using unsigned indices
+        let sprite_tile_address = 0x8000 + (sprite.tile_number as u16 * 16); // Each tile is 16 bytes
+
+        // For 8x16 sprites, tile_number points to the first tile, second tile follows immediately
+        // Note: For 8x16 sprites, the LSB of tile_number is ignored (effectively tile_number & 0xFE)
+        let sprite_tile_address = if is_tall {
+            sprite_tile_address & 0xFFF0 // Clear LSB for 8x16 sprites
+        } else {
+            sprite_tile_address
+        };
+
+        for i in 0..sprite_size {
             sprite_tile_data[i] = self.vram_read(sprite_tile_address + i as u16);
         }
-        TileData::new(sprite_tile_data)
+
+        TileData::new(&sprite_tile_data, height)
     }
     
     /*
@@ -1012,7 +1025,6 @@ impl Ppu {
     }
 
     fn render_scanline(&mut self) {
-
         let mut sprites_to_render: Vec<Sprite> = Vec::new();
         if self.sprites_enabled() {
             let sprite_data = self.get_sprites();
@@ -1020,41 +1032,30 @@ impl Ppu {
             let mut sprite_count = 0;
             sprites_to_render = Vec::with_capacity(10);
             for sprite in sprite_data.iter() {
+                let sprite_height = self.sprite_size() as isize; // 8 or 16 from LCDC bit 2
                 let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
 
-                // Check if the sprite is on the current scanline
-                if screen_y <= self.ly as isize && (screen_y + 8) > self.ly as isize {
-                    // Increment sprite count for this line and add to rendering list
+                // Check if the sprite intersects the current scanline based on its height
+                if screen_y <= self.ly as isize && (screen_y + sprite_height) > self.ly as isize {
                     if sprite_count < 10 {
                         sprites_to_render.push(*sprite);
                         sprite_count += 1;
                     } else {
-                        // If we've hit the limit, stop adding sprites
-                        break;
+                        break; // Max 10 sprites per line
                     }
                 }
             }
         }
 
-        let tile_set = self.get_tile_set();
         let tile_map = self.get_bg_tile_map();
-        // Get the window tile map
         let window_tile_map = self.get_window_tile_map();
 
-        //debug!("Window Map: {:?}", window_map);
-        let bg_palette = self.lcd.borrow().bg_palette;
-
-        // Get current scanline (LY) and viewport offsets
         let ly = self.ly as usize;
         let scroll_x = self.scroll_x as usize;
         let scroll_y = self.scroll_y as usize;
 
-        // Create an array to represent the current line of pixels
         let mut line = [LIGHTEST_GREEN; 160];
-
-        let current_scanline = ly; // Assuming 'ly' is the current scanline
-        let scroll_x = scroll_x as usize;
-        let scroll_y = scroll_y as usize;
+        let current_scanline = ly;
 
         for x in 0..160 {
             let mut colour = LIGHTEST_GREEN;
@@ -1079,16 +1080,13 @@ impl Ppu {
             if self.window_enabled() {
                 let window_y = self.lcd.borrow().window_y as usize;
                 let window_x = self.lcd.borrow().window_x.wrapping_sub(8) as usize;
-                debug!("Current Scanline: {}, Scroll X: {}, Scroll Y: {}", current_scanline, scroll_x, scroll_y);
-                debug!("Window Y: {}, Window X: {}", window_y, window_x);
-                let adjusted_window_y = window_y % 144;  // Y wraps at 144
-                let adjusted_window_x = window_x % 160;  // X wraps at 160
+                let adjusted_window_y = window_y % 144;
+                let adjusted_window_x = window_x % 160;
 
                 if current_scanline >= adjusted_window_y && x >= adjusted_window_x {
                     let window_tile_y = (current_scanline - adjusted_window_y) / 8;
                     let window_tile_x = (x + (160 - adjusted_window_x)) % 160 / 8;
                     let tile_index = window_tile_map[window_tile_y * 32 + window_tile_x];
-;
                     let tile_data = self.get_tile_data(tile_index);
 
                     if window_tile_x < 32 {
@@ -1096,7 +1094,6 @@ impl Ppu {
                         let pixel_x_in_tile = (x + (160 - adjusted_window_x)) % 160 % 8;
                         let pixel_value = tile_data.get_pixel(pixel_y_in_tile, pixel_x_in_tile);
 
-                        // Check if the window should be rendered over the background (or if background is transparent)
                         if colour == LIGHTEST_GREEN || !self.lcdc_background_priority() {
                             colour = self.lcd.borrow().get_bg_color(pixel_value);
                         }
@@ -1104,50 +1101,46 @@ impl Ppu {
                 }
             }
 
-
             // Sprite rendering
             if self.sprites_enabled() {
-                sprites_to_render.sort_by_key(|sprite| sprite.x); // Required to ensure that sprites are drawn in the correct order, with the limit per line implicitly enforced
+                sprites_to_render.sort_by_key(|sprite| sprite.x); // Sort by X for correct overlap
                 for sprite in &sprites_to_render {
-                    let sprite_tile_data = self.get_sprite_data(&sprite);
+                    let sprite_tile_data = self.get_sprite_data(sprite);
+                    let sprite_height = sprite_tile_data.height() as isize; // 8 or 16
 
                     let screen_x = sprite.x as isize - 8;
                     let screen_y = sprite.y as isize - 16;
 
-                    // Check if the sprite is on the current scanline
+                    // Check if sprite intersects current scanline
                     if screen_y <= current_scanline as isize
-                        && (screen_y + 8) > current_scanline as isize
+                        && (screen_y + sprite_height) > current_scanline as isize
                     {
                         let mut sprite_row = current_scanline as isize - screen_y;
                         let mut sprite_col = x as isize - screen_x;
 
-                        // Apply Y-flip if flag is set
+                        // Apply Y-flip if set
                         if sprite.flags.y_flip {
-                            sprite_row = 7 - sprite_row;
+                            sprite_row = (sprite_height - 1) - sprite_row; // 7 for 8x8, 15 for 8x16
                         }
 
-                        // Apply X-flip if flag is set
+                        // Apply X-flip if set
                         if sprite.flags.x_flip {
-                            sprite_col = 7 - sprite_col;
+                            sprite_col = 7 - sprite_col; // Width is always 8
                         }
 
-                        // Check if the pixel is within sprite bounds after flipping
-                        if sprite_col >= 0 && sprite_col < 8 {
+                        // Check if pixel is within sprite bounds
+                        if sprite_col >= 0 && sprite_col < 8 && sprite_row >= 0 && sprite_row < sprite_height {
                             let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
                             if sprite_pixel != 0 { // Non-transparent
                                 let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
                                 let sprite_colour = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
 
-                                // Here's where we implement the priority check:
                                 if sprite_colour != LIGHTEST_GREEN {
-                                    // Not transparent
                                     if sprite.flags.priority {
-                                        // If priority bit is set (sprite behind background), only draw if the background is transparent
                                         if colour == LIGHTEST_GREEN {
                                             colour = sprite_colour;
                                         }
                                     } else {
-                                        // If priority bit is not set (sprite in front), draw over the background unless background is non-transparent and has priority
                                         if colour != LIGHTEST_GREEN || self.lcdc_background_priority() {
                                             colour = sprite_colour;
                                         }
@@ -1158,16 +1151,13 @@ impl Ppu {
                         }
                     }
                 }
-            }
-            else {
+            } else {
                 debug!("Sprites are disabled");
             }
 
-
-
             line[x] = colour;
         }
-        // Transfer the line to the framebuffer
+
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
     }
 
@@ -1204,17 +1194,30 @@ impl Ppu {
 
 // Struct to represent the tile data
 pub struct TileData {
-    data: [u8; main_display::TILE_SIZE * 2],
+    data: Vec<u8>,    // Use Vec to allow variable size
+    height: usize,    // 8 or 16 pixels
+    width: usize,     // Typically 8 pixels for Gameboy
 }
+
 
 impl TileData {
     // Constructor for TileData
-    pub fn new(data: [u8; main_display::TILE_SIZE * 2]) -> Self {
-        TileData { data }
+    pub fn new(data: &[u8], height: usize) -> Self {
+        assert!(height == 8 || height == 16, "Sprite height must be 8 or 16");
+        assert_eq!(data.len(), height * 2, "Data size must match height (2 bytes per row)");
+
+        TileData {
+            data: data.to_vec(),
+            height,
+            width: 8
+        }
     }
 
     // Get pixel color (0-3) at row and col
     pub fn get_pixel(&self, row: usize, col: usize) -> u8 {
+        assert!(row < self.height, "Row out of bounds");
+        assert!(col < self.width, "Column out of bounds");
+
         // Each row is represented by 2 bytes (bitplanes)
         let plane1 = self.data[row * 2];
         let plane2 = self.data[row * 2 + 1];
@@ -1226,6 +1229,10 @@ impl TileData {
 
         // Combine the two bits to get the pixel value (0-3)
         (high_bit << 1) | low_bit
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
     }
 }
 

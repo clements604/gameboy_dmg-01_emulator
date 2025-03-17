@@ -52,7 +52,7 @@ pub struct Ppu {
     pub scroll_y: u8,
     pub ly: u8,
     pub ly_compare: u8,
-
+    window_line_counter: u8,
     pub background_buffer: Vec<u32>,
     pub framebuffer: Vec<u32>,
     pub viewport: Vec<u32>,
@@ -249,6 +249,7 @@ impl Ppu {
             scroll_y: 0,
             ly: 0,
             ly_compare: 0,
+            window_line_counter: 0,
             framebuffer: vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT],
             background_buffer: vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT],
             viewport: vec![
@@ -377,6 +378,7 @@ impl Ppu {
         if self.ly >= LINES_PER_FRAME {
             self.ly = 0;
             self.current_frame += 1;
+            self.window_line_counter = 0;
             self.change_mode(OAM_MODE);
         }
         self.update_stat_interrupts(); // Ensure this is called to check for interrupts
@@ -401,6 +403,7 @@ impl Ppu {
             debug!("LCD is disabled");
             self.ly = 0;
             self.line_ticks = 0;
+            self.window_line_counter = 0;
             self.set_ppu_mode(HBLANK_MODE);
             return;
         }
@@ -453,6 +456,7 @@ impl Ppu {
                         self.change_mode(VBLANK_MODE);
                         debug!("STAT after: {:#X}, {:8b}", self.stat, self.stat);
                     } else {
+                        self.increment_line_counter(self.ly);
                         self.change_mode(OAM_MODE);
                     }
 
@@ -1024,6 +1028,30 @@ impl Ppu {
         }
     }
 
+    fn increment_line_counter(&mut self, scan_y: u8) {
+        if self.window_enabled() && 
+            self.lcd.borrow().window_x.saturating_sub(7) < VIEWPORT_WIDTH as u8 &&
+            self.lcd.borrow().window_y < VIEWPORT_HEIGHT as u8 &&
+            scan_y >= self.lcd.borrow().window_y
+        {
+            self.window_line_counter = self.window_line_counter.saturating_add(1);
+            info!("Window line counter incremented: {}", self.window_line_counter);
+        }
+        else {
+            info!("Window not enabled or offscreen");
+            debug!("self.lcd.borrow().window_x.saturating_sub(7) {}", self.lcd.borrow().window_x.saturating_sub(7));
+            debug!("self.lcd.borrow().window_y {}", self.lcd.borrow().window_y);
+            debug!("self.scroll_y {}", self.scroll_y);
+        }
+    }
+
+    pub fn calculate_window_tilemap_coordinates(&self) -> (u8, u8) {
+        let x_offset = self.scroll_x.wrapping_sub(self.lcd.borrow().window_x.wrapping_sub(7));
+        let y_offset = self.window_line_counter;
+
+        (x_offset, y_offset)
+    }
+    
     fn render_scanline(&mut self) {
         let mut sprites_to_render: Vec<Sprite> = Vec::new();
         if self.sprites_enabled() {

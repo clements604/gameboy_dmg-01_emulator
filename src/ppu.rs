@@ -1112,7 +1112,7 @@ impl Ppu {
                 let adjusted_window_x = window_x % 160;
 
                 if current_scanline >= adjusted_window_y && x >= adjusted_window_x {
-                    let window_tile_y = (current_scanline - adjusted_window_y) / 8;
+                    let window_tile_y = (self.window_line_counter / 8) as usize;
                     let window_tile_x = (x + (160 - adjusted_window_x)) % 160 / 8;
                     let tile_index = window_tile_map[window_tile_y * 32 + window_tile_x];
                     let tile_data = self.get_tile_data(tile_index);

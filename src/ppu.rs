@@ -1,4 +1,4 @@
-use crate::display::{LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::display::{DARKEST_GREEN, LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
 use crate::{display, interupts, main, main_display};
@@ -448,7 +448,8 @@ impl Ppu {
                     }
 
                     // Render scanline
-                    self.render_scanline();
+                    //self.render_scanline();
+                    self.render_window();
 
                     // Mode transition
                     if self.ly == 143 {
@@ -456,7 +457,7 @@ impl Ppu {
                         self.change_mode(VBLANK_MODE);
                         debug!("STAT after: {:#X}, {:8b}", self.stat, self.stat);
                     } else {
-                        self.increment_line_counter(self.ly);
+                        //self.increment_line_counter(self.ly);
                         self.change_mode(OAM_MODE);
                     }
 
@@ -984,50 +985,46 @@ impl Ppu {
     /*
     Renders the PPU window (not background or sprites).
      */
-    fn render_window(&mut self) {
-        if !self.window_enabled() {
-            debug!("Window is disabled");
+    pub fn render_window(&mut self) {
+        if self.lcdc & 0x20 == 0 {
             return;
         }
 
-        let lcd_y = self.ly;
-        let window_y = self.lcd.borrow().window_y as i16;
-        let window_x = (self.lcd.borrow().window_x as i16) - 7;
+        // Assuming you have these registers in your Ppu struct
+        // If not, you'll need to add them:
+        // pub window_x: u8,
+        // pub window_y: u8,
+        let window_x = self.lcd.borrow().window_x; // Replace with self.window_x 
+        let window_y = self.lcd.borrow().window_y; // Replace with self.window_y
 
-        if lcd_y as i16 >= window_y {
-            let window_tile_map = self.get_window_tile_map();
-            let tile_set = self.get_tile_set();
-            let bg_palette = self.lcd.borrow().bg_palette;
-            let mut stop_offscreen = false;
+        // Check if current scanline is within window area
+        if self.ly < window_y {
+            return;
+        }
 
-            for tile_x in 0..32 {
-                let tile_y = ((lcd_y as i16 - window_y) / 8) as usize;
-                let tile_index = window_tile_map[tile_y * 32 + tile_x];
-                let tile_data = self.get_tile_data(tile_index);
+        // Window X position is offset by 7 (WX=7 is the leftmost position)
+        let window_x_adjusted = window_x.saturating_sub(7);
 
-                for pixel_x in 0..8 {
-                    // Check if we're offscreen to the right
-                    if (tile_x * 8 + pixel_x) as i16 + window_x > 159 {
-                        stop_offscreen = true;
-                        break;
-                    }
+        // Draw black pixels only within the window area for this scanline
+        for screen_x in 0..160 {
+            // Skip pixels to the left of the window
+            if screen_x < window_x_adjusted as usize {
+                continue;
+            }
 
-                    let pixel_y_in_tile = ((lcd_y as i16 - window_y) % 8) as usize;
-                    let pixel = tile_data.get_pixel(pixel_y_in_tile, pixel_x);
-                    let color = self.get_bgp_palette(pixel);
+            // Calculate buffer index
+            let buffer_index = (self.ly as usize * 160) + screen_x;
 
-                    // Here you would update your framebuffer with the window pixel color
-                    // Example:
-                    self.framebuffer[lcd_y as usize * 160 + (tile_x * 8 + pixel_x + window_x as usize)] = get_mififb_colour(color);
-                }
-
-                if stop_offscreen {
-                    break;
-                }
+            // Set pixel to black (assuming RGBA format with 0x000000FF as black)
+            if buffer_index < self.framebuffer.len() {
+                self.framebuffer[buffer_index] = 0x000000FF;
             }
         }
-    }
 
+        // If we're rendering the window, increment the window line counter
+        self.window_line_counter += 1;
+
+    }
     fn increment_line_counter(&mut self, scan_y: u8) {
         if self.window_enabled() && 
             self.lcd.borrow().window_x.saturating_sub(7) < VIEWPORT_WIDTH as u8 &&
@@ -1085,11 +1082,13 @@ impl Ppu {
         let mut line = [LIGHTEST_GREEN; 160];
         let current_scanline = ly;
 
+        self.render_window();
+
         for x in 0..160 {
             let mut colour = LIGHTEST_GREEN;
 
             // Background rendering
-            if self.is_background_enabled() {
+            /*if self.is_background_enabled() {
                 let global_x = (x + scroll_x) % 256;
                 let global_y = (current_scanline + scroll_y) % 256;
 
@@ -1102,10 +1101,11 @@ impl Ppu {
                 let col = global_x % 8;
                 let pixel = tile.get_pixel(row, col);
                 colour = self.lcd.borrow().get_bg_color(pixel);
-            }
+            }*/
 
             // Window rendering
-            if self.window_enabled() {
+            
+            /*if self.window_enabled() {
                 let window_y = self.lcd.borrow().window_y as usize;
                 let window_x = self.lcd.borrow().window_x.wrapping_sub(8) as usize;
                 let adjusted_window_y = window_y % 144;
@@ -1127,10 +1127,10 @@ impl Ppu {
                         }
                     }
                 }
-            }
+            }*/
 
             // Sprite rendering
-            if self.sprites_enabled() {
+            /*if self.sprites_enabled() {
                 sprites_to_render.sort_by_key(|sprite| sprite.x); // Sort by X for correct overlap
                 for sprite in &sprites_to_render {
                     let sprite_tile_data = self.get_sprite_data(sprite);
@@ -1181,7 +1181,7 @@ impl Ppu {
                 }
             } else {
                 debug!("Sprites are disabled");
-            }
+            }*/
 
             line[x] = colour;
         }

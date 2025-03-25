@@ -707,6 +707,71 @@ impl Ppu {
         }
         tile_map
     }*/
+
+    fn get_window_tiles(&self) -> Vec<TileData>{
+        // 0 = 0x9800-0x9BFF in hardware (0x1800-0x1BFF in VRAM array)
+        // 1 = 0x9C00-0x9FFF in hardware (0x1C00-0x1FFF in VRAM array)
+
+        let mut tiles: Vec<TileData> = Vec::new();
+
+        let window_tile_map_addr = if self.lcdc & 0x40 != 0 {
+            0x1C00
+        } else {
+            0x1800
+        };
+        info!("Window Tile Map Base: {:#X}", window_tile_map_addr);
+
+        let unsigned_tile_ids = self.lcdc & 0x10 != 0;
+        info!("Unsigned Tile IDs: {}", unsigned_tile_ids);
+
+        let tile_base_address = if unsigned_tile_ids {
+            0x0000
+        }
+        else {
+            0x0800
+        };
+        info!("Tile Base Address: {:#X}", tile_base_address);
+
+        for y in 0..32 {
+            for x in 0..32 {
+                let tile_map_index = window_tile_map_addr + (y * 32) + x;
+
+                // Get the tile ID from the tile map
+                let tile_id = self.vram[tile_map_index] as u16 & 0xFF;
+
+                // Calculate the address of the actual tile data
+                let tile_data_address = if unsigned_tile_ids {
+                    // Unsigned mode (LCDC bit 4 = 1): Tiles at 0x8000-0x8FFF
+                    // In VRAM array, this is offset 0x0000-0x0FFF
+                    (tile_id * 16) // Base address is already 0 in this case
+                } else {
+                    // Signed mode (LCDC bit 4 = 0)
+                    // If tile_id < 128, it's a positive number (0 to 127)
+                    // If tile_id >= 128, it's a negative number (equivalent to -128 to -1)
+                    if tile_id < 128 {
+                        // Positive tile IDs (0-127) -> 0x9000-0x97FF
+                        // In VRAM array, this is offset 0x1000-0x17FF
+                        0x1000 + (tile_id * 16)
+                    } else {
+                        // Negative tile IDs (128-255 as -128 to -1) -> 0x8800-0x8FFF
+                        // In VRAM array, this is offset 0x0800-0x0FFF
+                        0x0800 + ((tile_id - 128) * 16)
+                    }
+                };
+
+                // Read the tile data
+                let mut tile_data: [u8; 16] = [0; 16];
+                for pixel in 0..16 {
+                    tile_data[pixel] = self.vram[(tile_data_address + pixel as u16) as usize];
+                }
+                let tile = TileData::new(&tile_data, 8);
+                info!("tile {:?}", tile.data);
+                tiles.push(tile);
+            }
+        }
+
+        tiles
+    }
     pub(crate) fn get_window_tile_map(&self) -> Vec<u8> {
         let tile_map_base = if self.lcdc & (1 << 6) != 0 {
             0x9C00
@@ -990,36 +1055,7 @@ impl Ppu {
             return;
         }
 
-        // Assuming you have these registers in your Ppu struct
-        // If not, you'll need to add them:
-        // pub window_x: u8,
-        // pub window_y: u8,
-        let window_x = self.lcd.borrow().window_x; // Replace with self.window_x 
-        let window_y = self.lcd.borrow().window_y; // Replace with self.window_y
-
-        // Check if current scanline is within window area
-        if self.ly < window_y {
-            return;
-        }
-
-        // Window X position is offset by 7 (WX=7 is the leftmost position)
-        let window_x_adjusted = window_x.saturating_sub(7);
-
-        // Draw black pixels only within the window area for this scanline
-        for screen_x in 0..160 {
-            // Skip pixels to the left of the window
-            if screen_x < window_x_adjusted as usize {
-                continue;
-            }
-
-            // Calculate buffer index
-            let buffer_index = (self.ly as usize * 160) + screen_x;
-
-            // Set pixel to black (assuming RGBA format with 0x000000FF as black)
-            if buffer_index < self.framebuffer.len() {
-                self.framebuffer[buffer_index] = 0x000000FF;
-            }
-        }
+        self.get_window_tiles();
 
         // If we're rendering the window, increment the window line counter
         self.window_line_counter += 1;

@@ -448,8 +448,8 @@ impl Ppu {
                     }
 
                     // Render scanline
-                    //self.render_scanline();
-                    self.render_window();
+                    self.render_scanline();
+                    //self.render_window();
 
                     // Mode transition
                     if self.ly == 143 {
@@ -1118,13 +1118,13 @@ impl Ppu {
         let mut line = [LIGHTEST_GREEN; 160];
         let current_scanline = ly;
 
-        self.render_window();
+        //self.render_window();
 
         for x in 0..160 {
             let mut colour = LIGHTEST_GREEN;
 
             // Background rendering
-            /*if self.is_background_enabled() {
+            if self.is_background_enabled() {
                 let global_x = (x + scroll_x) % 256;
                 let global_y = (current_scanline + scroll_y) % 256;
 
@@ -1137,11 +1137,11 @@ impl Ppu {
                 let col = global_x % 8;
                 let pixel = tile.get_pixel(row, col);
                 colour = self.lcd.borrow().get_bg_color(pixel);
-            }*/
+            }
 
             // Window rendering
             
-            /*if self.window_enabled() {
+            if self.window_enabled() {
                 let window_y = self.lcd.borrow().window_y as usize;
                 let window_x = self.lcd.borrow().window_x.wrapping_sub(8) as usize;
                 let adjusted_window_y = window_y % 144;
@@ -1163,10 +1163,10 @@ impl Ppu {
                         }
                     }
                 }
-            }*/
+            }
 
             // Sprite rendering
-            /*if self.sprites_enabled() {
+            if self.sprites_enabled() {
                 sprites_to_render.sort_by_key(|sprite| sprite.x); // Sort by X for correct overlap
                 for sprite in &sprites_to_render {
                     let sprite_tile_data = self.get_sprite_data(sprite);
@@ -1217,7 +1217,7 @@ impl Ppu {
                 }
             } else {
                 debug!("Sprites are disabled");
-            }*/
+            }
 
             line[x] = colour;
         }

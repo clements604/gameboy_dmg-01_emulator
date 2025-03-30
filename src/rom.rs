@@ -128,7 +128,7 @@ impl ROM {
         if rom_banks.data.len() > 0 {
             debug!("Size of last bank: {}", rom_banks.data[rom_banks.data.len() - 1].len());
         }
-        
+
         rom_banks
     }
     

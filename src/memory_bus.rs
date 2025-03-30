@@ -14,6 +14,9 @@ use crate::interupts::{Interrupt, InterruptFlags};
 use crate::{timer};
 use crate::timer::{Timer, TimerFrequency};
 
+use crate::mbc::MBC;
+use crate::mbc_factory;
+
 const BOOT_ROM_START: u16 = 0x0000;
 const BOOT_ROM_END: u16 = 0x00FF;
 const BOOT_ROM_SIZE: usize = ((BOOT_ROM_END - BOOT_ROM_START) + 1) as usize;
@@ -84,11 +87,16 @@ pub struct MemoryBus {
     pub enabling_ime: bool,
     pub interrupt_enable_register: u8,
     pub interrupt_flags: u8,
+
+    mbc: Option<Box<dyn MBC>>,
 }
 
 impl MemoryBus {
     pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, io: Option<Rc<RefCell<IO>>>, dma:Option<Rc<RefCell<Dma>>>, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
 
+        let mbc = mbc_factory::create_mbc(rom);
+        let rom_banks = rom.load_rom_to_banks();
+        
         let mut memory_bus = MemoryBus {
             //rom: [0; (ROM_BANK_0_END - ROM_BANK_0_START) as usize],
             boot_rom_enabled: match boot_rom {
@@ -126,14 +134,13 @@ impl MemoryBus {
             enabling_ime: false,
             interrupt_enable_register: 0,
             interrupt_flags: 0,
+
+            mbc: Some(mbc),
+            
         };
         //debug!("ROM data to be loaded: {:?}", rom);
         memory_bus.load_rom(&rom.rom);
-
-        //debug!("Memory bus created");
-
-        //debug!("Memory bus bank 0: {:?}", memory_bus.rom_bank_0);
-        //debug!("Memory bus bank n: {:?}", memory_bus.rom_bank_n);
+        memory_bus.update_visible_banks();
 
         memory_bus
     }
@@ -145,15 +152,12 @@ impl MemoryBus {
                 if self.boot_rom_enabled && address <= BOOT_ROM_END {
                     self.boot_rom[address as usize]
                 } else {
-                    self.rom_bank_0[address as usize]
+                    self.mbc.as_ref().unwrap().read_byte(address)
                 }
             },
-            ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize],
-            VRAM_START..=VRAM_END => {
-                //self.vram[(address - VRAM_START) as usize]
-                self.ppu.as_ref().unwrap().borrow().vram_read(address)
-            },
-            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.external_ram[(address - EXTERNAL_RAM_START) as usize],
+            ROM_BANK_N_START..=ROM_BANK_N_END => self.mbc.as_ref().unwrap().read_byte(address),
+            VRAM_START..=VRAM_END => self.ppu.as_ref().unwrap().borrow().vram_read(address),
+            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_ref().unwrap().read_byte(address),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize],
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
             ECHO_RAM_START..=ECHO_RAM_END => self.echo_ram[(address - ECHO_RAM_START) as usize],
@@ -195,22 +199,32 @@ impl MemoryBus {
             //panic!("LY write");
         }
         match address {
-            //ROM_BANK_0_START..=ROM_BANK_0_END => self.rom_bank_0[address as usize] = value,
             ROM_BANK_0_START..=ROM_BANK_0_END => {
                 if self.boot_rom_enabled && address <= BOOT_ROM_END {
                     self.boot_rom[address as usize] = value;
                 } else {
-                    //self.rom_bank_0[address as usize] = value;
+                    // Pass ROM writes to the MBC
+                    self.mbc.as_mut().unwrap().write_byte(address, value);
+
+                    // After MBC writes that might change banking, update visible banks
+                    if address >= 0x2000 {
+                        self.update_visible_banks();
+                    }
                 }
             },
-            ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[(address - ROM_BANK_N_START) as usize] = value,
+            ROM_BANK_N_START..=ROM_BANK_N_END => {
+                // Pass ROM bank N writes to the MBC
+                self.mbc.as_mut().unwrap().write_byte(address, value);
+
+                // After MBC writes that might change banking, update visible banks
+                self.update_visible_banks();
+            },
+            
             VRAM_START..=VRAM_END => { 
                 //self.vram[(address - VRAM_START) as usize] = value;
                 self.ppu.as_ref().unwrap().borrow_mut().vram_write(address, value);
             },
-            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
-                self.external_ram[(address - EXTERNAL_RAM_START) as usize] = value
-            }
+            EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_mut().unwrap().write_byte(address, value),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize] = value,
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize] = value,
             ECHO_RAM_START..=ECHO_RAM_END => {
@@ -272,14 +286,6 @@ impl MemoryBus {
     pub fn load_rom(&mut self, rom: &Vec<u8>) {
         debug!("Loading ROM");
 
-        /*let bank_0 = rom[ROM_BANK_0_START as usize..=ROM_BANK_0_END as usize].to_vec();
-        self.rom_bank_0 = bank_0.clone().try_into().unwrap();
-        debug!("ROM Bank 0 loaded into memory {}", bank_0.len());
-
-        let bank_n = rom[ROM_BANK_N_START as usize..=ROM_BANK_N_END as usize].to_vec();
-        self.rom_bank_n = bank_n.clone().try_into().unwrap();
-        debug!("ROM Bank N loaded into memory");*/
-
         let bank_0_end = ROM_BANK_0_SIZE.min(rom.len());
         self.rom_bank_0[..bank_0_end].copy_from_slice(&rom[..bank_0_end]);
 
@@ -289,43 +295,49 @@ impl MemoryBus {
         }
 
     }
-    
-    /*pub fn interrupted(&self) -> bool {
-        self.interrupt_enable.vblank && self.interrupt_flags.vblank ||
-        self.interrupt_enable.lcd_stat && self.interrupt_flags.lcd_stat ||
-        self.interrupt_enable.timer && self.interrupt_flags.timer ||
-        self.interrupt_enable.serial && self.interrupt_flags.serial ||
-        self.interrupt_enable.joypad && self.interrupt_flags.joypad
-    }*/
 
-    /*
-     *  Load the boot ROM into memory
-     */
-    /*pub fn load_boot_rom(&mut self, file_path: String) {
-        debug!("Loading boot ROM");
-        let mut file = File::open(file_path).expect("Boot ROM file not found");
-        let mut buffer: Vec<u8> = Vec::new();
+    pub fn update_visible_banks(&mut self) {
+        if let Some(mbc) = &self.mbc {
+            // Get the current ROM bank number from the MBC 
+            // (actual bank that would be read from 0x4000-0x7FFF)
+            let rom_bank = mbc.get_rom_bank();
 
-        // Read the file into a buffer
-        file.read_to_end(&mut buffer)
-            .expect("Error reading boot rom file");
-        debug!(
-            "Boot ROM file size: {} bytes / {} kilobytes",
-            buffer.len(),
-            buffer.len() / 1024
-        );
+            // Update rom_bank_0 display with bank 0
+            if let Some(bank_data) = self.rom_banks.data.get(0) {
+                if bank_data.len() <= self.rom_bank_0.len() {
+                    // Copy the whole bank
+                    self.rom_bank_0[..bank_data.len()].copy_from_slice(bank_data);
+                    // Zero the rest if bank is smaller than buffer
+                    if bank_data.len() < self.rom_bank_0.len() {
+                        for i in bank_data.len()..self.rom_bank_0.len() {
+                            self.rom_bank_0[i] = 0;
+                        }
+                    }
+                } else {
+                    // If somehow the bank is larger than buffer, just copy what fits
+                    let bank_0_len = self.rom_bank_0.len();
+                    self.rom_bank_0.copy_from_slice(&bank_data[..bank_0_len]);
+                }
+            }
 
-        /*for (i, byte) in buffer.iter().enumerate() {
-            self.work_ram[i] = *byte;
-        }*/
-        self.work_ram[0x0000..0x0100].copy_from_slice(&buffer);
-
-        for i in 0x00..0x100 {
-            debug!("byte [0x{:X}] = 0x{:X}", i, self.work_ram[i])
+            // Update rom_bank_n display with the selected bank
+            if let Some(bank_data) = self.rom_banks.data.get(rom_bank) {
+                if bank_data.len() <= self.rom_bank_n.len() {
+                    // Copy the whole bank
+                    self.rom_bank_n[..bank_data.len()].copy_from_slice(bank_data);
+                    // Zero the rest if bank is smaller than buffer
+                    if bank_data.len() < self.rom_bank_n.len() {
+                        for i in bank_data.len()..self.rom_bank_n.len() {
+                            self.rom_bank_n[i] = 0;
+                        }
+                    }
+                } else {
+                    // If somehow the bank is larger than buffer, just copy what fits
+                    let bank_n_len = self.rom_bank_n.len();
+                    self.rom_bank_n.copy_from_slice(&bank_data[..bank_n_len]);
+                }
+            }
         }
-
-        self.registers.pc = 0x0000;
-
-        debug!("Boot ROM loaded into memory");
-    }*/
+    }
+    
 }

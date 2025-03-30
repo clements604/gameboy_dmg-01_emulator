@@ -14,9 +14,9 @@ impl MBC0 {
     pub fn new(rom_banks: ROMBanks, ram_size: u8, has_battery: bool) -> MBC0 {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         info!("ram_size_bytes {}", ram_size_bytes);
-        
+
         let has_ram = ram_size > 0;
-        
+
         MBC0 {
             rom_banks,
             ram: vec![0; ram_size_bytes],
@@ -29,7 +29,7 @@ impl MBC0 {
 
 impl MBC for MBC0 {
     fn read_byte(&self, address: u16) -> u8 {
-        info!("read_byte called for address {}", address);
+        debug!("read_byte called for address {}", address);
         match address {
             0x0000..=0x3FFF => { // ROM bank 0
                 if let Some(rom_bank) = self.rom_banks.data.get(0) {
@@ -69,7 +69,7 @@ impl MBC for MBC0 {
                 else {
                     self.ram_enabled
                 };
-                
+
                 if implicit_ram_enabled && self.has_ram {
                     let ram_address = (address - 0xA000) as usize;
                     if ram_address < self.ram.len() {
@@ -117,7 +117,7 @@ impl MBC for MBC0 {
                     let ram_addr = (address - 0xA000) as usize;
                     if ram_addr < self.ram.len() {
                         self.ram[ram_addr] = value;
-                        
+
                         if self.has_battery {
                             error!("battery-backed RAM write not implemented");
                             info!("Battery-backed RAM write at {:04X} = value 0x{:02X}", address, value);

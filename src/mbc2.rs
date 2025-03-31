@@ -1,5 +1,5 @@
 use log::{debug, error, info};
-use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks, get_rom_banks};
+use crate::mbc::MBC;
 use crate::rom::ROMBanks;
 
 /*
@@ -51,8 +51,8 @@ impl MBC for MBC2 {
                             0xFF
                         }
                     } else {
-                        error!("ROM bank 0 not available");
-                        0xFF
+                        panic!("ROM bank 0 not available")
+                        //0xFF
                     }
                 },
                 0x4000..=0x7FFF => {
@@ -68,8 +68,8 @@ impl MBC for MBC2 {
                             0xFF
                         }
                     } else {
-                        error!("ROM bank {} not available (total banks: {})", bank, self.rom_banks.data.len());
-                        0xFF
+                        panic!("ROM bank {} not available (total banks: {})", bank, self.rom_banks.data.len());
+                        //0xFF
                     }
                 },
                 0xA000..=0xA1FF => {
@@ -81,7 +81,7 @@ impl MBC for MBC2 {
                             // Return the RAM value with upper 4 bits masked to 0
                             self.ram[ram_addr] & 0x0F
                         } else {
-                            debug!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
+                            error!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
                             0xFF
                         }
                     } else {
@@ -98,7 +98,7 @@ impl MBC for MBC2 {
                             // Return the RAM value with upper 4 bits masked to 0
                             self.ram[ram_addr] & 0x0F
                         } else {
-                            debug!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
+                            error!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
                             0xFF
                         }
                     } else {
@@ -146,13 +146,13 @@ impl MBC for MBC2 {
 
                             // If this is battery-backed RAM, mark it for saving
                             if self.has_battery {
-                                debug!("Battery-backed MBC2 RAM write at {:04X} = {:02X}", address, value & 0x0F);
+                                info!("Battery-backed MBC2 RAM write at {:04X} = {:02X}", address, value & 0x0F);
                             }
                         } else {
-                            debug!("Attempted to write to non-existent MBC2 RAM at {:04X}", address);
+                            error!("Attempted to write to non-existent MBC2 RAM at {:04X}", address);
                         }
                     } else {
-                        debug!("Attempted to write to disabled MBC2 RAM: {:04X} = {:02X}", address, value);
+                        error!("Attempted to write to disabled MBC2 RAM: {:04X} = {:02X}", address, value);
                     }
                 },
                 0xA200..=0xBFFF => {
@@ -168,10 +168,10 @@ impl MBC for MBC2 {
                                 debug!("Battery-backed MBC2 RAM write at {:04X} = {:02X}", address, value & 0x0F);
                             }
                         } else {
-                            debug!("Attempted to write to non-existent MBC2 RAM at {:04X}", address);
+                            error!("Attempted to write to non-existent MBC2 RAM at {:04X}", address);
                         }
                     } else {
-                        debug!("Attempted to write to disabled MBC2 RAM: {:04X} = {:02X}", address, value);
+                        error!("Attempted to write to disabled MBC2 RAM: {:04X} = {:02X}", address, value);
                     }
                 },
                 _ => {

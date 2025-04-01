@@ -554,7 +554,7 @@ impl Ppu {
     }
 
     fn lcdc_background_priority(&self) -> bool {
-        self.lcdc & 0x01 != 0
+        self.lcdc & 0x01 == 0
     }
 
     pub fn oam_read(&self, address: u16) -> u8 {
@@ -1207,218 +1207,17 @@ impl Ppu {
     }
 
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
-        // Return early if window is disabled
-        if !self.window_enabled() {
-            return;
-        }
-
-        let window_y = self.lcd.borrow().window_y as usize;
-        let window_x: u8 = self.lcd.borrow().window_x.wrapping_sub(7); // Hardware offset is 7
-        let current_scanline = self.ly as usize;
-
-        // Check if current scanline is within window Y range
-        if current_scanline < window_y {
-            debug!("current_scanline {}, window_y {}", current_scanline, window_y);
-            return;
-        }
-        info!("current_scanline {}, window_y {}", current_scanline, window_y);
-
-        // Calculate which line of the window we're drawing
-        let window_line = current_scanline - window_y;
-
-        // Get window tile map
-        let window_tile_map = self.get_window_tile_map();
-
-        // Calculate which row of tiles we're drawing from
-        let window_tile_y = window_line / 8;
-        let tile_row = window_line % 8;
-
-        // Only draw visible part of the window (if window_x is < 160)
-        let start_x = if window_x < 160 { window_x } else { 
-            info!("window_x {}",window_x);
-            return;
-        };
-
-        info!("start_x {}", start_x);
-        // Draw the window pixels for this scanline
-        for screen_x in start_x..160 {
-            // Calculate which column in the window we're drawing
-            let window_x_pos = screen_x - window_x;
-            let window_tile_x = window_x_pos / 8;
-
-            // Bounds check for the tile map (should be within 32x32 tiles)
-            if window_tile_x >= 32 {
-                continue;
-            }
-
-            // Get the tile index from the window tile map
-            let tile_index = window_tile_map[window_tile_y * 32 + window_tile_x as usize];
-
-            // Get the tile data
-            let tile_data = self.get_tile_data(tile_index);
-
-            // Calculate the specific pixel within the tile
-            let tile_col = window_x_pos % 8;
-
-            // Get the pixel value (0-3) for this position in the tile
-            let pixel_value = tile_data.get_pixel(tile_row, tile_col as usize);
-
-            // Convert pixel value to actual color
-            if line[screen_x as usize] == LIGHTEST_GREEN || ! self.lcdc_background_priority() {
-                line[screen_x as usize] = self.lcd.borrow().get_bg_color(pixel_value);
-            }
-        }
-
-        // Increment window line counter (needed for drawing the window across multiple frames)
-        // This should be reset at the beginning of a new frame
-        self.window_line_counter += 1;
+        
     }
-    
-    fn render_scanline(&mut self) {
 
+    fn render_scanline(&mut self) {
         let ly = self.ly as usize;
         let mut line = [LIGHTEST_GREEN; 160];
-
-        /*let mut sprites_to_render: Vec<Sprite> = Vec::new();
-        if self.sprites_enabled() {
-            let sprite_data = self.get_sprites();
-
-            let mut sprite_count = 0;
-            sprites_to_render = Vec::with_capacity(10);
-            for sprite in sprite_data.iter() {
-                let sprite_height = self.sprite_size() as isize; // 8 or 16 from LCDC bit 2
-                let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
-
-                // Check if the sprite intersects the current scanline based on its height
-                if screen_y <= self.ly as isize && (screen_y + sprite_height) > self.ly as isize {
-                    if sprite_count < 10 {
-                        sprites_to_render.push(*sprite);
-                        sprite_count += 1;
-                    } else {
-                        break; // Max 10 sprites per line
-                    }
-                }
-            }
-        }
-
-        let tile_map = self.get_bg_tile_map();
-        let window_tile_map = self.get_window_tile_map();
-
-        let ly = self.ly as usize;
-        let scroll_x = self.scroll_x as usize;
-        let scroll_y = self.scroll_y as usize;
-
-
-        let current_scanline = ly;*/
 
         self.render_background_scanline(&mut line);
         self.render_window_scanline(&mut line);
         self.render_sprite_scanline(&mut line);
 
-
-        /*for x in 0..160 {
-            let mut colour = LIGHTEST_GREEN;*/
-
-            // Background rendering
-            /*if self.is_background_enabled() {
-                let global_x = (x + scroll_x) % 256;
-                let global_y = (current_scanline + scroll_y) % 256;
-
-                let tile_x = global_x / 8;
-                let tile_y = global_y / 8;
-                let tile_index = tile_map[tile_y * 32 + tile_x];
-                let tile = self.get_tile_data(tile_index);
-
-                let row = global_y % 8;
-                let col = global_x % 8;
-                let pixel = tile.get_pixel(row, col);
-                colour = self.lcd.borrow().get_bg_color(pixel);
-            }*/
-
-            // Window rendering
-
-            /*if self.window_enabled() {
-                let window_y = self.lcd.borrow().window_y as usize;
-                let window_x = self.lcd.borrow().window_x.wrapping_sub(8) as usize;
-                let adjusted_window_y = window_y % 144;
-                let adjusted_window_x = window_x % 160;
-
-                if current_scanline >= adjusted_window_y && x >= adjusted_window_x {
-                    let window_tile_y = (self.window_line_counter / 8) as usize;
-                    let window_tile_x = (x + (160 - adjusted_window_x)) % 160 / 8;
-                    let tile_index = window_tile_map[window_tile_y * 32 + window_tile_x];
-                    let tile_data = self.get_tile_data(tile_index);
-
-                    if window_tile_x < 32 {
-                        let pixel_y_in_tile = (current_scanline - adjusted_window_y) % 8;
-                        let pixel_x_in_tile = (x + (160 - adjusted_window_x)) % 160 % 8;
-                        let pixel_value = tile_data.get_pixel(pixel_y_in_tile, pixel_x_in_tile);
-
-                        if colour == LIGHTEST_GREEN || !self.lcdc_background_priority() {
-                            colour = self.lcd.borrow().get_bg_color(pixel_value);
-                        }
-                    }
-                }
-            }*/
-
-            // Sprite rendering
-            /*if self.sprites_enabled() {
-                sprites_to_render.sort_by_key(|sprite| sprite.x); // Sort by X for correct overlap
-                for sprite in &sprites_to_render {
-                    let sprite_tile_data = self.get_sprite_data(sprite);
-                    let sprite_height = sprite_tile_data.height() as isize; // 8 or 16
-
-                    let screen_x = sprite.x as isize - 8;
-                    let screen_y = sprite.y as isize - 16;
-
-                    // Check if sprite intersects current scanline
-                    if screen_y <= current_scanline as isize
-                        && (screen_y + sprite_height) > current_scanline as isize
-                    {
-                        let mut sprite_row = current_scanline as isize - screen_y;
-                        let mut sprite_col = x as isize - screen_x;
-
-                        // Apply Y-flip if set
-                        if sprite.flags.y_flip {
-                            sprite_row = (sprite_height - 1) - sprite_row; // 7 for 8x8, 15 for 8x16
-                        }
-
-                        // Apply X-flip if set
-                        if sprite.flags.x_flip {
-                            sprite_col = 7 - sprite_col; // Width is always 8
-                        }
-
-                        // Check if pixel is within sprite bounds
-                        if sprite_col >= 0 && sprite_col < 8 && sprite_row >= 0 && sprite_row < sprite_height {
-                            let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
-                            if sprite_pixel != 0 { // Non-transparent
-                                let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
-                                let sprite_colour = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
-
-                                if sprite_colour != LIGHTEST_GREEN {
-                                    if sprite.flags.priority {
-                                        if colour == LIGHTEST_GREEN {
-                                            colour = sprite_colour;
-                                        }
-                                    } else {
-                                        if colour != LIGHTEST_GREEN || self.lcdc_background_priority() {
-                                            colour = sprite_colour;
-                                        }
-                                    }
-                                    break; // Only one sprite per pixel
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                debug!("Sprites are disabled");
-            }*/
-
-            //line[x] = colour;
-        //}
-
-        
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
     }
 

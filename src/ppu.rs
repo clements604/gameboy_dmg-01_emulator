@@ -1291,10 +1291,6 @@ impl Ppu {
             }
         }
 
-        // Increment window line counter when window is rendered
-        if self.ly >= window_y {
-            self.window_line_counter = self.window_line_counter.wrapping_add(1);
-        }
     }
 
     // Helper function to get window tile map address
@@ -1324,6 +1320,9 @@ impl Ppu {
         self.render_sprite_scanline(&mut line);
 
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
+        if self.window_enabled() && self.ly >= self.lcd.borrow().window_y && self.lcd.borrow().window_x <= 166 {
+            self.window_line_counter = self.window_line_counter.wrapping_add(1);
+        }
     }
 
     /*

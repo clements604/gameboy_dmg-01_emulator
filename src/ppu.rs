@@ -234,7 +234,7 @@ impl Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
             vram: [0x0000; 0x2000],
-            mode: 2,
+            mode: OAM_MODE,
             line_ticks: 0,
             current_frame: 0,
             previous_frame_time: 0,
@@ -377,8 +377,8 @@ impl Ppu {
 
         if self.ly >= LINES_PER_FRAME {
             self.ly = 0;
-            self.current_frame += 1;
             self.window_line_counter = 0;
+            self.current_frame += 1;
             self.change_mode(OAM_MODE);
         }
         self.update_stat_interrupts(); // Ensure this is called to check for interrupts
@@ -449,7 +449,6 @@ impl Ppu {
 
                     // Render scanline
                     self.render_scanline();
-                    //self.render_window();
 
                     // Mode transition
                     if self.ly == 143 {
@@ -837,6 +836,42 @@ impl Ppu {
         tile_row
     }
 
+    fn get_window_tile_map_for_scanline(&self, scanline: u8) -> [u8; 32] {
+        // First check if window is enabled and the scanline is within window area
+        if !self.window_enabled() || scanline < self.lcd.borrow().window_y {
+            return [0; 32]; // Return empty array if window not visible on this scanline
+        }
+
+        let tile_map_base: u16 = if self.lcdc & 0x40 != 0 { // LCDC bit 6
+            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
+        } else {
+            0x9800 // Window Tile Map at 0x9800-0x9BFF
+        };
+
+        debug!(
+        "Window Tile Map Base for scanline {}: {:#X}",
+        scanline, tile_map_base
+    );
+
+        // Calculate which row of the window we're drawing
+        // Window is positioned relative to WY register
+        let window_row = (scanline as u16 - self.lcd.borrow().window_y as u16) / 8;
+
+        // Unlike background, window doesn't wrap, but we'll cap at 32 rows max
+        if window_row >= 32 {
+            return [0; 32]; // Beyond the window's vertical limit
+        }
+
+        let start_address = tile_map_base + window_row * 32;
+
+        let mut tile_row = [0; 32];
+        for (i, tile) in tile_row.iter_mut().enumerate() {
+            *tile = self.vram_read(start_address + i as u16);
+        }
+
+        tile_row
+    }
+
     pub fn populate_background_buffer(&mut self) {
         let tile_set = self.get_tile_set();
         let tile_map = self.get_bg_tile_map();
@@ -1047,44 +1082,6 @@ impl Ppu {
         TileData::new(&sprite_tile_data, height)
     }
     
-    /*
-    Renders the PPU window (not background or sprites).
-     */
-    pub fn render_window(&mut self) {
-        if self.lcdc & 0x20 == 0 {
-            return;
-        }
-
-        self.get_window_tiles();
-
-        // If we're rendering the window, increment the window line counter
-        self.window_line_counter += 1;
-
-    }
-    fn increment_line_counter(&mut self, scan_y: u8) {
-        if self.window_enabled() &&
-            self.lcd.borrow().window_x.saturating_sub(7) < VIEWPORT_WIDTH as u8 &&
-            self.lcd.borrow().window_y < VIEWPORT_HEIGHT as u8 &&
-            scan_y >= self.lcd.borrow().window_y
-        {
-            self.window_line_counter = self.window_line_counter.saturating_add(1);
-            info!("Window line counter incremented: {}", self.window_line_counter);
-        }
-        else {
-            info!("Window not enabled or offscreen");
-            debug!("self.lcd.borrow().window_x.saturating_sub(7) {}", self.lcd.borrow().window_x.saturating_sub(7));
-            debug!("self.lcd.borrow().window_y {}", self.lcd.borrow().window_y);
-            debug!("self.scroll_y {}", self.scroll_y);
-        }
-    }
-
-    pub fn calculate_window_tilemap_coordinates(&self) -> (u8, u8) {
-        let x_offset = self.scroll_x.wrapping_sub(self.lcd.borrow().window_x.wrapping_sub(7));
-        let y_offset = self.window_line_counter;
-
-        (x_offset, y_offset)
-    }
-
     fn render_background_scanline(&mut self, line: &mut [u32; 160]) {
         if self.is_background_enabled() {
             //let ly = self.ly as usize;
@@ -1205,11 +1202,119 @@ impl Ppu {
             }
         }
     }
-
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
-        
+        // Early return if window is not visible
+        if !self.window_enabled() {
+            return;
+        }
+
+        let window_y = self.lcd.borrow().window_y;
+        let window_x = self.lcd.borrow().window_x;
+
+        // Only proceed if we're on or after the window's Y position
+        if self.ly < window_y {
+            return;
+        }
+
+        // Calculate window line (Y position within the window)
+        let window_line = self.window_line_counter;
+        let w_tile_y = (window_line / 8) as u16; // Which tile row in the window we're on
+
+        // Get window tile map base address (LCDC bit 6)
+        let tile_map_base: u16 = if self.lcdc & 0x40 != 0 {
+            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
+        } else {
+            0x9800 // Window Tile Map at 0x9800-0x9BFF
+        };
+
+        // Get addressing mode (LCDC bit 4)
+        let data_area_is_8800 = self.lcdc & 0x10 == 0;
+
+        // Calculate tile row line we're rendering (0-7)
+        let tile_line = window_line % 8;
+
+        // Render window pixels for this scanline
+        for screen_x in 0..160 {
+            // Only draw window pixels if we're at or past window_x - 7
+            if screen_x + 7 < window_x as usize {
+                continue;
+            }
+
+            // Calculate the offset into the window tile map
+            let tile_map_offset = (
+                ((screen_x as u16 + 7 - window_x as u16) / 8) +
+                    (w_tile_y * 32)
+            ) as u16;
+
+            // Get the tile ID from the window tile map
+            let mut tile_id = self.vram_read(tile_map_base + tile_map_offset);
+
+            // Adjust tile ID for 0x8800 addressing mode
+            if data_area_is_8800 {
+                tile_id = tile_id.wrapping_add(128);
+            }
+
+            // Calculate base address for tile data
+            let base_address: u16 = if data_area_is_8800 {
+                0x8800
+            } else {
+                0x8000
+            };
+
+            // Calculate address of this specific row of the tile
+            let tile_address = base_address + (tile_id as u16 * 16) + (tile_line as u16 * 2);
+
+            // Read the pixel data for this row
+            let tile_low = self.vram_read(tile_address);
+            let tile_high = self.vram_read(tile_address + 1);
+
+            // Calculate which pixel of the tile we need (0-7)
+            let pixel_x = (screen_x as u16 + 7 - window_x as u16) % 8;
+
+            // Get the color bits
+            let pixel_bit_position = 7 - (pixel_x as u8);
+            let colour_bit_0 = (tile_low >> pixel_bit_position) & 0x1;
+            let colour_bit_1 = (tile_high >> pixel_bit_position) & 0x1;
+            let colour_id = (colour_bit_1 << 1) | colour_bit_0;
+
+            // Get the color and render
+            let colour = self.lcd.borrow().get_bg_color(colour_id);
+
+            if self.ly % 8 == 0 {
+                line[screen_x] = 0x0000FF; // Blue scanline markers
+            }
+            else if screen_x == (window_x as usize - 7) {
+                line[screen_x] = 0xFF0000; // Red vertical marker at window edge
+            }
+            else {
+                line[screen_x] = colour;
+            }
+        }
+
+        // Increment window line counter when window is rendered
+        if self.ly >= window_y {
+            self.window_line_counter = self.window_line_counter.wrapping_add(1);
+        }
     }
 
+    // Helper function to get window tile map address
+    fn get_window_tile_map_addr(&self) -> u16 {
+        if self.lcdc & 0x40 != 0 { // LCDC bit 6
+            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
+        } else {
+            0x9800 // Window Tile Map at 0x9800-0x9BFF
+        }
+    }
+
+    // Helper function to get background/window tile data area
+    fn get_bgw_data_area(&self) -> u16 {
+        if self.lcdc & 0x10 != 0 { // LCDC bit 4
+            0x8000 // Tile data at 0x8000-0x8FFF (unsigned)
+        } else {
+            0x8800 // Tile data at 0x8800-0x97FF (signed)
+        }
+    }
+    
     fn render_scanline(&mut self) {
         let ly = self.ly as usize;
         let mut line = [LIGHTEST_GREEN; 160];

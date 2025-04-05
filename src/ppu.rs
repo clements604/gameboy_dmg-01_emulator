@@ -1064,16 +1064,16 @@ impl Ppu {
         let height = if is_tall { 16 } else { 8 };
 
         let mut sprite_tile_data = vec![0u8; sprite_size];
-        // Sprite tiles always start at 0x8000, using unsigned indices
-        let sprite_tile_address = 0x8000 + (sprite.tile_number as u16 * 16); // Each tile is 16 bytes
 
         // For 8x16 sprites, tile_number points to the first tile, second tile follows immediately
         // Note: For 8x16 sprites, the LSB of tile_number is ignored (effectively tile_number & 0xFE)
-        let sprite_tile_address = if is_tall {
-            sprite_tile_address & 0xFFF0 // Clear LSB for 8x16 sprites
+        let tile_number = if is_tall {
+            sprite.tile_number & 0xFE // Clear only bit 0
         } else {
-            sprite_tile_address
+            sprite.tile_number
         };
+        // Sprite tiles always start at 0x8000, using unsigned indices
+        let sprite_tile_address = 0x8000 + (tile_number as u16 * 16); // Each tile is 16 bytes
 
         for i in 0..sprite_size {
             sprite_tile_data[i] = self.vram_read(sprite_tile_address + i as u16);
@@ -1279,16 +1279,8 @@ impl Ppu {
 
             // Get the color and render
             let colour = self.lcd.borrow().get_bg_color(colour_id);
-
-            if self.ly % 8 == 0 {
-                line[screen_x] = 0x0000FF; // Blue scanline markers
-            }
-            else if screen_x == (window_x as usize - 7) {
-                line[screen_x] = 0xFF0000; // Red vertical marker at window edge
-            }
-            else {
-                line[screen_x] = colour;
-            }
+            
+            line[screen_x] = colour;
         }
 
     }

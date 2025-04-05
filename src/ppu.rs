@@ -1,4 +1,4 @@
-use crate::display::{LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::display::{DARKEST_GREEN, LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
 use crate::{display, interupts, main, main_display};
@@ -11,6 +11,7 @@ use std::rc::Rc;
 use crate::lcd::LCD;
 use crate::main_display::get_mififb_colour;
 use crate::memory_bus::MemoryBus;
+use crate::ppu::StatInterrupt::OAM;
 
 const TILE_START: u16 = 0x8000;
 const TILE_END: u16 = 0x97FF;
@@ -43,7 +44,7 @@ pub struct Ppu {
     start_time: u32,
     frame_count: u16,
     cpu: Rc<RefCell<CPU>>,
-    lcd: Rc<RefCell<LCD>>,
+    pub lcd: Rc<RefCell<LCD>>,
     //display: Rc<RefCell<Display>>,
     pub lcdc: u8,
     pub stat: u8,
@@ -51,7 +52,7 @@ pub struct Ppu {
     pub scroll_y: u8,
     pub ly: u8,
     pub ly_compare: u8,
-
+    window_line_counter: u8,
     pub background_buffer: Vec<u32>,
     pub framebuffer: Vec<u32>,
     pub viewport: Vec<u32>,
@@ -233,7 +234,7 @@ impl Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
             vram: [0x0000; 0x2000],
-            mode: 2,
+            mode: OAM_MODE,
             line_ticks: 0,
             current_frame: 0,
             previous_frame_time: 0,
@@ -243,11 +244,12 @@ impl Ppu {
             lcd,
             //display,
             lcdc: 0x91,
-            stat: 0,
+            stat: 0x85,
             scroll_x: 0,
             scroll_y: 0,
             ly: 0,
             ly_compare: 0,
+            window_line_counter: 0,
             framebuffer: vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT],
             background_buffer: vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT],
             viewport: vec![
@@ -345,7 +347,7 @@ impl Ppu {
         self.stat & 0x03
     }
     fn set_ppu_mode(&mut self, mode: u8) {
-        self.stat = (self.stat & 0xFC) | mode;
+        self.stat = (self.stat & 0xFC) | (mode & 0x03); // Update only mode bits
     }
 
     fn get_oam_int_select(&self) -> bool {
@@ -362,17 +364,23 @@ impl Ppu {
 
     fn increment_ly(&mut self) {
         self.ly = self.ly.wrapping_add(1);
-        /*if self.ly == self.ly_compare {
+
+        // Check for LYC coincidence
+        if self.ly == self.ly_compare {
             self.stat |= 0x04; // Set coincidence flag
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
                 self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
             }
         } else {
             self.stat &= !0x04; // Clear coincidence flag
-        }*/
-        /*if self.ly >= LINES_PER_FRAME {
+        }
+
+        if self.ly >= LINES_PER_FRAME {
             self.ly = 0;
-        }*/
+            self.window_line_counter = 0;
+            self.current_frame += 1;
+            self.change_mode(OAM_MODE);
+        }
         self.update_stat_interrupts(); // Ensure this is called to check for interrupts
     }
 
@@ -383,6 +391,8 @@ impl Ppu {
     }
     fn change_mode(&mut self, mode: u8) {
         self.mode = mode;
+        debug!("PPU mode changed to: {}. STAT before change: {:2X}, STAT after change: {:2X}", mode, self.stat, (self.stat & 0xFC) | mode);
+        self.stat = (self.stat & 0xFC) | mode; // Only change mode bits
         self.update_stat_interrupts();
     }
 
@@ -393,7 +403,8 @@ impl Ppu {
             debug!("LCD is disabled");
             self.ly = 0;
             self.line_ticks = 0;
-            //self.set_ppu_mode(OAM_MODE);
+            self.window_line_counter = 0;
+            self.set_ppu_mode(HBLANK_MODE);
             return;
         }
 
@@ -441,8 +452,11 @@ impl Ppu {
 
                     // Mode transition
                     if self.ly == 143 {
+                        debug!("Transition to VBLANK, STAT before: {:#X}, {:8b}", self.stat, self.stat);
                         self.change_mode(VBLANK_MODE);
+                        debug!("STAT after: {:#X}, {:8b}", self.stat, self.stat);
                     } else {
+                        //self.increment_line_counter(self.ly);
                         self.change_mode(OAM_MODE);
                     }
 
@@ -451,22 +465,22 @@ impl Ppu {
                 }
             }
             VBLANK_MODE => {
-                if self.line_ticks >= 4560 {
+                if self.line_ticks >= 456 {
                     if self.ly == 144 {
                         self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
-                        // TODO: Copy buffer to display
                     }
 
                     // Final line of V-Blank
-                    if self.ly == 153 {
+                    /*if self.ly == 153 {
                         self.change_mode(OAM_MODE);
                         self.ly = 0;
                         self.current_frame += 1;
                     }
                     else {
                         self.increment_ly();
-                    }
-                    self.line_ticks -= 4560;
+                    }*/
+                    self.increment_ly();
+                    self.line_ticks -= 456;
                 }
             }
             _ => {
@@ -506,12 +520,12 @@ impl Ppu {
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
             0xFF40 => self.lcdc = value,
-            0xFF41 => self.stat = value,
+            0xFF41 => self.stat = (self.stat & 0x87) | (value & 0x78),
             0xFF42 => self.scroll_y = value,
             0xFF43 => self.scroll_x = value,
             0xFF44 => {
                 error!("Attempt to write to read-only register: {:#X}", address);
-                self.ly = 90;
+                //self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
             0xFF46 => {
@@ -539,7 +553,7 @@ impl Ppu {
     }
 
     fn lcdc_background_priority(&self) -> bool {
-        self.lcdc & 0x01 != 0
+        self.lcdc & 0x01 == 0
     }
 
     pub fn oam_read(&self, address: u16) -> u8 {
@@ -552,9 +566,10 @@ impl Ppu {
 
     pub fn oam_write(&mut self, address: u16, value: u8) {
         //debug!("OAM write at address: {:#X}", address);
-        /*if address < 0xFE00 || address >= 0xFEA0 {
-            panic!("Attempt to write to invalid OAM address: {:#X}", address);
-        }*/
+        if self.mode == OAM_MODE || self.mode == VRAM_MODE {
+            debug!("Attempt to write to OAM during mode {}", self.mode);
+            return;
+        }
         self.oam_ram[(address) as usize] = value;
         //debug!("OAM data: {:?}", self.oam_ram);
     }
@@ -566,6 +581,11 @@ impl Ppu {
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
         //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
+        //TODO this won't work when boot rom is enabled
+        /*if self.mode == VRAM_MODE || self.mode == OAM_MODE {
+            debug!("Attempt to write to VRAM during mode {}", self.mode);
+            return;
+        }*/
         self.vram[(address - 0x8000) as usize] = value;
         //debug!("VRAM data: {:?}", self.vram);
     }
@@ -686,7 +706,72 @@ impl Ppu {
         }
         tile_map
     }*/
-    fn get_window_tile_map(&self) -> Vec<u8> {
+
+    fn get_window_tiles(&self) -> Vec<TileData>{
+        // 0 = 0x9800-0x9BFF in hardware (0x1800-0x1BFF in VRAM array)
+        // 1 = 0x9C00-0x9FFF in hardware (0x1C00-0x1FFF in VRAM array)
+
+        let mut tiles: Vec<TileData> = Vec::new();
+
+        let window_tile_map_addr = if self.lcdc & 0x40 != 0 {
+            0x1C00
+        } else {
+            0x1800
+        };
+        info!("Window Tile Map Base: {:#X}", window_tile_map_addr);
+
+        let unsigned_tile_ids = self.lcdc & 0x10 != 0;
+        info!("Unsigned Tile IDs: {}", unsigned_tile_ids);
+
+        let tile_base_address = if unsigned_tile_ids {
+            0x0000
+        }
+        else {
+            0x0800
+        };
+        info!("Tile Base Address: {:#X}", tile_base_address);
+
+        for y in 0..32 {
+            for x in 0..32 {
+                let tile_map_index = window_tile_map_addr + (y * 32) + x;
+
+                // Get the tile ID from the tile map
+                let tile_id = self.vram[tile_map_index] as u16 & 0xFF;
+
+                // Calculate the address of the actual tile data
+                let tile_data_address = if unsigned_tile_ids {
+                    // Unsigned mode (LCDC bit 4 = 1): Tiles at 0x8000-0x8FFF
+                    // In VRAM array, this is offset 0x0000-0x0FFF
+                    (tile_id * 16) // Base address is already 0 in this case
+                } else {
+                    // Signed mode (LCDC bit 4 = 0)
+                    // If tile_id < 128, it's a positive number (0 to 127)
+                    // If tile_id >= 128, it's a negative number (equivalent to -128 to -1)
+                    if tile_id < 128 {
+                        // Positive tile IDs (0-127) -> 0x9000-0x97FF
+                        // In VRAM array, this is offset 0x1000-0x17FF
+                        0x1000 + (tile_id * 16)
+                    } else {
+                        // Negative tile IDs (128-255 as -128 to -1) -> 0x8800-0x8FFF
+                        // In VRAM array, this is offset 0x0800-0x0FFF
+                        0x0800 + ((tile_id - 128) * 16)
+                    }
+                };
+
+                // Read the tile data
+                let mut tile_data: [u8; 16] = [0; 16];
+                for pixel in 0..16 {
+                    tile_data[pixel] = self.vram[(tile_data_address + pixel as u16) as usize];
+                }
+                let tile = TileData::new(&tile_data, 8);
+                info!("tile {:?}", tile.data);
+                tiles.push(tile);
+            }
+        }
+
+        tiles
+    }
+    pub(crate) fn get_window_tile_map(&self) -> Vec<u8> {
         let tile_map_base = if self.lcdc & (1 << 6) != 0 {
             0x9C00
         } else {
@@ -701,14 +786,14 @@ impl Ppu {
         let background_tile_set = self.get_tile_set();
 
         for tile in tile_map.iter() {
-            //info!("Tile: {:#X}", tile);
+            //debug!("Tile: {:#X}", tile);
             let tile_data = background_tile_set[*tile as usize].clone();
-            //info!("BG Tiles: {:?}", tile_data);
+            //debug!("BG Tiles: {:?}", tile_data);
 
             tiles.push(tile_data);
         }
-        //info!("Number of tiles: {}", tiles.len());
-        //info!("Tile Map: {:?}", tiles);
+        //debug!("Number of tiles: {}", tiles.len());
+        //debug!("Tile Map: {:?}", tiles);
 
         tiles
     }
@@ -751,6 +836,42 @@ impl Ppu {
         tile_row
     }
 
+    fn get_window_tile_map_for_scanline(&self, scanline: u8) -> [u8; 32] {
+        // First check if window is enabled and the scanline is within window area
+        if !self.window_enabled() || scanline < self.lcd.borrow().window_y {
+            return [0; 32]; // Return empty array if window not visible on this scanline
+        }
+
+        let tile_map_base: u16 = if self.lcdc & 0x40 != 0 { // LCDC bit 6
+            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
+        } else {
+            0x9800 // Window Tile Map at 0x9800-0x9BFF
+        };
+
+        debug!(
+        "Window Tile Map Base for scanline {}: {:#X}",
+        scanline, tile_map_base
+    );
+
+        // Calculate which row of the window we're drawing
+        // Window is positioned relative to WY register
+        let window_row = (scanline as u16 - self.lcd.borrow().window_y as u16) / 8;
+
+        // Unlike background, window doesn't wrap, but we'll cap at 32 rows max
+        if window_row >= 32 {
+            return [0; 32]; // Beyond the window's vertical limit
+        }
+
+        let start_address = tile_map_base + window_row * 32;
+
+        let mut tile_row = [0; 32];
+        for (i, tile) in tile_row.iter_mut().enumerate() {
+            *tile = self.vram_read(start_address + i as u16);
+        }
+
+        tile_row
+    }
+
     pub fn populate_background_buffer(&mut self) {
         let tile_set = self.get_tile_set();
         let tile_map = self.get_bg_tile_map();
@@ -777,7 +898,7 @@ impl Ppu {
                 let pair = ((bit_lsb as u8) << 1) | (bit_msb as u8);
                 let bgp_palette = self.convert_pixel_to_bgb_palette(pair);
                 let mfb_pixel = main_display::get_mififb_colour(bgp_palette);
-                //info!("MFB Pixel: {:#X}", mfb_pixel);
+                //debug!("MFB Pixel: {:#X}", mfb_pixel);
                 minifb_tile[(x / 2 * 8) + (7 - bit) as usize] = mfb_pixel;
             }
         }
@@ -928,123 +1049,47 @@ impl Ppu {
             tile_data_base + (tile_index as u16 * TILE_SIZE_BYTES as u16)
         };
 
-        let mut tile_data = [0u8; TILE_SIZE_BYTES];
+        // Background/window tiles are always 8x8
+        let mut tile_data = vec![0u8; TILE_SIZE_BYTES];
         for i in 0..TILE_SIZE_BYTES {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
 
-        TileData::new(tile_data)
+        TileData::new(&tile_data, 8) // Always 8 pixels tall for background/window tiles
     }
 
-    fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
-        const SPRITE_SIZE: usize = 16; // 16 bytes per sprite (2 bytes per row for 8 rows)
-        let mut sprite_tile_data = [0u8; SPRITE_SIZE];
-        let sprite_tile_address = 0x8000 + (sprite.tile_number as u16 * SPRITE_SIZE as u16); // ALWAYS 0x8000 for sprites
-        for i in 0..SPRITE_SIZE {
+    pub fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
+        let is_tall = (self.lcdc & 0x04) != 0; // LCDC bit 2: 0 = 8x8, 1 = 8x16
+        let sprite_size = if is_tall { 32 } else { 16 }; // 32 bytes for 8x16, 16 bytes for 8x8
+        let height = if is_tall { 16 } else { 8 };
+
+        let mut sprite_tile_data = vec![0u8; sprite_size];
+
+        // For 8x16 sprites, tile_number points to the first tile, second tile follows immediately
+        // Note: For 8x16 sprites, the LSB of tile_number is ignored (effectively tile_number & 0xFE)
+        let tile_number = if is_tall {
+            sprite.tile_number & 0xFE // Clear only bit 0
+        } else {
+            sprite.tile_number
+        };
+        // Sprite tiles always start at 0x8000, using unsigned indices
+        let sprite_tile_address = 0x8000 + (tile_number as u16 * 16); // Each tile is 16 bytes
+
+        for i in 0..sprite_size {
             sprite_tile_data[i] = self.vram_read(sprite_tile_address + i as u16);
         }
-        TileData::new(sprite_tile_data)
+
+        TileData::new(&sprite_tile_data, height)
     }
     
-    /*
-    Renders the PPU window (not background or sprites).
-     */
-    fn render_window(&mut self) {
-        if !self.window_enabled() {
-            debug!("Window is disabled");
-            return;
-        }
-
-        let lcd_y = self.ly;
-        let window_y = self.lcd.borrow().window_y as i16;
-        let window_x = (self.lcd.borrow().window_x as i16) - 7;
-
-        if lcd_y as i16 >= window_y {
-            let window_tile_map = self.get_window_tile_map();
-            let tile_set = self.get_tile_set();
-            let bg_palette = self.lcd.borrow().bg_palette;
-            let mut stop_offscreen = false;
-
-            for tile_x in 0..32 {
-                let tile_y = ((lcd_y as i16 - window_y) / 8) as usize;
-                let tile_index = window_tile_map[tile_y * 32 + tile_x];
-                let tile_data = self.get_tile_data(tile_index);
-
-                for pixel_x in 0..8 {
-                    // Check if we're offscreen to the right
-                    if (tile_x * 8 + pixel_x) as i16 + window_x > 159 {
-                        stop_offscreen = true;
-                        break;
-                    }
-
-                    let pixel_y_in_tile = ((lcd_y as i16 - window_y) % 8) as usize;
-                    let pixel = tile_data.get_pixel(pixel_y_in_tile, pixel_x);
-                    let color = self.get_bgp_palette(pixel);
-
-                    // Here you would update your framebuffer with the window pixel color
-                    // Example:
-                    self.framebuffer[lcd_y as usize * 160 + (tile_x * 8 + pixel_x + window_x as usize)] = get_mififb_colour(color);
-                }
-
-                if stop_offscreen {
-                    break;
-                }
-            }
-        }
-    }
-
-    fn render_scanline(&mut self) {
-        
-        let mut sprites_to_render: Vec<Sprite> = Vec::new();
-        if self.sprites_enabled() {
-            let sprite_data = self.get_sprites();
-
-            let mut sprite_count = 0;
-            sprites_to_render = Vec::with_capacity(10);
-            for sprite in sprite_data.iter() {
-                let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
-
-                // Check if the sprite is on the current scanline
-                if screen_y <= self.ly as isize && (screen_y + 8) > self.ly as isize {
-                    // Increment sprite count for this line and add to rendering list
-                    if sprite_count < 10 {
-                        sprites_to_render.push(*sprite);
-                        sprite_count += 1;
-                    } else {
-                        // If we've hit the limit, stop adding sprites
-                        break;
-                    }
-                }
-            }
-        }
-
-        let tile_set = self.get_tile_set();
-        let tile_map = self.get_bg_tile_map();
-        // Get the window tile map
-        let window_tile_map = self.get_window_tile_map();
-
-        //info!("Window Map: {:?}", window_map);
-        let bg_palette = self.lcd.borrow().bg_palette;
-
-        // Get current scanline (LY) and viewport offsets
-        let ly = self.ly as usize;
-        let scroll_x = self.scroll_x as usize;
-        let scroll_y = self.scroll_y as usize;
-
-        // Create an array to represent the current line of pixels
-        let mut line = [LIGHTEST_GREEN; 160];
-
-        let current_scanline = ly; // Assuming 'ly' is the current scanline
-        let scroll_x = scroll_x as usize;
-        let scroll_y = scroll_y as usize;
-
-        for x in 0..160 {
-            let mut colour = LIGHTEST_GREEN;
-
-            // Background rendering
-            if self.is_background_enabled() {
-                let global_x = (x + scroll_x) % 256;
-                let global_y = (current_scanline + scroll_y) % 256;
+    fn render_background_scanline(&mut self, line: &mut [u32; 160]) {
+        if self.is_background_enabled() {
+            //let ly = self.ly as usize;
+            //let mut line = [LIGHTEST_GREEN; 160];
+            let tile_map = self.get_bg_tile_map();
+            for x in 0..160 {
+                let global_x = (x + self.scroll_x as usize) % 256;
+                let global_y = (self.ly as usize + self.scroll_y as usize) % 256;
 
                 let tile_x = global_x / 8;
                 let tile_y = global_y / 8;
@@ -1054,75 +1099,222 @@ impl Ppu {
                 let row = global_y % 8;
                 let col = global_x % 8;
                 let pixel = tile.get_pixel(row, col);
-                colour = self.lcd.borrow().get_bg_color(pixel);
+                line[x] = self.lcd.borrow().get_bg_color(pixel);
             }
-            
-            // Window rendering
-            
 
-            // Sprite rendering
-            if self.sprites_enabled() {
-                for sprite in &sprites_to_render {
-                    let sprite_tile_data = self.get_sprite_data(&sprite);
+            //self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
+        }
+    }
 
-                    let screen_x = sprite.x as isize - 8;
-                    let screen_y = sprite.y as isize - 16;
+    fn render_sprite_scanline(&mut self, line: &mut [u32; 160]) {
+        // Return early if sprites are disabled
+        if !self.sprites_enabled() {
+            return;
+        }
 
-                    // Check if the sprite is on the current scanline
-                    if screen_y <= current_scanline as isize
-                        && (screen_y + 8) > current_scanline as isize
-                    {
-                        let mut sprite_row = current_scanline as isize - screen_y;
-                        let mut sprite_col = x as isize - screen_x;
+        let current_scanline = self.ly as isize;
+        let sprite_height = self.sprite_size() as isize; // 8 or 16 from LCDC bit 2
+        let sprite_data = self.get_sprites();
 
-                        // Apply Y-flip if flag is set
-                        if sprite.flags.y_flip {
-                            sprite_row = 7 - sprite_row;
-                        }
+        // Collect sprites that intersect with current scanline (max 10)
+        let mut sprites_to_render = Vec::with_capacity(10);
+        for sprite in sprite_data.iter() {
+            let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
 
-                        // Apply X-flip if flag is set
-                        if sprite.flags.x_flip {
-                            sprite_col = 7 - sprite_col;
-                        }
-
-                        // Check if the pixel is within sprite bounds after flipping
-                        if sprite_col >= 0 && sprite_col < 8 {
-                            let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
-                            if sprite_pixel != 0 { // Non-transparent
-                                let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
-                                let sprite_colour = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
-
-                                // Here's where we implement the priority check:
-                                if sprite_colour != LIGHTEST_GREEN {
-                                    // Not transparent
-                                    if sprite.flags.priority {
-                                        // If priority bit is set (sprite behind background), only draw if the background is transparent
-                                        if colour == LIGHTEST_GREEN {
-                                            colour = sprite_colour;
-                                        }
-                                    } else {
-                                        // If priority bit is not set (sprite in front), draw over the background unless background is non-transparent and has priority
-                                        if colour != LIGHTEST_GREEN || self.lcdc_background_priority() {
-                                            colour = sprite_colour;
-                                        }
-                                    }
-                                    break; // Only one sprite per pixel
-                                }
-                            }
-                        }
-                    }
+            // Check if the sprite intersects the current scanline based on its height
+            if screen_y <= current_scanline && (screen_y + sprite_height) > current_scanline {
+                sprites_to_render.push(*sprite);
+                if sprites_to_render.len() >= 10 {
+                    break; // Max 10 sprites per line
                 }
             }
-            else {
-                debug!("Sprites are disabled");
-            }
-            
-           
-            
-            line[x] = colour;
         }
-        // Transfer the line to the framebuffer
+
+        // Sort sprites by X position for correct priority handling
+        sprites_to_render.sort_by_key(|sprite| sprite.x);
+
+        // Process each pixel in the scanline
+        for x in 0..160 {
+            // Store the current background/window pixel color for priority checks
+            let bg_color = line[x];
+
+            // Check each sprite for this x position
+            for sprite in &sprites_to_render {
+                let screen_x = sprite.x as isize - 8;
+                let screen_y = sprite.y as isize - 16;
+                let sprite_x_pos = x as isize - screen_x;
+
+                // Skip if this pixel is outside the sprite's x-range
+                if sprite_x_pos < 0 || sprite_x_pos >= 8 {
+                    continue;
+                }
+
+                // Calculate sprite row based on current scanline
+                let mut sprite_row = current_scanline - screen_y;
+                let mut sprite_col = sprite_x_pos;
+
+                // Apply Y-flip if set
+                if sprite.flags.y_flip {
+                    sprite_row = (sprite_height - 1) - sprite_row;
+                }
+
+                // Apply X-flip if set
+                if sprite.flags.x_flip {
+                    sprite_col = 7 - sprite_col;
+                }
+
+                // Get sprite tile data and pixel color
+                let sprite_tile_data = self.get_sprite_data(sprite);
+                let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
+
+                // Skip transparent pixels (value 0)
+                if sprite_pixel == 0 {
+                    continue;
+                }
+
+                // Determine sprite color based on palette
+                let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
+                let sprite_color = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
+
+                // Skip if sprite color is transparent (same as lightest green)
+                if sprite_color == LIGHTEST_GREEN {
+                    continue;
+                }
+
+                // Apply sprite priority rules:
+                // - If sprite has priority bit set (BG over OBJ), only show sprite if BG is transparent
+                // - If sprite doesn't have priority, sprite is always on top unless LCDC background priority is set
+                if sprite.flags.priority {
+                    // BG has priority over sprite
+                    if bg_color == LIGHTEST_GREEN {
+                        line[x] = sprite_color;
+                    }
+                } else {
+                    // Sprite has priority over BG
+                    if !self.lcdc_background_priority() || bg_color == LIGHTEST_GREEN {
+                        line[x] = sprite_color;
+                    }
+                }
+
+                // Once we've drawn a non-transparent sprite pixel, we're done with this x position
+                // (first sprite in X-sorted list wins)
+                break;
+            }
+        }
+    }
+    fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
+        // Early return if window is not visible
+        if !self.window_enabled() {
+            return;
+        }
+
+        let window_y = self.lcd.borrow().window_y;
+        let window_x = self.lcd.borrow().window_x;
+
+        // Only proceed if we're on or after the window's Y position
+        if self.ly < window_y {
+            return;
+        }
+
+        // Calculate window line (Y position within the window)
+        let window_line = self.window_line_counter;
+        let w_tile_y = (window_line / 8) as u16; // Which tile row in the window we're on
+
+        // Get window tile map base address (LCDC bit 6)
+        let tile_map_base: u16 = if self.lcdc & 0x40 != 0 {
+            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
+        } else {
+            0x9800 // Window Tile Map at 0x9800-0x9BFF
+        };
+
+        // Get addressing mode (LCDC bit 4)
+        let data_area_is_8800 = self.lcdc & 0x10 == 0;
+
+        // Calculate tile row line we're rendering (0-7)
+        let tile_line = window_line % 8;
+
+        // Render window pixels for this scanline
+        for screen_x in 0..160 {
+            // Only draw window pixels if we're at or past window_x - 7
+            if screen_x + 7 < window_x as usize {
+                continue;
+            }
+
+            // Calculate the offset into the window tile map
+            let tile_map_offset = (
+                ((screen_x as u16 + 7 - window_x as u16) / 8) +
+                    (w_tile_y * 32)
+            ) as u16;
+
+            // Get the tile ID from the window tile map
+            let mut tile_id = self.vram_read(tile_map_base + tile_map_offset);
+
+            // Adjust tile ID for 0x8800 addressing mode
+            if data_area_is_8800 {
+                tile_id = tile_id.wrapping_add(128);
+            }
+
+            // Calculate base address for tile data
+            let base_address: u16 = if data_area_is_8800 {
+                0x8800
+            } else {
+                0x8000
+            };
+
+            // Calculate address of this specific row of the tile
+            let tile_address = base_address + (tile_id as u16 * 16) + (tile_line as u16 * 2);
+
+            // Read the pixel data for this row
+            let tile_low = self.vram_read(tile_address);
+            let tile_high = self.vram_read(tile_address + 1);
+
+            // Calculate which pixel of the tile we need (0-7)
+            let pixel_x = (screen_x as u16 + 7 - window_x as u16) % 8;
+
+            // Get the color bits
+            let pixel_bit_position = 7 - (pixel_x as u8);
+            let colour_bit_0 = (tile_low >> pixel_bit_position) & 0x1;
+            let colour_bit_1 = (tile_high >> pixel_bit_position) & 0x1;
+            let colour_id = (colour_bit_1 << 1) | colour_bit_0;
+
+            // Get the color and render
+            let colour = self.lcd.borrow().get_bg_color(colour_id);
+            
+            line[screen_x] = colour;
+        }
+
+    }
+
+    // Helper function to get window tile map address
+    fn get_window_tile_map_addr(&self) -> u16 {
+        if self.lcdc & 0x40 != 0 { // LCDC bit 6
+            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
+        } else {
+            0x9800 // Window Tile Map at 0x9800-0x9BFF
+        }
+    }
+
+    // Helper function to get background/window tile data area
+    fn get_bgw_data_area(&self) -> u16 {
+        if self.lcdc & 0x10 != 0 { // LCDC bit 4
+            0x8000 // Tile data at 0x8000-0x8FFF (unsigned)
+        } else {
+            0x8800 // Tile data at 0x8800-0x97FF (signed)
+        }
+    }
+    
+    fn render_scanline(&mut self) {
+        let ly = self.ly as usize;
+        let mut line = [LIGHTEST_GREEN; 160];
+
+        self.render_background_scanline(&mut line);
+        self.render_window_scanline(&mut line);
+        self.render_sprite_scanline(&mut line);
+
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
+        if self.window_enabled() && self.ly >= self.lcd.borrow().window_y && self.lcd.borrow().window_x <= 166 {
+            self.window_line_counter = self.window_line_counter.wrapping_add(1);
+        }
     }
 
     /*
@@ -1158,17 +1350,30 @@ impl Ppu {
 
 // Struct to represent the tile data
 pub struct TileData {
-    data: [u8; main_display::TILE_SIZE * 2],
+    data: Vec<u8>,    // Use Vec to allow variable size
+    height: usize,    // 8 or 16 pixels
+    width: usize,     // Typically 8 pixels for Gameboy
 }
+
 
 impl TileData {
     // Constructor for TileData
-    pub fn new(data: [u8; main_display::TILE_SIZE * 2]) -> Self {
-        TileData { data }
+    pub fn new(data: &[u8], height: usize) -> Self {
+        assert!(height == 8 || height == 16, "Sprite height must be 8 or 16");
+        assert_eq!(data.len(), height * 2, "Data size must match height (2 bytes per row)");
+
+        TileData {
+            data: data.to_vec(),
+            height,
+            width: 8
+        }
     }
 
     // Get pixel color (0-3) at row and col
     pub fn get_pixel(&self, row: usize, col: usize) -> u8 {
+        assert!(row < self.height, "Row out of bounds");
+        assert!(col < self.width, "Column out of bounds");
+
         // Each row is represented by 2 bytes (bitplanes)
         let plane1 = self.data[row * 2];
         let plane2 = self.data[row * 2 + 1];
@@ -1180,6 +1385,10 @@ impl TileData {
 
         // Combine the two bits to get the pixel value (0-3)
         (high_bit << 1) | low_bit
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
     }
 }
 

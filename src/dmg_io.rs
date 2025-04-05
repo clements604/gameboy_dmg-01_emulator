@@ -17,7 +17,7 @@ pub struct IO {
     //dma: Rc<RefCell<Dma>>,
     cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<Ppu>>,
-    joypad: joypad::Joypad,
+    pub joypad: joypad::Joypad,
     pub timer: Timer,
 }
 
@@ -40,6 +40,7 @@ impl IO {
     pub fn read(&mut self, address: u16) -> u8 {
         debug!("Read from IO address: {:#X}", address);
         match address {
+            //0xFF00 => u8::from(self.joypad.clone()),
             0xFF00 => u8::from(self.joypad.clone()),
             0xFF01 => self.serial_data[0] as u8,
             0xFF02 => self.serial_data[1] as u8,
@@ -89,7 +90,7 @@ impl IO {
             0xFF40..=0xFF46 => {
                 self.ppu.as_ref().borrow_mut().write(address, value);
             },
-            0xFF47..0xFF4B => {
+            0xFF47..=0xFF4B => {
                 self.lcd.as_ref().borrow_mut().write(address, value);
             },
             _ => {
@@ -97,7 +98,7 @@ impl IO {
                 self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
             }
         }
-        self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
+        //self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
     }
 
 }

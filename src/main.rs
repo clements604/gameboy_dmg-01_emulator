@@ -10,11 +10,18 @@ mod interupts;
 mod dma;
 mod lcd;
 mod timer;
-mod ppu_experiment;
 mod joypad;
 mod tile_map_display;
 mod main_display;
 mod background_display;
+mod window_display;
+mod mbc;
+mod mbc0;
+mod mbc1;
+mod mbc_factory;
+mod mbc2;
+mod mbc3;
+mod mbc5;
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -28,11 +35,14 @@ use std::io::{self, Read};
 use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::time::Instant;
 //use sdl2::EventPump;
 use crate::timer::{Timer, TimerFrequency};
 
 use minifb::{Key, Scale, Window, WindowOptions};
 use crate::display::LIGHTEST_GREEN;
+use crate::interupts::Interrupt::JOYPAD;
+use crate::joypad::Button;
 use crate::main_display::MainDisplay;
 use crate::tile_map_display::DebugDisplay;
 
@@ -49,10 +59,16 @@ struct Emulator {
     debug_window: DebugDisplay,
     background_display: background_display::BackgroundDisplay,
     main_display: MainDisplay,
+    window_display: window_display::WindowDisplay,
 
     //event_pump: EventPump,
     previous_frame: u32,
     previous_ly: u8,
+    
+    last_time: Instant, // Used for FPS calculation
+    frame_count: u32, // Used for FPS calculation
+
+    previous_keys: Vec<Key>,
 }
 
 impl Emulator {
@@ -72,6 +88,7 @@ impl Emulator {
         let mut debug_window = DebugDisplay::new();
         let mut main_display= MainDisplay::new();
         let mut background_display = background_display::BackgroundDisplay::new();
+        let mut window_display = window_display::WindowDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
@@ -108,37 +125,60 @@ impl Emulator {
         Emulator {
             ticks: 0,
             cpu,
-
             ppu,
-            
-            //ppu_experiment,
-
             memory_bus,
-            //display,
-
-            //event_pump,
             dma,
-
             debug_window,
             background_display,
             main_display,
-            
+            window_display,
             previous_frame: 0,
             previous_ly: 0,
+            last_time: Instant::now(),
+            frame_count: 0,
+            
+            previous_keys: Vec::new(),
         }
     }
 
     fn cycle(&mut self) {
+        let current_keys: Vec<Key> = self.main_display.window.get_keys();
+        for key in &self.previous_keys {
+            if !current_keys.contains(key) {
+                match key {
+                    Key::Up => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Up),
+                    Key::Left => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Left),
+                    Key::Down => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Down),
+                    Key::Right => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Right),
+                    Key::A => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::A),
+                    Key::B => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::B),
+                    Key::Enter => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Start),
+                    Key::Backspace => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Select),
+                    _ => (),
+                }
+                
+            }
+        }
 
+        let previous_window_enabled = self.memory_bus.borrow().ppu.as_ref().unwrap().borrow().lcdc & 0x20 != 0;
+        
         let cpu_cycles = self.cpu.borrow_mut().cycle();
+
+        let current_window_enabled = self.memory_bus.borrow().ppu.as_ref().unwrap().borrow().lcdc & 0x20 != 0;
+        if previous_window_enabled != current_window_enabled {
+            info!("Window enable changed mid-frame: LY={}, now={}", 
+           self.memory_bus.borrow().ppu.as_ref().unwrap().borrow().ly, current_window_enabled);
+        }
 
         if self.memory_bus.borrow().enabling_ime {
             self.memory_bus.borrow_mut().interrupt_master_enable = true;
             self.memory_bus.borrow_mut().enabling_ime = false;
         }
 
-        if self.cpu.borrow().registers.pc == 0xC4A9 {//0xCB89
-            debug!("{}", self.cpu.borrow().registers);
+        if self.cpu.borrow().registers.pc == 0x0B7D {//0x0B7D
+            info!("{}", self.cpu.borrow().registers);
+            info!("STAT: {:#X}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow().stat);
+            //self.ppu.borrow_mut().stat = 0x80;
             //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
             debug!("hello");
         }
@@ -158,22 +198,60 @@ impl Emulator {
         self.cpu.borrow_mut().check_interrupts();
 
         if self.previous_frame != self.ppu.borrow().current_frame {
+
             //self.display.borrow_mut().ui_update();
             //if self.ppu.borrow().lcd_ppu_enabled() {
                 self.main_display.update(self.ppu.borrow().framebuffer.clone());
                 //self.background_display.update(&self.ppu.borrow().get_debug_background_tile_map());
                 //self.debug_window.update(&self.ppu.borrow().get_tile_map());
-            //}
+            /*self.window_display.update_with_fixed_size_tiles(
+                self.ppu.borrow().lcd.as_ref().borrow().window_x,
+                self.ppu.borrow().lcd.as_ref().borrow().window_y,
+                &self.ppu.borrow().get_window_tiles()
+            );*/
+
+            self.frame_count += 1;  // Increment frame count each frame
+
+            let now = Instant::now();
+            let elapsed = now.duration_since(self.last_time);
+
+            if elapsed.as_secs() >= 1 {
+                info!("FPS: {}", self.frame_count);
+                self.frame_count = 0;  // Reset frame count
+                self.last_time = now;
+            }
+
             self.previous_frame = self.ppu.borrow().current_frame;
         }
         
     }
     
-    fn debug_ly(&mut self) {
-        let new_ly = self.ppu.borrow().ly;
-        if new_ly != self.previous_ly {
-            debug!("LY: {}", new_ly);
-            self.previous_ly = new_ly;
+    fn handle_input(&mut self) {
+        let mut joypad = self.memory_bus.borrow_mut().dmg_io.as_mut().unwrap().borrow_mut().joypad;
+        let keys = &self.main_display.window.get_keys();
+        if keys.len() > 0 {
+            info!("Keys pressed: {:?}", keys);
+        }
+        for key in keys {
+            match key {
+                Key::Up => joypad.button_pressed(Button::Up),
+                Key::Left => joypad.button_pressed(Button::Left),
+                Key::Down => joypad.button_pressed(Button::Down),
+                Key::Right => joypad.button_pressed(Button::Right),
+                Key::A => joypad.button_pressed(Button::A),
+                Key::B => joypad.button_pressed(Button::B),
+                Key::Enter => joypad.button_pressed(Button::Start),
+                Key::Backspace => joypad.button_pressed(Button::Select),
+                _ => (),
+            }
+        }
+
+        self.memory_bus.borrow_mut().dmg_io.as_mut().unwrap().borrow_mut().joypad = joypad;
+
+        if u8::from(joypad) != 0xFF {
+            //self.cpu.borrow_mut().trigger_interrupt(JOYPAD);
+            //self.memory_bus.borrow_mut().interrupt_master_enable = true;
+            //info!("{:8b}", u8::from(joypad));
         }
     }
 
@@ -189,11 +267,13 @@ fn main() {
         .is_test(false)
         .try_init();
 
-    let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    //let boot_rom = Option::None;
+    //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
+    let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
+    //let rom = load_rom(String::from("roms/Alleyway.gb"));
+    let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
@@ -218,19 +298,23 @@ fn main() {
     * CPU timing
      */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/add_sp_e_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/boot_div2-S.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/call_timing.gb"));// TODO FAILED
 
     /*
      * Graphics
     */
-   let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
+   //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); //TODO PPU
    //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
+   //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED
 
     /*
      * Memory timing
     */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/mem_timing.gb")); // TODO no debug output
-    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/01-read_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/01-read_timing.gb")); // TODO
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/02-write_timing.gb")); // TODO no debug output
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/03-modify_timing.gb")); // TODO no debug output
 
@@ -249,6 +333,7 @@ let mut emulator = Emulator::new(boot_rom, &rom);
     
 
     while emulator.main_display.window.is_open() && !emulator.main_display.window.is_key_down(Key::Escape) {
+        emulator.handle_input();
         emulator.cycle();
     }
 

@@ -1177,9 +1177,9 @@ impl Ppu {
                 let sprite_color = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
 
                 // Skip if sprite color is transparent (same as lightest green)
-                if sprite_color == LIGHTEST_GREEN {
+                /*if sprite_color == LIGHTEST_GREEN {
                     continue;
-                }
+                }*/
 
                 // Apply sprite priority rules:
                 // - If sprite has priority bit set (BG over OBJ), only show sprite if BG is transparent

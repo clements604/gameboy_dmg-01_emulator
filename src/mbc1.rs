@@ -125,18 +125,18 @@ impl MBC for MBC1 {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        info!("write_byte called for address 0x{:X} with value 0x{:02X}", address, value);
+        debug!("write_byte called for address 0x{:X} with value 0x{:02X}", address, value);
         match address {
             0x0000..=0x1FFF => {
                 self.ram_enabled = (value & 0x0F) == 0x0A;
-                info!("RAM enable set to: {}", self.ram_enabled);
+                debug!("RAM enable set to: {}", self.ram_enabled);
             },
             0x2000..=0x3FFF => {
                 let lower_bits = (value & 0x1F) as usize;
                 let bank_num = if lower_bits == 0 { 1 } else { lower_bits };
                 
                 self.rom_bank = (self.rom_bank & 0x60) | bank_num;
-                info!("ROM bank lower bits set to: {:02X}, effective bank: {:02X}", 
+                debug!("ROM bank lower bits set to: {:02X}, effective bank: {:02X}", 
                        bank_num, self.get_selected_rom_bank());
             },
             0x4000..=0x5FFF => {
@@ -145,12 +145,12 @@ impl MBC for MBC1 {
                 if self.banking_mode == BankingMode::ROM {
                     // In ROM mode, these bits select the upper bits of ROM bank
                     self.rom_bank = (self.rom_bank & 0x1F) | upper_bits;
-                    info!("ROM bank upper bits set to: {:02X}, effective bank: {:02X}", 
+                    debug!("ROM bank upper bits set to: {:02X}, effective bank: {:02X}", 
                            upper_bits >> 5, self.get_selected_rom_bank());
                 } else {
                     // In RAM mode, these bits select the RAM bank
                     self.ram_bank = value as usize & 0x03;
-                    info!("RAM bank set to: {:02X}", self.ram_bank);
+                    debug!("RAM bank set to: {:02X}", self.ram_bank);
                 }
             },
             0x6000..=0x7FFF => {
@@ -159,7 +159,7 @@ impl MBC for MBC1 {
                 } else {
                     BankingMode::RAM
                 };
-                info!("Banking mode set to: {:?}", self.banking_mode);
+                debug!("Banking mode set to: {:?}", self.banking_mode);
             },
             0xA000..=0xBFFF => {
                 if self.ram_enabled && self.has_ram {
@@ -170,10 +170,10 @@ impl MBC for MBC1 {
                     if addr < self.ram.len() {
                         self.ram[addr] = value;
                     } else {
-                        info!("Attempted to write to non-existent RAM at bank {} addr {:04X}", bank, address);
+                        debug!("Attempted to write to non-existent RAM at bank {} addr {:04X}", bank, address);
                     }
                 } else {
-                    info!("Attempted to write to disabled RAM: {:04X} = {:02X}", address, value);
+                    debug!("Attempted to write to disabled RAM: {:04X} = {:02X}", address, value);
                 }
             },
             _ => {

@@ -4,14 +4,14 @@ pub struct Joypad {
     select_buttons: bool,
     select_dpad: bool,
     // Button states
-    start: bool,
-    select: bool,
-    b: bool,
-    a: bool,
-    up: bool,
-    down: bool,
-    left: bool,
-    right: bool,
+    pub(crate) start: bool,
+    pub(crate) select: bool,
+    pub(crate) b: bool,
+    pub(crate) a: bool,
+    pub(crate) up: bool,
+    pub(crate) down: bool,
+    pub(crate) left: bool,
+    pub(crate) right: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -156,8 +156,6 @@ impl std::convert::From<u8> for Joypad {
         joypad
     }
 }
-
-// Update tests to reflect these changes
 
 #[cfg(test)]
 mod tests {

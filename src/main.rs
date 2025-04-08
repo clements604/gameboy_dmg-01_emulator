@@ -140,7 +140,7 @@ impl Emulator {
                 return;
             }
         }
-        self.input_check_counter = (self.input_check_counter + 1) % 32; // Changed from 10 to 32
+        self.input_check_counter = (self.input_check_counter + 1) % 2; // Changed from 10 to 32
 
         // Check input every 32 CPU cycles - less frequent for better performance
         if self.input_check_counter == 0 {

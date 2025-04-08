@@ -84,36 +84,25 @@ impl MainDisplay {
         self.canvas.set_draw_color(Color::RGB(0, 0, 0));
         self.canvas.clear();
 
-        // Optimize rendering by creating a texture for the full screen
-        let texture_creator = self.canvas.texture_creator();
-        let mut texture = texture_creator.create_texture_streaming(
-            sdl2::pixels::PixelFormatEnum::ARGB8888,
-            SCREEN_WIDTH as u32,
-            SCREEN_HEIGHT as u32
-        ).unwrap();
-
-        // Update the texture with our pixel data
-        texture.with_lock(None, |buffer: &mut [u8], pitch: usize| {
-            for y in 0..SCREEN_HEIGHT {
-                for x in 0..SCREEN_WIDTH {
-                    let index = y * SCREEN_WIDTH + x;
-                    if index < tiles.len() {
-                        let offset = y * pitch + x * 4;
-                        let color = tiles[index];
-                        buffer[offset] = ((color >> 0) & 0xFF) as u8;     // B
-                        buffer[offset + 1] = ((color >> 8) & 0xFF) as u8; // G
-                        buffer[offset + 2] = ((color >> 16) & 0xFF) as u8; // R
-                        buffer[offset + 3] = 255; // A
-                    }
+        // Render tiles
+        for y in 0..SCREEN_HEIGHT {
+            for x in 0..SCREEN_WIDTH {
+                let index = y * SCREEN_WIDTH + x;
+                if index < tiles.len() {
+                    let color = get_sdl_colour(tiles[index]);
+                    self.canvas.set_draw_color(color);
+                    self.canvas.draw_point((x as i32, y as i32)).unwrap_or_else(|e| {
+                        error!("Failed to draw point: {}", e);
+                    });
                 }
             }
-        }).unwrap();
-
-        // Copy the texture to the canvas
-        self.canvas.copy(&texture, None, None).unwrap();
+        }
 
         // Present the rendered frame
         self.canvas.present();
+
+        // Cap the frame rate
+        //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / FPS as u32)); // FIXME was 1_000_000_000u32 / FPS
     }
 
     pub fn process_events(&mut self) -> bool {
@@ -137,7 +126,7 @@ impl MainDisplay {
             Keycode::A,      // A button
             Keycode::B,      // B button
             Keycode::Return, // Start
-            Keycode::Backspace,  // Select
+            Keycode::Space,  // Select
             Keycode::Up,     // Up
             Keycode::Down,   // Down
             Keycode::Left,   // Left
@@ -147,7 +136,7 @@ impl MainDisplay {
         // Process events to update key state and store pressed keys
         let mut pressed_keys = Vec::new();
 
-        // Get keyboard state 
+        // Get keyboard state
         let keyboard_state = self.event_pump.keyboard_state();
 
         // The correct way to check if keys are pressed in SDL2

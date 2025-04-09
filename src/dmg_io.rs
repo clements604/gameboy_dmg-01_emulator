@@ -8,7 +8,7 @@ use crate::{joypad, timer};
 use crate::lcd::LCD;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE, MemoryBus};
 use crate::ppu::Ppu;
-use crate::timer::{Timer, TimerFrequency};
+use crate::timer::{Timer};
 
 pub struct IO {
     io_registers: [u8; IO_REGISTERS_SIZE],
@@ -79,7 +79,8 @@ impl IO {
                 self.serial_data[1] = value as char;
             },
             0xFF04 => {
-                self.timer.div = 0; // Reset DIV when written to
+                //self.timer.div = 0; // Reset DIV when written to
+                self.timer.reset_div();
             },
             0xFF05 => self.timer.tima = value,
             0xFF06 => self.timer.tma = value,

@@ -12,7 +12,7 @@ use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
 use crate::{timer};
-use crate::timer::{Timer, TimerFrequency};
+use crate::timer::{Timer};
 
 use crate::mbc::MBC;
 use crate::mbc_factory;

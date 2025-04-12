@@ -45,8 +45,7 @@ struct Emulator {
     ticks: u64,
     cpu: Rc<RefCell<CPU::CPU>>,
 
-    ppu: Rc<RefCell<ppu::Ppu>>,
-    //ppu_experiment: Rc<RefCell<ppu_experiment::Ppu>>,
+    //ppu: Rc<RefCell<ppu::Ppu>>,
 
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
     //display: Rc<RefCell<display::Display>>,
@@ -82,19 +81,19 @@ impl Emulator {
 
         let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None)));
 
-        let mut main_display = MainDisplay::new();
+        let main_display = MainDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
-        let ppu = Rc::new(RefCell::new(ppu::Ppu::new()));
+        //let ppu = Rc::new(RefCell::new(ppu::Ppu::new()));
 
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
-        let io = Rc::new(RefCell::new(dmg_io::IO::new(ppu.clone())));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new()));
 
         memory_bus.borrow_mut().dmg_io = Some(io.clone());
 
-        memory_bus.borrow_mut().ppu = Some(ppu.clone());
+        //memory_bus.borrow_mut().ppu = Some(ppu.clone());
         //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
 
         memory_bus.borrow_mut().cpu = Some(cpu.clone());
@@ -111,7 +110,6 @@ impl Emulator {
         Emulator {
             ticks: 0,
             cpu,
-            ppu,
             memory_bus,
             main_display,
             previous_frame: 0,
@@ -187,37 +185,21 @@ impl Emulator {
             self.memory_bus.borrow_mut().dmg_io.as_mut().unwrap().borrow_mut().joypad = joypad;
             self.previous_keys = current_keys;
         }
-
-        let previous_window_enabled = self.memory_bus.borrow().ppu.as_ref().unwrap().borrow().lcdc & 0x20 != 0;
-
+        
         let cpu_cycles = self.cpu.borrow_mut().cycle();
-
-        let current_window_enabled = self.memory_bus.borrow().ppu.as_ref().unwrap().borrow().lcdc & 0x20 != 0;
-        if previous_window_enabled != current_window_enabled {
-            info!("Window enable changed mid-frame: LY={}, now={}", 
-           self.memory_bus.borrow().ppu.as_ref().unwrap().borrow().ly, current_window_enabled);
-        }
 
         if self.memory_bus.borrow().enabling_ime {
             self.memory_bus.borrow_mut().interrupt_master_enable = true;
             self.memory_bus.borrow_mut().enabling_ime = false;
         }
 
-        if self.cpu.borrow().registers.pc == 0x0B7D {//0x0B7D
-            info!("{}", self.cpu.borrow().registers);
-            info!("STAT: {:#X}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow().stat);
-            //self.ppu.borrow_mut().stat = 0x80;
-            //info!("{}", self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow().ppu.borrow());
-            debug!("hello");
-        }
-
         // Update the timer with the number of CPU cycles
-        if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+        /*if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
             // If timer overflows, trigger a Timer interrupt
             self.memory_bus.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
-        }
+        }*/
 
-        let ppu_interrupts = self.ppu.borrow_mut().tick(cpu_cycles);
+        let ppu_interrupts = self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.tick(cpu_cycles);
         for interrupt in ppu_interrupts {
             self.memory_bus.borrow_mut().trigger_interrupt(interrupt);
         }
@@ -229,9 +211,9 @@ impl Emulator {
 
         self.cpu.borrow_mut().check_interrupts();
 
-        if self.previous_frame != self.ppu.borrow().current_frame {
+        if self.previous_frame != self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.current_frame {
             // Update display with the new frame buffer
-            self.main_display.update(self.ppu.borrow().framebuffer.clone());
+            self.main_display.update(self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.framebuffer.clone());
 
             self.frame_count += 1;  // Increment frame count
 
@@ -245,7 +227,7 @@ impl Emulator {
                 self.last_time = now;
             }
 
-            self.previous_frame = self.ppu.borrow().current_frame;
+            self.previous_frame = self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.current_frame;
 
             // Frame rate cap to 60 FPS
             let elapsed = now.duration_since(self.last_frame_time);
@@ -318,7 +300,7 @@ fn main() {
     /*
      * Graphics
     */
-    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED

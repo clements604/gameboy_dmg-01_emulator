@@ -75,7 +75,7 @@ pub struct MemoryBus {
     pub unused: [u8; UNUSED_SIZE],
     pub hram: [u8; HRAM_SIZE],
     
-    pub ppu: Option<Rc<RefCell<Ppu>>>,
+    //pub ppu: Option<Rc<RefCell<Ppu>>>,
     
     rom_debug: rom_debug,
     pub dmg_io: Option<Rc<RefCell<IO>>>,
@@ -123,7 +123,7 @@ impl MemoryBus {
             unused: [0; UNUSED_SIZE],
             hram: [0; HRAM_SIZE],
             
-            ppu: None,
+            //ppu: None,
             
             rom_debug: rom_debug::new(),
             dmg_io: io,
@@ -159,9 +159,7 @@ impl MemoryBus {
         for _ in 0..cpu_cycles {
             if let Some((src_addr, dest_addr)) = self.dma.dma_tick() {
                 let value = self.read_byte(src_addr);
-                if let Some(ppu) = &self.ppu {
-                    ppu.borrow_mut().oam_write(dest_addr, value);
-                }
+                self.dmg_io.as_ref().unwrap().borrow_mut().ppu.oam_write(dest_addr, value);
             }
             
         }
@@ -178,7 +176,7 @@ impl MemoryBus {
                 }
             },
             ROM_BANK_N_START..=ROM_BANK_N_END => self.mbc.as_ref().unwrap().read_byte(address),
-            VRAM_START..=VRAM_END => self.ppu.as_ref().unwrap().borrow().vram_read(address),
+            VRAM_START..=VRAM_END => self.dmg_io.as_ref().unwrap().borrow_mut().ppu.vram_read(address),
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_ref().unwrap().read_byte(address),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize],
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
@@ -188,7 +186,7 @@ impl MemoryBus {
                     //panic!("DMA active");
                     return 0xFF;
                 }
-                self.ppu.as_ref().unwrap().borrow().oam_read(address - OAM_START)
+                self.dmg_io.as_ref().unwrap().borrow_mut().ppu.oam_read(address - OAM_START)
                 //self.ppu_experiment.as_ref().unwrap().borrow().oam_read(address - OAM_START)
             },
             //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
@@ -244,7 +242,7 @@ impl MemoryBus {
             
             VRAM_START..=VRAM_END => { 
                 //self.vram[(address - VRAM_START) as usize] = value;
-                self.ppu.as_ref().unwrap().borrow_mut().vram_write(address, value);
+                self.dmg_io.as_ref().unwrap().borrow_mut().ppu.vram_write(address, value);
             },
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_mut().unwrap().write_byte(address, value),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize] = value,
@@ -254,7 +252,7 @@ impl MemoryBus {
             }
             OAM_START..=OAM_END => {
                 if !self.dma.is_transferring() {
-                    self.ppu.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
+                    self.dmg_io.as_ref().unwrap().borrow_mut().ppu.oam_write(address - OAM_START, value);
                     //self.ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                 }
             },

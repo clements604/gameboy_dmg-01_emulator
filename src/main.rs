@@ -40,12 +40,13 @@ use crate::display::LIGHTEST_GREEN;
 use crate::interupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
 use crate::main_display::MainDisplay;
+use crate::memory_bus::MemoryBus;
 
 struct Emulator {
     ticks: u64,
     cpu: CPU::CPU,
 
-    memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
+    memory_bus: memory_bus::MemoryBus,
 
     main_display: MainDisplay,
 
@@ -76,12 +77,11 @@ impl Emulator {
                 false
             },
         };
-
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
+        
 
         let main_display = MainDisplay::new();
 
-        let mut cpu = CPU::CPU::new(memory_bus.clone());
+        let mut cpu = CPU::CPU::new();
 
         match boot_rom_enabled {
             true => {
@@ -95,7 +95,7 @@ impl Emulator {
         Emulator {
             ticks: 0,
             cpu,
-            memory_bus,
+            memory_bus: MemoryBus::new(boot_rom, &rom),
             main_display,
             previous_frame: 0,
             previous_ly: 0,
@@ -130,21 +130,21 @@ impl Emulator {
             for key in &self.previous_keys {
                 if !current_keys.contains(key) {
                     match key {
-                        Keycode::Up => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Up),
-                        Keycode::Left => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Left),
-                        Keycode::Down => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Down),
-                        Keycode::Right => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Right),
-                        Keycode::Z => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::A),
-                        Keycode::X => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::B),
-                        Keycode::Return => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Start),
-                        Keycode::Space => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Select),
+                        Keycode::Up => self.memory_bus.dmg_io.joypad.button_released(Button::Up),
+                        Keycode::Left => self.memory_bus.dmg_io.joypad.button_released(Button::Left),
+                        Keycode::Down => self.memory_bus.dmg_io.joypad.button_released(Button::Down),
+                        Keycode::Right => self.memory_bus.dmg_io.joypad.button_released(Button::Right),
+                        Keycode::Z => self.memory_bus.dmg_io.joypad.button_released(Button::A),
+                        Keycode::X => self.memory_bus.dmg_io.joypad.button_released(Button::B),
+                        Keycode::Return => self.memory_bus.dmg_io.joypad.button_released(Button::Start),
+                        Keycode::Space => self.memory_bus.dmg_io.joypad.button_released(Button::Select),
                         _ => (),
                     }
                 }
             }
 
             // Handle key presses
-            let mut joypad = self.memory_bus.borrow_mut().dmg_io.joypad;
+            let mut joypad = self.memory_bus.dmg_io.joypad;
 
             for key in &current_keys {
                 match key {
@@ -164,41 +164,41 @@ impl Emulator {
             let joypad_state = u8::from(joypad);
             if joypad_state != 0xFF {
                 // Force a joypad interrupt on every key change
-                self.memory_bus.borrow_mut().trigger_interrupt(JOYPAD);
+                self.memory_bus.trigger_interrupt(JOYPAD);
             }
 
-            self.memory_bus.borrow_mut().dmg_io.joypad = joypad;
+            self.memory_bus.dmg_io.joypad = joypad;
             self.previous_keys = current_keys;
         }
         
-        let cpu_cycles = self.cpu.cycle();
+        let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);
 
-        if self.memory_bus.borrow().enabling_ime {
-            self.memory_bus.borrow_mut().interrupt_master_enable = true;
-            self.memory_bus.borrow_mut().enabling_ime = false;
+        if self.memory_bus.enabling_ime {
+            self.memory_bus.interrupt_master_enable = true;
+            self.memory_bus.enabling_ime = false;
         }
 
         // Update the timer with the number of CPU cycles
         /*if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
             // If timer overflows, trigger a Timer interrupt
-            self.memory_bus.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
+            self.memory_bus.trigger_interrupt(interupts::Interrupt::TIMER);
         }*/
 
-        let ppu_interrupts = self.memory_bus.borrow_mut().dmg_io.ppu.tick(cpu_cycles);
+        let ppu_interrupts = self.memory_bus.dmg_io.ppu.tick(cpu_cycles);
         for interrupt in ppu_interrupts {
-            self.memory_bus.borrow_mut().trigger_interrupt(interrupt);
+            self.memory_bus.trigger_interrupt(interrupt);
         }
 
-        self.memory_bus.borrow_mut().cycle(cpu_cycles);
+        self.memory_bus.cycle(cpu_cycles);
         /*for _ in 0..cpu_cycles {
             self.dma.borrow_mut().dma_tick();
         }*/
 
-        self.cpu.check_interrupts();
+        self.cpu.check_interrupts(&mut self.memory_bus);
 
-        if self.previous_frame != self.memory_bus.borrow_mut().dmg_io.ppu.current_frame {
+        if self.previous_frame != self.memory_bus.dmg_io.ppu.current_frame {
             // Update display with the new frame buffer
-            self.main_display.update(self.memory_bus.borrow_mut().dmg_io.ppu.framebuffer.clone());
+            self.main_display.update(self.memory_bus.dmg_io.ppu.framebuffer.clone());
 
             self.frame_count += 1;  // Increment frame count
 
@@ -212,7 +212,7 @@ impl Emulator {
                 self.last_time = now;
             }
 
-            self.previous_frame = self.memory_bus.borrow_mut().dmg_io.ppu.current_frame;
+            self.previous_frame = self.memory_bus.dmg_io.ppu.current_frame;
 
             // Frame rate cap to 60 FPS
             let elapsed = now.duration_since(self.last_frame_time);
@@ -224,7 +224,7 @@ impl Emulator {
         }
 
         if self.last_save_time.elapsed() > Duration::from_secs(5) {
-            self.memory_bus.borrow_mut().mbc.as_mut().unwrap().save_ram();
+            self.memory_bus.mbc.as_mut().unwrap().save_ram();
             self.last_save_time = Instant::now();
         }
     }

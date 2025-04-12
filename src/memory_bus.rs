@@ -11,7 +11,7 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
-use crate::{dma, interupts, timer};
+use crate::{dma, dmg_io, interupts, timer};
 use crate::timer::{Timer};
 
 use crate::mbc::MBC;
@@ -78,7 +78,7 @@ pub struct MemoryBus {
     //pub ppu: Option<Rc<RefCell<Ppu>>>,
     
     rom_debug: rom_debug,
-    pub dmg_io: Option<Rc<RefCell<IO>>>,
+    pub dmg_io: IO,
     pub dma: Dma,
     pub cpu:  Option<Rc<RefCell<CPU>>>,
 
@@ -92,7 +92,7 @@ pub struct MemoryBus {
 }
 
 impl MemoryBus {
-    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, io: Option<Rc<RefCell<IO>>>, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
+    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
 
         let mbc = mbc_factory::create_mbc(rom);
         let rom_banks = rom.load_rom_to_banks();
@@ -126,7 +126,7 @@ impl MemoryBus {
             //ppu: None,
             
             rom_debug: rom_debug::new(),
-            dmg_io: io,
+            dmg_io: dmg_io::IO::new(),
             
             dma: dma::Dma::new(),
             
@@ -150,7 +150,7 @@ impl MemoryBus {
     pub fn cycle(&mut self, cpu_cycles: u8) {
         
         // Timer
-        if self.dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+        if self.dmg_io.timer.cycle(cpu_cycles) {
             // If timer overflows, trigger a Timer interrupt
             self.trigger_interrupt(interupts::Interrupt::TIMER);
         }
@@ -159,7 +159,7 @@ impl MemoryBus {
         for _ in 0..cpu_cycles {
             if let Some((src_addr, dest_addr)) = self.dma.dma_tick() {
                 let value = self.read_byte(src_addr);
-                self.dmg_io.as_ref().unwrap().borrow_mut().ppu.oam_write(dest_addr, value);
+                self.dmg_io.ppu.oam_write(dest_addr, value);
             }
             
         }
@@ -176,7 +176,7 @@ impl MemoryBus {
                 }
             },
             ROM_BANK_N_START..=ROM_BANK_N_END => self.mbc.as_ref().unwrap().read_byte(address),
-            VRAM_START..=VRAM_END => self.dmg_io.as_ref().unwrap().borrow_mut().ppu.vram_read(address),
+            VRAM_START..=VRAM_END => self.dmg_io.ppu.vram_read(address),
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_ref().unwrap().read_byte(address),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize],
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
@@ -186,7 +186,7 @@ impl MemoryBus {
                     //panic!("DMA active");
                     return 0xFF;
                 }
-                self.dmg_io.as_ref().unwrap().borrow_mut().ppu.oam_read(address - OAM_START)
+                self.dmg_io.ppu.oam_read(address - OAM_START)
                 //self.ppu_experiment.as_ref().unwrap().borrow().oam_read(address - OAM_START)
             },
             //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
@@ -202,7 +202,7 @@ impl MemoryBus {
                     debug!("Interrupt flag read");
                     return self.interrupt_flags;
                 }
-                self.dmg_io.as_ref().unwrap().borrow_mut().read(address)
+                self.dmg_io.read(address)
             }
             HRAM_START..=HRAM_END => self.hram[(address - HRAM_START) as usize],
             INTERRUPT_ENABLE_REGISTER => {
@@ -242,7 +242,7 @@ impl MemoryBus {
             
             VRAM_START..=VRAM_END => { 
                 //self.vram[(address - VRAM_START) as usize] = value;
-                self.dmg_io.as_ref().unwrap().borrow_mut().ppu.vram_write(address, value);
+                self.dmg_io.ppu.vram_write(address, value);
             },
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_mut().unwrap().write_byte(address, value),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize] = value,
@@ -252,7 +252,7 @@ impl MemoryBus {
             }
             OAM_START..=OAM_END => {
                 if !self.dma.is_transferring() {
-                    self.dmg_io.as_ref().unwrap().borrow_mut().ppu.oam_write(address - OAM_START, value);
+                    self.dmg_io.ppu.oam_write(address - OAM_START, value);
                     //self.ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                 }
             },
@@ -272,7 +272,7 @@ impl MemoryBus {
                         self.dma.dma_start(value);
                     },
                     _ => {
-                        self.dmg_io.as_ref().unwrap().borrow_mut().write(address, value);
+                        self.dmg_io.write(address, value);
                     }
                 }
             },

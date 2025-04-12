@@ -79,7 +79,7 @@ impl Emulator {
             },
         };
 
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None)));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None)));
 
         let main_display = MainDisplay::new();
 
@@ -89,9 +89,8 @@ impl Emulator {
 
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
-        let io = Rc::new(RefCell::new(dmg_io::IO::new()));
-
-        memory_bus.borrow_mut().dmg_io = Some(io.clone());
+        //let io = Rc::new(RefCell::new(dmg_io::IO::new()));
+        //memory_bus.borrow_mut().dmg_io = Some(io.clone());
 
         //memory_bus.borrow_mut().ppu = Some(ppu.clone());
         //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
@@ -145,21 +144,21 @@ impl Emulator {
             for key in &self.previous_keys {
                 if !current_keys.contains(key) {
                     match key {
-                        Keycode::Up => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Up),
-                        Keycode::Left => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Left),
-                        Keycode::Down => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Down),
-                        Keycode::Right => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Right),
-                        Keycode::Z => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::A),
-                        Keycode::X => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::B),
-                        Keycode::Return => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Start),
-                        Keycode::Space => self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().joypad.button_released(Button::Select),
+                        Keycode::Up => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Up),
+                        Keycode::Left => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Left),
+                        Keycode::Down => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Down),
+                        Keycode::Right => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Right),
+                        Keycode::Z => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::A),
+                        Keycode::X => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::B),
+                        Keycode::Return => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Start),
+                        Keycode::Space => self.memory_bus.borrow_mut().dmg_io.joypad.button_released(Button::Select),
                         _ => (),
                     }
                 }
             }
 
             // Handle key presses
-            let mut joypad = self.memory_bus.borrow_mut().dmg_io.as_mut().unwrap().borrow_mut().joypad;
+            let mut joypad = self.memory_bus.borrow_mut().dmg_io.joypad;
 
             for key in &current_keys {
                 match key {
@@ -182,7 +181,7 @@ impl Emulator {
                 self.memory_bus.borrow_mut().trigger_interrupt(JOYPAD);
             }
 
-            self.memory_bus.borrow_mut().dmg_io.as_mut().unwrap().borrow_mut().joypad = joypad;
+            self.memory_bus.borrow_mut().dmg_io.joypad = joypad;
             self.previous_keys = current_keys;
         }
         
@@ -199,7 +198,7 @@ impl Emulator {
             self.memory_bus.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }*/
 
-        let ppu_interrupts = self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.tick(cpu_cycles);
+        let ppu_interrupts = self.memory_bus.borrow_mut().dmg_io.ppu.tick(cpu_cycles);
         for interrupt in ppu_interrupts {
             self.memory_bus.borrow_mut().trigger_interrupt(interrupt);
         }
@@ -211,9 +210,9 @@ impl Emulator {
 
         self.cpu.borrow_mut().check_interrupts();
 
-        if self.previous_frame != self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.current_frame {
+        if self.previous_frame != self.memory_bus.borrow_mut().dmg_io.ppu.current_frame {
             // Update display with the new frame buffer
-            self.main_display.update(self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.framebuffer.clone());
+            self.main_display.update(self.memory_bus.borrow_mut().dmg_io.ppu.framebuffer.clone());
 
             self.frame_count += 1;  // Increment frame count
 
@@ -227,7 +226,7 @@ impl Emulator {
                 self.last_time = now;
             }
 
-            self.previous_frame = self.memory_bus.borrow_mut().dmg_io.as_ref().unwrap().borrow_mut().ppu.current_frame;
+            self.previous_frame = self.memory_bus.borrow_mut().dmg_io.ppu.current_frame;
 
             // Frame rate cap to 60 FPS
             let elapsed = now.duration_since(self.last_frame_time);

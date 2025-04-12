@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, Copy)]
 pub struct Joypad {
     // These are controlled by writing to $FF00, not by button presses
-    select_buttons: bool,
-    select_dpad: bool,
+    pub(crate) select_buttons: bool,
+    pub(crate) select_dpad: bool,
     // Button states
     pub(crate) start: bool,
     pub(crate) select: bool,
@@ -100,16 +100,17 @@ impl Joypad {
 
 impl std::convert::From<Joypad> for u8 {
     fn from(joypad: Joypad) -> u8 {
-        let mut result = 0b1100_0000; // Bits 7 and 6 are always 1, bits 5 and 4 start as 1 unless selected
+        let mut result = 0b1100_0000; // Bits 7 and 6 are always 1
 
-        if !joypad.select_dpad {
-            result |= 0; // Bit 5 is 0 if buttons selected
+        // Set selection bits correctly
+        if !joypad.select_buttons {
+            result &= !(1 << 5); // Clear bit 5 to select buttons
         } else {
             result |= 1 << 5;
         }
 
-        if !joypad.select_buttons {
-            result |= 0; // Bit 4 is 0 if d-pad selected
+        if !joypad.select_dpad {
+            result &= !(1 << 4); // Clear bit 4 to select dpad
         } else {
             result |= 1 << 4;
         }
@@ -137,21 +138,16 @@ impl std::convert::From<Joypad> for u8 {
 
 impl std::convert::From<u8> for Joypad {
     fn from(byte: u8) -> Joypad {
+        // Start with the current state
         let mut joypad = Joypad::new();
-        joypad.set_selection(byte);
 
-        // Only set button states if corresponding selection bit is 0
-        if !joypad.select_buttons {
-            joypad.start = byte & (1 << 3) == 0;
-            joypad.select = byte & (1 << 2) == 0;
-            joypad.b = byte & (1 << 1) == 0;
-            joypad.a = byte & 1 == 0;
-        } else if !joypad.select_dpad {
-            joypad.down = byte & (1 << 3) == 0;
-            joypad.up = byte & (1 << 2) == 0;
-            joypad.left = byte & (1 << 1) == 0;
-            joypad.right = byte & 1 == 0;
-        }
+        // ONLY update the selection bits (4-5)
+        // Do NOT modify button states based on the byte
+        joypad.select_buttons = byte & (1 << 5) == 0;
+        joypad.select_dpad = byte & (1 << 4) == 0;
+
+        // Button states (bits 0-3) should be set by your input handling code,
+        // not by the program writing to 0xFF00
 
         joypad
     }

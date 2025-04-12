@@ -33,8 +33,7 @@ impl IO {
     pub fn read(&self, address: u16) -> u8 {
         debug!("Read from IO address: {:#X}", address);
         match address {
-            //0xFF00 => u8::from(self.joypad.clone()),
-            0xFF00 => u8::from(self.joypad.clone()),
+            0xFF00 => u8::from(self.joypad),
             0xFF01 => self.serial_data[0] as u8,
             0xFF02 => self.serial_data[1] as u8,
             0xFF04 => {

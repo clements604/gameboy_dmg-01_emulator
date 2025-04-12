@@ -112,59 +112,62 @@ impl Emulator {
     }
 
     fn cycle(&mut self) {
-        // Process SDL events less frequently (every 32 cycles)
-        if self.input_check_counter % 32 == 0 {
+        if self.input_check_counter % 8 == 0 {
             if !self.main_display.process_events() {
                 self.running = false;
                 return;
             }
         }
 
-        // Check input every 4 CPU cycles
-        if self.input_check_counter % 4 == 0 {
-            // Get current key state
+        // Process inputs every 2 cycles for responsiveness
+        if self.input_check_counter % 2 == 0 {
             let current_keys = self.main_display.get_pressed_keys();
-
-            // Store previous joypad state to detect real changes
-            let previous_joypad_state = u8::from(self.memory_bus.dmg_io.joypad);
             let mut joypad = self.memory_bus.dmg_io.joypad;
 
-            // Reset all buttons first
-            joypad.button_released(Button::Up);
-            joypad.button_released(Button::Down);
-            joypad.button_released(Button::Left);
-            joypad.button_released(Button::Right);
-            joypad.button_released(Button::A);
-            joypad.button_released(Button::B);
-            joypad.button_released(Button::Start);
-            joypad.button_released(Button::Select);
+            // IMPORTANT: Store the selection bits before modifying the joypad
+            let select_buttons = joypad.select_buttons;
+            let select_dpad = joypad.select_dpad;
 
-            // Apply current keys - USING YOUR ORIGINAL KEY MAPPINGS
-            for key in &current_keys {
+            let previous_joypad_state = u8::from(joypad);
+
+            // Reset all buttons to released state
+            joypad.a = true;
+            joypad.b = true;
+            joypad.start = true;
+            joypad.select = true;
+            joypad.up = true;
+            joypad.down = true;
+            joypad.left = true;
+            joypad.right = true;
+
+            // Apply current keys
+            for key in current_keys {
                 match key {
-                    Keycode::Up => joypad.button_pressed(Button::Up),
-                    Keycode::Left => joypad.button_pressed(Button::Left),
-                    Keycode::Down => joypad.button_pressed(Button::Down),
-                    Keycode::Right => joypad.button_pressed(Button::Right),
-                    Keycode::A => joypad.button_pressed(Button::A),     // Changed back to A key
-                    Keycode::B => joypad.button_pressed(Button::B),     // Changed back to B key
-                    Keycode::Return => joypad.button_pressed(Button::Start),
-                    Keycode::Backspace => joypad.button_pressed(Button::Select), // Changed to Backspace
+                    Keycode::Up => joypad.up = false,
+                    Keycode::Down => joypad.down = false,
+                    Keycode::Left => joypad.left = false,
+                    Keycode::Right => joypad.right = false,
+                    Keycode::A => joypad.a = false,
+                    Keycode::B => joypad.b = false,
+                    Keycode::Return => joypad.start = false,
+                    Keycode::Backspace => joypad.select = false,
                     _ => (),
                 }
             }
 
-            // Only trigger interrupt if actual state changed
-            let joypad_state = u8::from(joypad);
-            if joypad_state != previous_joypad_state {
+            // IMPORTANT: Restore the selection bits after updating button states
+            joypad.select_buttons = select_buttons;
+            joypad.select_dpad = select_dpad;
+
+            // Trigger interrupt if state changed
+            let new_joypad_state = u8::from(joypad);
+            if new_joypad_state != previous_joypad_state {
                 self.memory_bus.trigger_interrupt(JOYPAD);
             }
 
             self.memory_bus.dmg_io.joypad = joypad;
-            self.previous_keys = current_keys;
         }
 
-        // Increment input check counter
         self.input_check_counter = (self.input_check_counter + 1) % 32;
         
         let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);

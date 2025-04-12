@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use log::error;
 use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, TextureCreator};
@@ -28,10 +29,25 @@ pub struct MainDisplay {
     pub event_pump: sdl2::EventPump,
     scale: u32,
     keys_to_check: [Keycode; 8],
+    current_keys: Vec<Keycode>,  // Currently pressed keys
+    key_state_changed: bool,     // Flag for optimization
 }
 
 impl MainDisplay {
     pub fn new() -> MainDisplay {
+
+        let mut current_key_states = HashMap::new();
+
+        // Initialize keys we care about
+        current_key_states.insert(Keycode::Up, false);
+        current_key_states.insert(Keycode::Down, false);
+        current_key_states.insert(Keycode::Left, false);
+        current_key_states.insert(Keycode::Right, false);
+        current_key_states.insert(Keycode::A, false);
+        current_key_states.insert(Keycode::B, false);
+        current_key_states.insert(Keycode::Return, false);
+        current_key_states.insert(Keycode::Backspace, false);
+        
         let sdl_context = sdl2::init().unwrap_or_else(|e| {
             panic!("SDL initialization failed: {}", e);
         });
@@ -84,7 +100,9 @@ impl MainDisplay {
             event_pump,
 
             scale,
-            keys_to_check
+            keys_to_check,
+            current_keys: Vec::new(),
+            key_state_changed: false,
         }
     }
 
@@ -115,49 +133,48 @@ impl MainDisplay {
     }
 
     pub fn process_events(&mut self) -> bool {
-        // Process all events at once and update internal key state
         let mut running = true;
 
+        // Process window events (quit, etc.)
         for event in self.event_pump.poll_iter() {
             match event {
-                Event::Quit { .. } => {
-                    running = false;
-                },
-                Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => {
-                    running = false;
-                },
-                // Optionally handle keypresses directly here - see approach 2 below
+                Event::Quit { .. } => running = false,
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => running = false,
                 _ => {}
             }
         }
 
-        return running;
-    }
-    pub fn get_pressed_keys(&mut self) -> Vec<Keycode> {
-        // Create a vector of keys we're checking
-        
-
-        // Process events to update key state and store pressed keys
-        let mut pressed_keys = Vec::new();
-
-        // Get keyboard state
+        // Get current keyboard state (more reliable than tracking events)
         let keyboard_state = self.event_pump.keyboard_state();
+        let mut new_keys = Vec::new();
 
-        // The correct way to check if keys are pressed in SDL2
-        for &key in &self.keys_to_check {
-            // Convert the keycode to a scancode index for keyboard_state
-            let scancode = sdl2::keyboard::Scancode::from_keycode(key);
-            if let Some(sc) = scancode {
-                if keyboard_state.is_scancode_pressed(sc) {
-                    pressed_keys.push(key);
-                }
-            }
-        }
+        // Check each key we care about
+        if keyboard_state.is_scancode_pressed(Scancode::Up) { new_keys.push(Keycode::Up); }
+        if keyboard_state.is_scancode_pressed(Scancode::Down) { new_keys.push(Keycode::Down); }
+        if keyboard_state.is_scancode_pressed(Scancode::Left) { new_keys.push(Keycode::Left); }
+        if keyboard_state.is_scancode_pressed(Scancode::Right) { new_keys.push(Keycode::Right); }
+        if keyboard_state.is_scancode_pressed(Scancode::A) { new_keys.push(Keycode::A); }
+        if keyboard_state.is_scancode_pressed(Scancode::B) { new_keys.push(Keycode::B); }
+        if keyboard_state.is_scancode_pressed(Scancode::Return) { new_keys.push(Keycode::Return); }
+        if keyboard_state.is_scancode_pressed(Scancode::Backspace) { new_keys.push(Keycode::Backspace); }
 
-        pressed_keys
+        // Check if key state has changed
+        self.key_state_changed = new_keys != self.current_keys;
+
+        // Update current keys
+        self.current_keys = new_keys;
+
+        running
+    }
+
+    // Simplified get_pressed_keys
+    pub fn get_pressed_keys(&self) -> &Vec<Keycode> {
+        &self.current_keys
+    }
+
+    // Check if key state changed
+    pub fn has_key_state_changed(&self) -> bool {
+        self.key_state_changed
     }
 }
 

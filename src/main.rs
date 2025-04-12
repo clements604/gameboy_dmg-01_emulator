@@ -89,7 +89,7 @@ impl Emulator {
         
         let lcd = Rc::new(RefCell::new(lcd::LCD::new()));
 
-        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(lcd.clone()/*, display.clone()*/)));
 
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
@@ -184,7 +184,7 @@ impl Emulator {
             let joypad_state = u8::from(joypad);
             if joypad_state != 0xFF {
                 // Force a joypad interrupt on every key change
-                self.cpu.borrow_mut().trigger_interrupt(JOYPAD);
+                self.memory_bus.borrow_mut().trigger_interrupt(JOYPAD);
             }
 
             self.memory_bus.borrow_mut().dmg_io.as_mut().unwrap().borrow_mut().joypad = joypad;
@@ -217,10 +217,13 @@ impl Emulator {
         // Update the timer with the number of CPU cycles
         if self.memory_bus.borrow().dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
             // If timer overflows, trigger a Timer interrupt
-            self.cpu.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
+            self.memory_bus.borrow_mut().trigger_interrupt(interupts::Interrupt::TIMER);
         }
 
-        self.ppu.borrow_mut().tick(cpu_cycles);
+        let ppu_interrupts = self.ppu.borrow_mut().tick(cpu_cycles);
+        for interrupt in ppu_interrupts {
+            self.memory_bus.borrow_mut().trigger_interrupt(interrupt);
+        }
 
         self.memory_bus.borrow_mut().cycle(cpu_cycles);
         /*for _ in 0..cpu_cycles {

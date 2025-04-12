@@ -84,7 +84,7 @@ impl IO {
                 self.timer.enabled = (value & 0b100) != 0; // Check if bit 2 is set
             },
             0xFF40..=0xFF46 => {
-                
+
                 self.ppu.as_ref().borrow_mut().write(address, value);
             },
             0xFF47..=0xFF4B => {

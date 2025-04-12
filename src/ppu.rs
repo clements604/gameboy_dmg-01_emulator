@@ -42,7 +42,6 @@ pub struct Ppu {
     previous_frame_time: u32,
     start_time: u32,
     frame_count: u16,
-    cpu: Rc<RefCell<CPU>>,
     pub lcd: Rc<RefCell<LCD>>,
     //display: Rc<RefCell<Display>>,
     pub lcdc: u8,
@@ -55,6 +54,7 @@ pub struct Ppu {
     pub background_buffer: Vec<u32>,
     pub framebuffer: Vec<u32>,
     pub viewport: Vec<u32>,
+    interrupts: Vec<Interrupt>, // Experimental for change in ownership model
 }
 
 //Display for Ppu
@@ -227,7 +227,6 @@ impl Sprite {
 }
 impl Ppu {
     pub fn new(
-        cpu: Rc<RefCell<CPU>>,
         lcd: Rc<RefCell<LCD>>, /*, display: Rc<RefCell<Display>>*/
     ) -> Ppu {
         Ppu {
@@ -239,7 +238,6 @@ impl Ppu {
             previous_frame_time: 0,
             start_time: 0,
             frame_count: 0,
-            cpu,
             lcd,
             //display,
             lcdc: 0x91,
@@ -255,6 +253,7 @@ impl Ppu {
                 main_display::RED;
                 main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT
             ],
+            interrupts: Vec::new(),
         }
     }
 
@@ -368,7 +367,8 @@ impl Ppu {
         if self.ly == self.ly_compare {
             self.stat |= 0x04; // Set coincidence flag
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
-                self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                self.interrupts.push(Interrupt::LCDSTAT);
             }
         } else {
             self.stat &= !0x04; // Clear coincidence flag
@@ -395,8 +395,10 @@ impl Ppu {
         self.update_stat_interrupts();
     }
 
-    pub fn tick(&mut self, cycles: u8) {
+    pub fn tick(&mut self, cycles: u8) -> Vec<Interrupt> {
         debug!("PPU tick with cycles: {}", cycles);
+
+        self.interrupts.clear();
 
         if !self.lcd_ppu_enabled() {
             debug!("LCD is disabled");
@@ -404,7 +406,7 @@ impl Ppu {
             self.line_ticks = 0;
             self.window_line_counter = 0;
             self.set_ppu_mode(HBLANK_MODE);
-            return;
+            return self.interrupts.clone();
         }
 
         self.line_ticks += cycles as u16;
@@ -417,7 +419,8 @@ impl Ppu {
                 if self.line_ticks >= 80 {
                     // Check for OAM interrupt
                     if self.is_stat_interrupt_enabled(StatInterrupt::OAM) {
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        self.interrupts.push(Interrupt::LCDSTAT);
                     }
 
                     // Check for LYC=LY interrupt
@@ -443,7 +446,8 @@ impl Ppu {
                 if self.line_ticks >= 204 {
                     // Check for H-Blank interrupt
                     if self.is_stat_interrupt_enabled(StatInterrupt::HBLANK) {
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        self.interrupts.push(Interrupt::LCDSTAT);
                     }
 
                     // Render scanline
@@ -466,7 +470,8 @@ impl Ppu {
             VBLANK_MODE => {
                 if self.line_ticks >= 456 {
                     if self.ly == 144 {
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                        self.interrupts.push(Interrupt::VBLANK);
                     }
 
                     // Final line of V-Blank
@@ -486,6 +491,7 @@ impl Ppu {
                 panic!("Invalid PPU mode: {}", self.mode);
             }
         }
+        return self.interrupts.clone();
     }
 
     fn update_stat_interrupts(&mut self) {
@@ -497,7 +503,8 @@ impl Ppu {
             (self.stat & 0x10 != 0 && self.mode == 1) || // V-Blank interrupt
             (self.stat & 0x08 != 0 && self.mode == 0)
         {
-            self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+            //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+            self.interrupts.push(Interrupt::LCDSTAT);
         }
     }
 
@@ -527,7 +534,7 @@ impl Ppu {
                 //self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
-            
+
             0xFF47 => self.lcd.borrow_mut().bg_palette = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
@@ -987,7 +994,7 @@ impl Ppu {
 
         TileData::new(&sprite_tile_data, height)
     }
-    
+
     fn render_background_scanline(&mut self, line: &mut [u32; 160]) {
         if self.is_background_enabled() {
             //let ly = self.ly as usize;
@@ -1185,7 +1192,7 @@ impl Ppu {
 
             // Get the color and render
             let colour = self.lcd.borrow().get_bg_color(colour_id);
-            
+
             line[screen_x] = colour;
         }
 
@@ -1208,7 +1215,7 @@ impl Ppu {
             0x8800 // Tile data at 0x8800-0x97FF (signed)
         }
     }
-    
+
     fn render_scanline(&mut self) {
         let ly = self.ly as usize;
         let mut line = [LIGHTEST_GREEN; 160];

@@ -11,7 +11,7 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
-use crate::{dma, timer};
+use crate::{dma, interupts, timer};
 use crate::timer::{Timer};
 
 use crate::mbc::MBC;
@@ -148,6 +148,12 @@ impl MemoryBus {
     }
     
     pub fn cycle(&mut self, cpu_cycles: u8) {
+        
+        // Timer
+        if self.dmg_io.as_ref().unwrap().borrow_mut().timer.cycle(cpu_cycles) {
+            // If timer overflows, trigger a Timer interrupt
+            self.trigger_interrupt(interupts::Interrupt::TIMER);
+        }
         
         // OAM
         for _ in 0..cpu_cycles {
@@ -360,6 +366,17 @@ impl MemoryBus {
                 }
             }
         }
+    }
+    pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
+        let mut interrupts: InterruptFlags = self.interrupt_flags.into();
+        match interrupt {
+            Interrupt::VBLANK => interrupts.vblank = true,
+            Interrupt::LCDSTAT => interrupts.lcd_stat = true,
+            Interrupt::TIMER => interrupts.timer = true,
+            Interrupt::SERIAL => interrupts.serial = true,
+            Interrupt::JOYPAD => interrupts.joypad = true,
+        }
+        self.interrupt_flags = interrupts.into();
     }
     
 }

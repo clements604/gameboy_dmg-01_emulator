@@ -13,19 +13,17 @@ use crate::timer::{Timer};
 pub struct IO {
     io_registers: [u8; IO_REGISTERS_SIZE],
     serial_data: [char; 2],
-    pub lcd: Rc<RefCell<LCD>>,
     pub ppu: Rc<RefCell<Ppu>>,
     pub joypad: joypad::Joypad,
     pub timer: Timer,
 }
 
 impl IO {
-    pub fn new(lcd: Rc<RefCell<LCD>>, ppu: Rc<RefCell<Ppu>>) -> IO {
+    pub fn new(ppu: Rc<RefCell<Ppu>>) -> IO {
 
         IO {
             io_registers: [0; IO_REGISTERS_SIZE],
             serial_data: ['\0'; 2],
-            lcd,
             ppu,
             joypad: joypad::Joypad::new(),
             timer: Timer::new(),//TODO why have four variants if this is a constant? timer::TimerFrequency::Hz4096
@@ -54,7 +52,7 @@ impl IO {
                 value
             },
             0xFF40..=0xFF46 => self.ppu.as_ref().borrow().read(address),
-            0xFF47..=0xFF4B => self.lcd.as_ref().borrow().read(address),
+            0xFF47..=0xFF4B => self.ppu.as_ref().borrow().read(address),
             _ => {
                 debug!("Reading from IO address: {:#X}", address);
                 self.io_registers[(address - IO_REGISTERS_START) as usize]
@@ -88,7 +86,7 @@ impl IO {
                 self.ppu.as_ref().borrow_mut().write(address, value);
             },
             0xFF47..=0xFF4B => {
-                self.lcd.as_ref().borrow_mut().write(address, value);
+                self.ppu.as_ref().borrow_mut().write(address, value);
             },
             _ => {
                 //debug!("Write to IO address: {:#X}", address);

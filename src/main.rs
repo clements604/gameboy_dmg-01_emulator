@@ -86,14 +86,11 @@ impl Emulator {
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
-        
-        let lcd = Rc::new(RefCell::new(lcd::LCD::new()));
-
-        let ppu = Rc::new(RefCell::new(ppu::Ppu::new(lcd.clone()/*, display.clone()*/)));
+        let ppu = Rc::new(RefCell::new(ppu::Ppu::new()));
 
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
-        let io = Rc::new(RefCell::new(dmg_io::IO::new(lcd.clone(), ppu.clone())));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(ppu.clone())));
 
         memory_bus.borrow_mut().dmg_io = Some(io.clone());
 
@@ -321,7 +318,7 @@ fn main() {
     /*
      * Graphics
     */
-    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
+    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED

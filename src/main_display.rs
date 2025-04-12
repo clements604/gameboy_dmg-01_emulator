@@ -115,20 +115,27 @@ impl MainDisplay {
     }
 
     pub fn process_events(&mut self) -> bool {
-        // Process events and return false if the window should close
+        // Process all events at once and update internal key state
+        let mut running = true;
+
         for event in self.event_pump.poll_iter() {
             match event {
-                Event::Quit { .. } => return false,
+                Event::Quit { .. } => {
+                    running = false;
+                },
                 Event::KeyDown {
                     keycode: Some(Keycode::Escape),
                     ..
-                } => return false,
+                } => {
+                    running = false;
+                },
+                // Optionally handle keypresses directly here - see approach 2 below
                 _ => {}
             }
         }
-        true
-    }
 
+        return running;
+    }
     pub fn get_pressed_keys(&mut self) -> Vec<Keycode> {
         // Create a vector of keys we're checking
         

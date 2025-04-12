@@ -1,15 +1,14 @@
 use crate::display::{DARKEST_GREEN, LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
-use crate::{display, interupts, main, main_display};
+use crate::{display, interupts, lcd, main, main_display};
 use log::{debug, error, info};
-use minifb::Key::P;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 //use crate::display::Display;
 use crate::lcd::LCD;
-use crate::main_display::get_mififb_colour;
+use crate::main_display::get_sdl_colour;
 use crate::memory_bus::MemoryBus;
 use crate::ppu::StatInterrupt::OAM;
 
@@ -43,9 +42,7 @@ pub struct Ppu {
     previous_frame_time: u32,
     start_time: u32,
     frame_count: u16,
-    cpu: Rc<RefCell<CPU>>,
-    pub lcd: Rc<RefCell<LCD>>,
-    //display: Rc<RefCell<Display>>,
+    pub lcd: LCD,
     pub lcdc: u8,
     pub stat: u8,
     pub scroll_x: u8,
@@ -56,6 +53,7 @@ pub struct Ppu {
     pub background_buffer: Vec<u32>,
     pub framebuffer: Vec<u32>,
     pub viewport: Vec<u32>,
+    interrupts: Vec<Interrupt>, // Experimental for change in ownership model
 }
 
 //Display for Ppu
@@ -227,10 +225,7 @@ impl Sprite {
     }
 }
 impl Ppu {
-    pub fn new(
-        cpu: Rc<RefCell<CPU>>,
-        lcd: Rc<RefCell<LCD>>, /*, display: Rc<RefCell<Display>>*/
-    ) -> Ppu {
+    pub fn new() -> Ppu {
         Ppu {
             oam_ram: [0; 0xA0],
             vram: [0x0000; 0x2000],
@@ -240,9 +235,9 @@ impl Ppu {
             previous_frame_time: 0,
             start_time: 0,
             frame_count: 0,
-            cpu,
-            lcd,
-            //display,
+            
+            lcd: lcd::LCD::new(),
+
             lcdc: 0x91,
             stat: 0x85,
             scroll_x: 0,
@@ -256,6 +251,7 @@ impl Ppu {
                 main_display::RED;
                 main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT
             ],
+            interrupts: Vec::new(),
         }
     }
 
@@ -369,7 +365,8 @@ impl Ppu {
         if self.ly == self.ly_compare {
             self.stat |= 0x04; // Set coincidence flag
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
-                self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                self.interrupts.push(Interrupt::LCDSTAT);
             }
         } else {
             self.stat &= !0x04; // Clear coincidence flag
@@ -396,8 +393,10 @@ impl Ppu {
         self.update_stat_interrupts();
     }
 
-    pub fn tick(&mut self, cycles: u8) {
+    pub fn tick(&mut self, cycles: u8) -> Vec<Interrupt> {
         debug!("PPU tick with cycles: {}", cycles);
+
+        self.interrupts.clear();
 
         if !self.lcd_ppu_enabled() {
             debug!("LCD is disabled");
@@ -405,7 +404,7 @@ impl Ppu {
             self.line_ticks = 0;
             self.window_line_counter = 0;
             self.set_ppu_mode(HBLANK_MODE);
-            return;
+            return self.interrupts.clone();
         }
 
         self.line_ticks += cycles as u16;
@@ -418,7 +417,8 @@ impl Ppu {
                 if self.line_ticks >= 80 {
                     // Check for OAM interrupt
                     if self.is_stat_interrupt_enabled(StatInterrupt::OAM) {
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        self.interrupts.push(Interrupt::LCDSTAT);
                     }
 
                     // Check for LYC=LY interrupt
@@ -444,7 +444,8 @@ impl Ppu {
                 if self.line_ticks >= 204 {
                     // Check for H-Blank interrupt
                     if self.is_stat_interrupt_enabled(StatInterrupt::HBLANK) {
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+                        self.interrupts.push(Interrupt::LCDSTAT);
                     }
 
                     // Render scanline
@@ -467,7 +468,8 @@ impl Ppu {
             VBLANK_MODE => {
                 if self.line_ticks >= 456 {
                     if self.ly == 144 {
-                        self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                        self.interrupts.push(Interrupt::VBLANK);
                     }
 
                     // Final line of V-Blank
@@ -487,6 +489,7 @@ impl Ppu {
                 panic!("Invalid PPU mode: {}", self.mode);
             }
         }
+        return self.interrupts.clone();
     }
 
     fn update_stat_interrupts(&mut self) {
@@ -498,7 +501,8 @@ impl Ppu {
             (self.stat & 0x10 != 0 && self.mode == 1) || // V-Blank interrupt
             (self.stat & 0x08 != 0 && self.mode == 0)
         {
-            self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+            //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+            self.interrupts.push(Interrupt::LCDSTAT);
         }
     }
 
@@ -510,7 +514,7 @@ impl Ppu {
             0xFF43 => self.scroll_x,
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
-            0xFF47 => self.lcd.borrow().bg_palette,
+            0xFF47 => self.lcd.bg_palette,
             _ => {
                 debug!("Invalid LCD address: {:#X}", address);
                 0xFF
@@ -528,17 +532,9 @@ impl Ppu {
                 //self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
-            0xFF46 => {
-                debug!("DMA transfer start: {:#X}", value);
-                self.lcd
-                    .borrow_mut()
-                    .dma
-                    .upgrade()
-                    .unwrap()
-                    .borrow_mut()
-                    .dma_start(value);
-            }
-            0xFF47 => self.lcd.borrow_mut().bg_palette = value,
+            0xFF47..=0xFF4B => {
+                self.lcd.write(address, value);
+            },
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
@@ -645,7 +641,7 @@ impl Ppu {
     }
 
     fn get_bgp_palette(&self, bit_pair: u8) -> u8 {
-        let palette = self.lcd.borrow().bg_palette;
+        let palette = self.lcd.bg_palette;
         match bit_pair {
             0b00 => palette & 0b0000_0011,
             0b01 => (palette & 0b0000_1100) >> 2,
@@ -838,7 +834,7 @@ impl Ppu {
 
     fn get_window_tile_map_for_scanline(&self, scanline: u8) -> [u8; 32] {
         // First check if window is enabled and the scanline is within window area
-        if !self.window_enabled() || scanline < self.lcd.borrow().window_y {
+        if !self.window_enabled() || scanline < self.lcd.window_y {
             return [0; 32]; // Return empty array if window not visible on this scanline
         }
 
@@ -855,7 +851,7 @@ impl Ppu {
 
         // Calculate which row of the window we're drawing
         // Window is positioned relative to WY register
-        let window_row = (scanline as u16 - self.lcd.borrow().window_y as u16) / 8;
+        let window_row = (scanline as u16 - self.lcd.window_y as u16) / 8;
 
         // Unlike background, window doesn't wrap, but we'll cap at 32 rows max
         if window_row >= 32 {
@@ -878,7 +874,7 @@ impl Ppu {
 
         for (index, tile_item) in tile_map.iter().enumerate() {
             let tile = tile_set[*tile_item as usize];
-            let mfb_tile = self.convert_tile_to_minifb_format(tile);
+            let mfb_tile = self.convert_tile_to_sdl_format(tile);
 
             for (x, pixel) in mfb_tile.iter().enumerate() {
                 let h_offset = (x % 8) + ((index % 32) * 8);
@@ -887,8 +883,8 @@ impl Ppu {
             }
         }
     }
-    pub fn convert_tile_to_minifb_format(&mut self, tile_data: [u8; 16]) -> Vec<u32> {
-        let mut minifb_tile: Vec<u32> = vec![main_display::RED; 64];
+    pub fn convert_tile_to_sdl_format(&mut self, tile_data: [u8; 16]) -> Vec<u32> {
+        let mut sdl_tile: Vec<u32> = vec![main_display::RED; 64];
         for x in (0..tile_data.len()).step_by(2) {
             let lsb = tile_data[x];
             let msb = tile_data[x + 1];
@@ -897,15 +893,15 @@ impl Ppu {
                 let bit_msb = msb & (1 << bit) != 0;
                 let pair = ((bit_lsb as u8) << 1) | (bit_msb as u8);
                 let bgp_palette = self.convert_pixel_to_bgb_palette(pair);
-                let mfb_pixel = main_display::get_mififb_colour(bgp_palette);
-                //debug!("MFB Pixel: {:#X}", mfb_pixel);
-                minifb_tile[(x / 2 * 8) + (7 - bit) as usize] = mfb_pixel;
+                let pixel_color = main_display::get_gb_colour(bgp_palette);
+                //debug!("SDL Pixel: {:#X}", pixel_color);
+                sdl_tile[(x / 2 * 8) + (7 - bit) as usize] = pixel_color;
             }
         }
-        minifb_tile
+        sdl_tile
     }
     fn convert_pixel_to_bgb_palette(&self, pixel: u8) -> u8 {
-        let palette = self.lcd.borrow().bg_palette;
+        let palette = self.lcd.bg_palette;
         match pixel {
             0b00 => palette & 0b0000_0011,
             0b01 => (palette & 0b0000_1100) >> 2,
@@ -918,90 +914,6 @@ impl Ppu {
     /*
     Returns the framebuffer for the Gameboy's visible viewport
      */
-    pub fn render_viewport(&mut self) -> Vec<u32> {
-        const TILE_SIZE: usize = 8;
-        const VIEWPORT_WIDTH: usize = 160;
-        const VIEWPORT_HEIGHT: usize = 144;
-        const TILE_MAP_WIDTH: usize = 32;
-        let scx = self.scroll_x as usize; // Scroll X
-        let scy = self.scroll_y as usize; // Scroll Y
-
-        // Calculate the starting tile and pixel offsets
-        let start_tile_x = scx / TILE_SIZE;
-        let start_tile_y = scy / TILE_SIZE;
-        let pixel_offset_x = scx % TILE_SIZE;
-        let pixel_offset_y = scy % TILE_SIZE;
-
-        let mut framebuffer: Vec<u32> = vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT];
-
-        // Loop through the 20x18 tiles visible in the viewport
-        for tile_y in 0..18 {
-            for tile_x in 0..20 {
-                // Calculate the position in the tile map
-                let map_x = (start_tile_x + tile_x) % TILE_MAP_WIDTH;
-                let map_y = (start_tile_y + tile_y) % TILE_MAP_WIDTH;
-                let tile_index = self.get_tile_index(map_x, map_y);
-
-                // Fetch the tile data from VRAM
-                let tile_data = self.get_tile_data(tile_index);
-                let sprite_data = self.get_sprites();
-
-                // Extract pixel data, handling partial tiles at the edges
-                for row in 0..TILE_SIZE {
-                    let screen_y = (tile_y * TILE_SIZE + row).wrapping_sub(pixel_offset_y);
-                    if screen_y < VIEWPORT_HEIGHT {
-                        for col in 0..TILE_SIZE {
-                            let screen_x = (tile_x * TILE_SIZE + col).wrapping_sub(pixel_offset_x);
-                            if screen_x < VIEWPORT_WIDTH {
-                                let pixel = tile_data.get_pixel(row, col);
-                                let colour = main_display::get_mififb_colour(pixel);
-                                framebuffer[screen_y * VIEWPORT_WIDTH + screen_x] = colour;
-                            }
-                        }
-                    }
-                }
-
-                // Draw sprites
-                for sprite in sprite_data.iter() {
-                    let sprite_tile_data = self.get_sprite_data(sprite);
-
-                    let screen_x = sprite.x as isize - 8;
-                    let screen_y = sprite.y as isize - 16;
-
-                    for row in 0..8 {
-                        for col in 0..8 {
-                            // Calculate the color ID from the sprite tile data
-                            let pixel = sprite_tile_data.get_pixel(row, col);
-                            if pixel == 0 {
-                                continue; // Skip transparent pixels
-                            }
-                            let colour = main_display::get_mififb_colour(pixel);
-
-                            // Calculate the pixel's position on the screen
-                            let pixel_x = screen_x + col as isize;
-                            let pixel_y = screen_y + row as isize;
-
-                            // Check screen bounds
-                            if pixel_x >= 0 && pixel_x < 160 && pixel_y >= 0 && pixel_y < 144 {
-                                // Calculate the index in the frame buffer
-                                let index = pixel_y as usize * 160 + pixel_x as usize;
-
-                                // Draw the pixel if it has higher priority
-                                if colour != LIGHTEST_GREEN
-                                    && (sprite.flags.priority
-                                        || (framebuffer[index] == LIGHTEST_GREEN))
-                                {
-                                    //FIXME possibly correct but removes mouth entirely
-                                    framebuffer[index] = colour;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        framebuffer
-    }
     pub fn get_tile_index(&self, map_x: usize, map_y: usize) -> u8 {
         const TILE_MAP_WIDTH: usize = 32; // 32 tiles per row in the tile map
                                           // Determine which tile map is being used based on the LCDC register
@@ -1081,7 +993,7 @@ impl Ppu {
 
         TileData::new(&sprite_tile_data, height)
     }
-    
+
     fn render_background_scanline(&mut self, line: &mut [u32; 160]) {
         if self.is_background_enabled() {
             //let ly = self.ly as usize;
@@ -1099,7 +1011,7 @@ impl Ppu {
                 let row = global_y % 8;
                 let col = global_x % 8;
                 let pixel = tile.get_pixel(row, col);
-                line[x] = self.lcd.borrow().get_bg_color(pixel);
+                line[x] = self.lcd.get_bg_color(pixel);
             }
 
             //self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
@@ -1174,12 +1086,12 @@ impl Ppu {
 
                 // Determine sprite color based on palette
                 let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
-                let sprite_color = self.lcd.borrow().get_sprite_color(sprite_palette_index, sprite_pixel);
+                let sprite_color = self.lcd.get_sprite_color(sprite_palette_index, sprite_pixel);
 
                 // Skip if sprite color is transparent (same as lightest green)
-                if sprite_color == LIGHTEST_GREEN {
+                /*if sprite_color == LIGHTEST_GREEN {
                     continue;
-                }
+                }*/
 
                 // Apply sprite priority rules:
                 // - If sprite has priority bit set (BG over OBJ), only show sprite if BG is transparent
@@ -1208,8 +1120,8 @@ impl Ppu {
             return;
         }
 
-        let window_y = self.lcd.borrow().window_y;
-        let window_x = self.lcd.borrow().window_x;
+        let window_y = self.lcd.window_y;
+        let window_x = self.lcd.window_x;
 
         // Only proceed if we're on or after the window's Y position
         if self.ly < window_y {
@@ -1278,8 +1190,8 @@ impl Ppu {
             let colour_id = (colour_bit_1 << 1) | colour_bit_0;
 
             // Get the color and render
-            let colour = self.lcd.borrow().get_bg_color(colour_id);
-            
+            let colour = self.lcd.get_bg_color(colour_id);
+
             line[screen_x] = colour;
         }
 
@@ -1302,7 +1214,7 @@ impl Ppu {
             0x8800 // Tile data at 0x8800-0x97FF (signed)
         }
     }
-    
+
     fn render_scanline(&mut self) {
         let ly = self.ly as usize;
         let mut line = [LIGHTEST_GREEN; 160];
@@ -1312,7 +1224,7 @@ impl Ppu {
         self.render_sprite_scanline(&mut line);
 
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
-        if self.window_enabled() && self.ly >= self.lcd.borrow().window_y && self.lcd.borrow().window_x <= 166 {
+        if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x <= 166 {
             self.window_line_counter = self.window_line_counter.wrapping_add(1);
         }
     }

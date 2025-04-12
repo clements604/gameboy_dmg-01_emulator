@@ -1,5 +1,7 @@
+use std::io;
+use std::path::Path;
 use log::{debug, error, info};
-use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks};
+use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks, SRAM};
 use crate::rom::ROMBanks;
 
 const MBC5_MAX_ROM_BANKS: usize = 512; // 8MB
@@ -7,7 +9,7 @@ const MBC5_MAX_RAM_BANKS: usize = 16;  // 128KB
 
 pub struct MBC5 {
     rom_banks: ROMBanks,
-    ram: Vec<u8>,
+    sram: Option<SRAM>,
 
     rom_bank: usize,
     ram_bank: usize,
@@ -20,15 +22,22 @@ pub struct MBC5 {
 }
 
 impl MBC5 {
-    pub fn new(rom_banks: ROMBanks, ram_size: u8, has_battery: bool, has_rumble: bool) -> Self {
+    pub fn new(rom_banks: ROMBanks, ram_size: u8, has_battery: bool, has_rumble: bool, rom_path: &Path) -> Self {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         let has_ram = ram_size > 0;
         let rom_bank_count = std::cmp::min(MBC5_MAX_ROM_BANKS, rom_banks.data.len());
         let ram_bank_count = get_ram_banks(ram_size);
 
+        // Create SRAM only if there is RAM
+        let sram = if has_ram {
+            Some(SRAM::new(ram_size_bytes, rom_path))
+        } else {
+            None
+        };
+
         MBC5 {
             rom_banks,
-            ram: vec![0; ram_size_bytes],
+            sram,
             rom_bank: 1,  // Default to bank 1
             ram_bank: 0,
             ram_enabled: false,
@@ -83,11 +92,11 @@ impl MBC for MBC5 {
             0xA000..=0xBFFF => {
                 if self.ram_enabled && self.has_ram {
                     // Read from RAM
-                    let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
-                    if ram_addr < self.ram.len() {
-                        self.ram[ram_addr]
+                    if let Some(sram) = &self.sram {
+                        let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                        sram.read(ram_addr)
                     } else {
-                        debug!("Attempted to read from non-existent RAM at bank {} addr {:04X}", self.ram_bank, address);
+                        error!("SRAM is None when trying to read from it");
                         0xFF
                     }
                 } else {
@@ -144,17 +153,17 @@ impl MBC for MBC5 {
             0xA000..=0xBFFF => {
                 if self.ram_enabled && self.has_ram {
                     // Write to RAM
-                    let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
-                    if ram_addr < self.ram.len() {
-                        self.ram[ram_addr] = value;
+                    if let Some(sram) = &mut self.sram {
+                        let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                        sram.write(ram_addr, value);
 
-                        // If this is battery-backed RAM, mark it for saving
+                        // Log if this is battery-backed RAM
                         if self.has_battery {
                             debug!("Battery-backed MBC5 RAM write at bank {} addr {:04X} = {:02X}", 
                                   self.ram_bank, address, value);
                         }
                     } else {
-                        debug!("Attempted to write to non-existent RAM at bank {} addr {:04X}", self.ram_bank, address);
+                        error!("SRAM is None when trying to write to it");
                     }
                 } else {
                     debug!("Attempted to write to disabled RAM: {:04X} = {:02X}", address, value);
@@ -177,5 +186,21 @@ impl MBC for MBC5 {
 
     fn is_ram_enabled(&self) -> bool {
         self.ram_enabled && self.has_ram
+    }
+
+    fn save_ram(&mut self) -> Result<(), io::Error> {
+        // Only save if this cartridge has battery-backed RAM
+        if self.has_battery && self.has_ram {
+            if let Some(sram) = &mut self.sram {
+                sram.save();
+                debug!("MBC5 RAM saved successfully");
+            } else {
+                error!("SRAM is None when trying to save it");
+            }
+        } else {
+            debug!("Not saving MBC5 RAM - no battery or no RAM");
+        }
+
+        Ok(())
     }
 }

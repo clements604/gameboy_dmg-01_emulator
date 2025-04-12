@@ -3,7 +3,6 @@ use log::{debug, error};
 use std::cell::RefCell;
 use std::rc::Rc;
 pub struct Dma {
-    memory_bus: Rc<RefCell<MemoryBus>>,
     active: bool,
     dma_byte: u8,
     dma_value: u8,
@@ -11,9 +10,8 @@ pub struct Dma {
 }
 
 impl Dma {
-    pub fn new(memory_bus: Rc<RefCell<MemoryBus>>) -> Dma {
+    pub fn new() -> Dma {
         Dma {
-            memory_bus,
             active: false,
             dma_byte: 0,
             dma_value: 0,
@@ -27,21 +25,18 @@ impl Dma {
         self.dma_delay = 2;
         self.dma_value = start;
     }
-    pub fn dma_tick(&mut self) {
+    pub fn dma_tick(&mut self) -> Option<(u16, u16)> {
         if !self.active {
-            return;
+            return None;
         }
 
         if self.dma_delay > 0 {
             self.dma_delay -= 1;
-            return;
+            return None;
         }
-        
-        //let mut memory_bus = self.memory_bus.borrow_mut();
-        let value = self.memory_bus.borrow().read_byte((self.dma_value as u16 * 0x100) + self.dma_byte as u16);
-        //memory_bus.write_byte(self.dma_byte as u16, value);
-        
-        self.memory_bus.borrow_mut().ppu.as_ref().unwrap().borrow_mut().oam_write(self.dma_byte as u16, value);
+
+        let src_addr = (self.dma_value as u16 * 0x100) + self.dma_byte as u16;
+        let dest_addr = self.dma_byte as u16;
         
         debug!(
             "DMA transfer: {:#X} -> {:#X}",
@@ -54,6 +49,8 @@ impl Dma {
         if !self.active {
             debug!("DMA transfer complete");
         }
+
+        Some((src_addr, dest_addr))
     }
 
     pub fn is_transferring(&self) -> bool {

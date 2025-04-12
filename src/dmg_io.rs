@@ -8,40 +8,32 @@ use crate::{joypad, timer};
 use crate::lcd::LCD;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE, MemoryBus};
 use crate::ppu::Ppu;
-use crate::timer::{Timer, TimerFrequency};
+use crate::timer::{Timer};
 
 pub struct IO {
     io_registers: [u8; IO_REGISTERS_SIZE],
     serial_data: [char; 2],
-    pub lcd: Rc<RefCell<LCD>>,
-    //dma: Rc<RefCell<Dma>>,
-    cpu: Rc<RefCell<CPU>>,
-    pub ppu: Rc<RefCell<Ppu>>,
+    pub ppu: Ppu,
     pub joypad: joypad::Joypad,
     pub timer: Timer,
 }
 
 impl IO {
-    pub fn new(/*dma: Rc<RefCell<Dma>>, */cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>, ppu: Rc<RefCell<Ppu>>) -> IO {
+    pub fn new() -> IO {
 
         IO {
             io_registers: [0; IO_REGISTERS_SIZE],
             serial_data: ['\0'; 2],
-            lcd,
-            //dma,
-            cpu: cpu.clone(),
-            ppu,
+            ppu: Ppu::new(),
             joypad: joypad::Joypad::new(),
-            //timer: Timer::new(cpu.clone()),
             timer: Timer::new(),//TODO why have four variants if this is a constant? timer::TimerFrequency::Hz4096
         }
     }
 
-    pub fn read(&mut self, address: u16) -> u8 {
+    pub fn read(&self, address: u16) -> u8 {
         debug!("Read from IO address: {:#X}", address);
         match address {
-            //0xFF00 => u8::from(self.joypad.clone()),
-            0xFF00 => u8::from(self.joypad.clone()),
+            0xFF00 => u8::from(self.joypad),
             0xFF01 => self.serial_data[0] as u8,
             0xFF02 => self.serial_data[1] as u8,
             0xFF04 => {
@@ -58,15 +50,15 @@ impl IO {
                 }
                 value
             },
-            0xFF40..=0xFF46 => self.ppu.as_ref().borrow().read(address),
-            0xFF47..=0xFF4B => self.lcd.as_ref().borrow().read(address),
+            0xFF40..=0xFF46 => self.ppu.read(address),
+            0xFF47..=0xFF4B => self.ppu.read(address),
             _ => {
                 debug!("Reading from IO address: {:#X}", address);
                 self.io_registers[(address - IO_REGISTERS_START) as usize]
             }
         }
     }
-    pub fn write(&mut self, address: u16, value: u8/*, cpu: &mut CPU*/) {
+    pub fn write(&mut self, address: u16, value: u8) {
         //debug!("Write to IO address: {:#X}", address);
         match address {
             0xFF00 => {
@@ -79,7 +71,8 @@ impl IO {
                 self.serial_data[1] = value as char;
             },
             0xFF04 => {
-                self.timer.div = 0; // Reset DIV when written to
+                //self.timer.div = 0; // Reset DIV when written to
+                self.timer.reset_div();
             },
             0xFF05 => self.timer.tima = value,
             0xFF06 => self.timer.tma = value,
@@ -88,10 +81,11 @@ impl IO {
                 self.timer.enabled = (value & 0b100) != 0; // Check if bit 2 is set
             },
             0xFF40..=0xFF46 => {
-                self.ppu.as_ref().borrow_mut().write(address, value);
+
+                self.ppu.write(address, value);
             },
             0xFF47..=0xFF4B => {
-                self.lcd.as_ref().borrow_mut().write(address, value);
+                self.ppu.write(address, value);
             },
             _ => {
                 //debug!("Write to IO address: {:#X}", address);

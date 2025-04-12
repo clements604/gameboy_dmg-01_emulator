@@ -11,8 +11,8 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
-use crate::{timer};
-use crate::timer::{Timer, TimerFrequency};
+use crate::{dma, dmg_io, interupts, timer};
+use crate::timer::{Timer};
 
 use crate::mbc::MBC;
 use crate::mbc_factory;
@@ -74,13 +74,9 @@ pub struct MemoryBus {
     pub oam: [u8; OAM_SIZE],
     pub unused: [u8; UNUSED_SIZE],
     pub hram: [u8; HRAM_SIZE],
-    
-    pub ppu: Option<Rc<RefCell<Ppu>>>,
-    
     rom_debug: rom_debug,
-    pub dmg_io: Option<Rc<RefCell<IO>>>,
-    pub dma: Option<Rc<RefCell<Dma>>>,
-    pub cpu:  Option<Rc<RefCell<CPU>>>,
+    pub dmg_io: IO,
+    pub dma: Dma,
 
     boot_rom_enabled: bool,
     pub interrupt_master_enable: bool,
@@ -88,11 +84,11 @@ pub struct MemoryBus {
     pub interrupt_enable_register: u8,
     pub interrupt_flags: u8,
 
-    mbc: Option<Box<dyn MBC>>,
+    pub mbc: Option<Box<dyn MBC>>,
 }
 
 impl MemoryBus {
-    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, io: Option<Rc<RefCell<IO>>>, dma:Option<Rc<RefCell<Dma>>>, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
+    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM) -> MemoryBus {
 
         let mbc = mbc_factory::create_mbc(rom);
         let rom_banks = rom.load_rom_to_banks();
@@ -123,13 +119,13 @@ impl MemoryBus {
             unused: [0; UNUSED_SIZE],
             hram: [0; HRAM_SIZE],
             
-            ppu: None,
+            //ppu: None,
             
             rom_debug: rom_debug::new(),
-            dmg_io: io,
-            dma,
-            cpu,
- 
+            dmg_io: dmg_io::IO::new(),
+            
+            dma: dma::Dma::new(),
+
             interrupt_master_enable: false,
             enabling_ime: false,
             interrupt_enable_register: 0,
@@ -144,6 +140,24 @@ impl MemoryBus {
 
         memory_bus
     }
+    
+    pub fn cycle(&mut self, cpu_cycles: u8) {
+        
+        // Timer
+        if self.dmg_io.timer.cycle(cpu_cycles) {
+            // If timer overflows, trigger a Timer interrupt
+            self.trigger_interrupt(interupts::Interrupt::TIMER);
+        }
+        
+        // OAM
+        for _ in 0..cpu_cycles {
+            if let Some((src_addr, dest_addr)) = self.dma.dma_tick() {
+                let value = self.read_byte(src_addr);
+                self.dmg_io.ppu.oam_write(dest_addr, value);
+            }
+            
+        }
+    }
 
     pub fn read_byte(&self, address: u16) -> u8 {
         //debug!("Reading byte from address {:X}", address);
@@ -156,17 +170,17 @@ impl MemoryBus {
                 }
             },
             ROM_BANK_N_START..=ROM_BANK_N_END => self.mbc.as_ref().unwrap().read_byte(address),
-            VRAM_START..=VRAM_END => self.ppu.as_ref().unwrap().borrow().vram_read(address),
+            VRAM_START..=VRAM_END => self.dmg_io.ppu.vram_read(address),
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_ref().unwrap().read_byte(address),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize],
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
             ECHO_RAM_START..=ECHO_RAM_END => self.echo_ram[(address - ECHO_RAM_START) as usize],
             OAM_START..=OAM_END => {
-                if self.dma.as_ref().unwrap().borrow().is_transferring() {
+                if self.dma.is_transferring() {
                     //panic!("DMA active");
                     return 0xFF;
                 }
-                self.ppu.as_ref().unwrap().borrow().oam_read(address - OAM_START)
+                self.dmg_io.ppu.oam_read(address - OAM_START)
                 //self.ppu_experiment.as_ref().unwrap().borrow().oam_read(address - OAM_START)
             },
             //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize],
@@ -182,7 +196,7 @@ impl MemoryBus {
                     debug!("Interrupt flag read");
                     return self.interrupt_flags;
                 }
-                self.dmg_io.as_ref().unwrap().borrow_mut().read(address)
+                self.dmg_io.read(address)
             }
             HRAM_START..=HRAM_END => self.hram[(address - HRAM_START) as usize],
             INTERRUPT_ENABLE_REGISTER => {
@@ -222,7 +236,7 @@ impl MemoryBus {
             
             VRAM_START..=VRAM_END => { 
                 //self.vram[(address - VRAM_START) as usize] = value;
-                self.ppu.as_ref().unwrap().borrow_mut().vram_write(address, value);
+                self.dmg_io.ppu.vram_write(address, value);
             },
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => self.mbc.as_mut().unwrap().write_byte(address, value),
             WRAM_0_START..=WRAM_0_END => self.wram_0[(address - WRAM_0_START) as usize] = value,
@@ -231,24 +245,30 @@ impl MemoryBus {
                 self.echo_ram[(address - ECHO_RAM_START) as usize] = value
             }
             OAM_START..=OAM_END => {
-                if !self.dma.as_ref().unwrap().borrow().is_transferring() {
-                    self.ppu.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
+                if !self.dma.is_transferring() {
+                    self.dmg_io.ppu.oam_write(address - OAM_START, value);
                     //self.ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                 }
             },
             //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
             UNUSED_START..=UNUSED_END => error!("Write to unused memory"),
             IO_REGISTERS_START..=IO_REGISTERS_END => {
-                if address == 0xFF0F {
-                    self.interrupt_flags = value;
+                match address {
+                    0xFF0F => {
+                        self.interrupt_flags = value;
+                    },
+                    0xFF50 => {
+                        info!("Boot ROM disable");
+                        self.boot_rom_enabled = false;
+                    },
+                    0xFF46 => {
+                        debug!("DMA transfer start: {:#X}", value);
+                        self.dma.dma_start(value);
+                    },
+                    _ => {
+                        self.dmg_io.write(address, value);
+                    }
                 }
-                if address == 0xFF50 {
-                    info!("Boot ROM disable");
-                    self.boot_rom_enabled = false;
-                    //panic!("Boot ROM disable");
-                    return;
-                }
-                self.dmg_io.as_ref().unwrap().borrow_mut().write(address, value);
             },
             HRAM_START..=HRAM_END => {
                 //unimplemented!("HRAM write");
@@ -338,6 +358,17 @@ impl MemoryBus {
                 }
             }
         }
+    }
+    pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
+        let mut interrupts: InterruptFlags = self.interrupt_flags.into();
+        match interrupt {
+            Interrupt::VBLANK => interrupts.vblank = true,
+            Interrupt::LCDSTAT => interrupts.lcd_stat = true,
+            Interrupt::TIMER => interrupts.timer = true,
+            Interrupt::SERIAL => interrupts.serial = true,
+            Interrupt::JOYPAD => interrupts.joypad = true,
+        }
+        self.interrupt_flags = interrupts.into();
     }
     
 }

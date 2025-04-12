@@ -15,7 +15,6 @@ pub const DEFAULT_COLOURS: [u32; 4] = [
     DARKEST_GREEN   // This would be the color for palette 11
 ];
 pub struct LCD {
-    pub dma: Weak<RefCell<Dma>>,
     pub bg_palette: u8,
     pub obj_palette: [u8; 2],
     pub window_x: u8,
@@ -27,7 +26,7 @@ pub struct LCD {
 }
 
 impl LCD{
-    pub fn new(dma: Rc<RefCell<Dma>>) -> LCD {
+    pub fn new() -> LCD {
         
         let mut bg_colours = [0; 4];
         let mut sp1_colours = [0; 4];
@@ -39,7 +38,6 @@ impl LCD{
         }
         
         LCD {
-            dma: Rc::downgrade(&dma),
             bg_palette: 0xFC,
             obj_palette: [0xFF; 2],
             window_x: 0,

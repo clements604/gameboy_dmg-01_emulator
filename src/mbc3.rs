@@ -1,7 +1,10 @@
 use log::{debug, error, info};
-use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks};
+use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks, SRAM};
 use crate::rom::ROMBanks;
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::path::{Path, PathBuf};
+use std::fs;
+use std::io::{self, Read, Write};
 
 const MBC3_MAX_ROM_BANKS: usize = 128; // 2MB
 const RTC_REG_COUNT: usize = 5;
@@ -15,13 +18,205 @@ const RTC_DAYS_HIGH: usize = 4;  // Upper 1 bit of day counter + flags
 const RTC_HALT_BIT: u8 = 0x40;   // Bit 6, RTC halt flag
 const RTC_DAY_CARRY_BIT: u8 = 0x80; // Bit 7, day counter carry flag
 
+/// Represents the Real-Time Clock data for MBC3
+pub struct RtcData {
+    registers: [u8; RTC_REG_COUNT],
+    latch_registers: [u8; RTC_REG_COUNT],
+    base_time: SystemTime,
+    latch_state: bool,
+    dirty: bool,
+    save_path: PathBuf,
+}
+
+impl RtcData {
+    pub fn new(rom_path: &Path) -> Self {
+        let mut rtc = RtcData {
+            registers: [0; RTC_REG_COUNT],
+            latch_registers: [0; RTC_REG_COUNT],
+            base_time: SystemTime::now(),
+            latch_state: false,
+            dirty: false,
+            save_path: rom_path.with_extension("rtc"),
+        };
+
+        // Try to load existing RTC data
+        rtc.load().unwrap_or_else(|e| {
+            debug!("Could not load RTC data: {}", e);
+        });
+
+        rtc
+    }
+
+    /// Load RTC data from a saved file
+    pub fn load(&mut self) -> Result<(), io::Error> {
+        if self.save_path.exists() {
+            let data = fs::read(&self.save_path)?;
+
+            if data.len() != RTC_REG_COUNT {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid RTC file size"));
+            }
+
+            // Load the registers
+            for i in 0..RTC_REG_COUNT {
+                self.registers[i] = data[i];
+            }
+
+            // Copy to latch registers
+            self.latch_registers.copy_from_slice(&self.registers);
+
+            // Reset base time to now
+            self.base_time = SystemTime::now();
+            self.dirty = false;
+        }
+
+        Ok(())
+    }
+
+    /// Save RTC data to file
+    pub fn save(&mut self) -> Result<(), io::Error> {
+        if self.dirty {
+            // Update RTC before saving
+            self.update();
+
+            // Write to file
+            fs::write(&self.save_path, &self.registers)?;
+
+            self.dirty = false;
+            debug!("Saved RTC data to {:?}", self.save_path);
+        }
+
+        Ok(())
+    }
+
+    /// Update the RTC registers based on elapsed time
+    pub fn update(&mut self) {
+        // Only update if RTC is not halted
+        if (self.registers[RTC_DAYS_HIGH] & RTC_HALT_BIT) == 0 {
+            // Calculate elapsed seconds since last update
+            if let Ok(elapsed) = SystemTime::now().duration_since(self.base_time) {
+                let seconds = elapsed.as_secs();
+                if seconds > 0 {
+                    // Reset base time
+                    self.base_time = SystemTime::now();
+
+                    // Extract current RTC values
+                    let mut secs = self.registers[RTC_SECONDS] as u64;
+                    let mut mins = self.registers[RTC_MINUTES] as u64;
+                    let mut hours = self.registers[RTC_HOURS] as u64;
+                    let mut days = ((self.registers[RTC_DAYS_HIGH] & 0x01) as u64) << 8 |
+                        self.registers[RTC_DAYS_LOW] as u64;
+
+                    // Add elapsed seconds
+                    secs += seconds;
+
+                    // Propagate carries
+                    if secs >= 60 {
+                        mins += secs / 60;
+                        secs %= 60;
+                    }
+
+                    if mins >= 60 {
+                        hours += mins / 60;
+                        mins %= 60;
+                    }
+
+                    if hours >= 24 {
+                        days += hours / 24;
+                        hours %= 24;
+                    }
+
+                    // Check for day counter overflow (over 511 days)
+                    if days > 511 {
+                        // Set day counter carry flag
+                        self.registers[RTC_DAYS_HIGH] |= RTC_DAY_CARRY_BIT;
+                        days %= 512;
+                    }
+
+                    // Update registers
+                    self.registers[RTC_SECONDS] = secs as u8;
+                    self.registers[RTC_MINUTES] = mins as u8;
+                    self.registers[RTC_HOURS] = hours as u8;
+                    self.registers[RTC_DAYS_LOW] = (days & 0xFF) as u8;
+                    self.registers[RTC_DAYS_HIGH] = (self.registers[RTC_DAYS_HIGH] & 0xFE) |
+                        (((days >> 8) & 0x01) as u8);
+
+                    self.dirty = true;
+                }
+            }
+        }
+    }
+
+    /// Latch RTC values for reading
+    pub fn latch(&mut self) {
+        self.update();
+        self.latch_registers.copy_from_slice(&self.registers);
+    }
+
+    /// Get a latched RTC register value
+    pub fn read_latched(&self, reg_index: usize) -> u8 {
+        if reg_index < RTC_REG_COUNT {
+            self.latch_registers[reg_index]
+        } else {
+            0xFF
+        }
+    }
+
+    /// Write to an RTC register
+    pub fn write_register(&mut self, reg_index: usize, value: u8) {
+        if reg_index < RTC_REG_COUNT {
+            // First, ensure RTC is up-to-date
+            self.update();
+
+            // Apply value to the register with validation
+            match reg_index {
+                RTC_SECONDS => self.registers[reg_index] = value & 0x3F,  // 0-59
+                RTC_MINUTES => self.registers[reg_index] = value & 0x3F,  // 0-59
+                RTC_HOURS => self.registers[reg_index] = value & 0x1F,    // 0-23
+                RTC_DAYS_LOW => self.registers[reg_index] = value,        // 0-255
+                RTC_DAYS_HIGH => {
+                    // Preserve day carry flag if set
+                    let day_carry = self.registers[reg_index] & RTC_DAY_CARRY_BIT;
+                    self.registers[reg_index] = (value & 0xC1) | day_carry;
+
+                    // If halt bit changes, reset base time
+                    if (value & RTC_HALT_BIT) != (self.registers[reg_index] & RTC_HALT_BIT) {
+                        self.base_time = SystemTime::now();
+                    }
+                }
+                _ => {} // Should never happen
+            }
+
+            // Update latched registers too if RTC is halted
+            if (self.registers[RTC_DAYS_HIGH] & RTC_HALT_BIT) != 0 {
+                self.latch_registers[reg_index] = self.registers[reg_index];
+            }
+
+            self.dirty = true;
+        }
+    }
+
+    /// Update latch state and latch RTC data if needed
+    pub fn update_latch_state(&mut self, value: u8) {
+        let new_latch = value & 0x01 != 0;
+
+        if self.latch_state && !new_latch {
+            // Latch the RTC data when transitioning from 1 to 0
+            self.latch();
+        }
+
+        self.latch_state = new_latch;
+    }
+
+    /// Check if RTC data is dirty and needs saving
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+}
+
 pub struct MBC3 {
     rom_banks: ROMBanks,
-    ram: Vec<u8>,
-    rtc_registers: [u8; RTC_REG_COUNT],
-    rtc_latch_registers: [u8; RTC_REG_COUNT],
-    rtc_latch_state: bool,
-    rtc_base_time: SystemTime,
+    sram: Option<SRAM>,
+    rtc: Option<RtcData>,
 
     rom_bank: usize,
     ram_bank: usize,
@@ -34,19 +229,30 @@ pub struct MBC3 {
 }
 
 impl MBC3 {
-    pub fn new(rom_banks: ROMBanks, ram_size: u8, has_battery: bool, has_rtc: bool) -> Self {
+    pub fn new(rom_banks: ROMBanks, ram_size: u8, has_battery: bool, has_rtc: bool, rom_path: &Path) -> Self {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         let has_ram = ram_size > 0;
         let rom_bank_count = std::cmp::min(MBC3_MAX_ROM_BANKS, rom_banks.data.len());
         let ram_bank_count = get_ram_banks(ram_size);
 
+        // Create SRAM only if there is RAM
+        let sram = if has_ram {
+            Some(SRAM::new(ram_size_bytes, rom_path))
+        } else {
+            None
+        };
+
+        // Create RTC only if needed
+        let rtc = if has_rtc {
+            Some(RtcData::new(rom_path))
+        } else {
+            None
+        };
+
         MBC3 {
             rom_banks,
-            ram: vec![0; ram_size_bytes],
-            rtc_registers: [0; RTC_REG_COUNT],
-            rtc_latch_registers: [0; RTC_REG_COUNT],
-            rtc_latch_state: false,
-            rtc_base_time: SystemTime::now(),
+            sram,
+            rtc,
 
             rom_bank: 1,  // Default to bank 1
             ram_bank: 0,
@@ -74,7 +280,9 @@ impl MBC3 {
         self.has_rtc && bank >= 0x08 && bank <= 0x0C
     }
 
-    // Maps RAM bank index to RTC register index
+    // NOTE: This function is kept for reference but is not used directly due to borrowing issues
+    // Instead, the logic is inlined where needed
+    #[allow(dead_code)]
     fn ram_bank_to_rtc_register(&self, bank: usize) -> usize {
         match bank {
             0x08 => RTC_SECONDS,
@@ -84,68 +292,6 @@ impl MBC3 {
             0x0C => RTC_DAYS_HIGH,
             _ => 0 // Should never happen if is_rtc_register check is done first
         }
-    }
-
-    // Update the RTC registers based on elapsed time
-    fn update_rtc(&mut self) {
-        // Only update if RTC is not halted
-        if self.has_rtc && (self.rtc_registers[RTC_DAYS_HIGH] & RTC_HALT_BIT) == 0 {
-            // Calculate elapsed seconds since last update
-            if let Ok(elapsed) = SystemTime::now().duration_since(self.rtc_base_time) {
-                let seconds = elapsed.as_secs();
-                if seconds > 0 {
-                    // Reset base time
-                    self.rtc_base_time = SystemTime::now();
-
-                    // Extract current RTC values
-                    let mut secs = self.rtc_registers[RTC_SECONDS] as u64;
-                    let mut mins = self.rtc_registers[RTC_MINUTES] as u64;
-                    let mut hours = self.rtc_registers[RTC_HOURS] as u64;
-                    let mut days = ((self.rtc_registers[RTC_DAYS_HIGH] & 0x01) as u64) << 8 |
-                        self.rtc_registers[RTC_DAYS_LOW] as u64;
-
-                    // Add elapsed seconds
-                    secs += seconds;
-
-                    // Propagate carries
-                    if secs >= 60 {
-                        mins += secs / 60;
-                        secs %= 60;
-                    }
-
-                    if mins >= 60 {
-                        hours += mins / 60;
-                        mins %= 60;
-                    }
-
-                    if hours >= 24 {
-                        days += hours / 24;
-                        hours %= 24;
-                    }
-
-                    // Check for day counter overflow (over 511 days)
-                    if days > 511 {
-                        // Set day counter carry flag
-                        self.rtc_registers[RTC_DAYS_HIGH] |= RTC_DAY_CARRY_BIT;
-                        days %= 512;
-                    }
-
-                    // Update registers
-                    self.rtc_registers[RTC_SECONDS] = secs as u8;
-                    self.rtc_registers[RTC_MINUTES] = mins as u8;
-                    self.rtc_registers[RTC_HOURS] = hours as u8;
-                    self.rtc_registers[RTC_DAYS_LOW] = (days & 0xFF) as u8;
-                    self.rtc_registers[RTC_DAYS_HIGH] = (self.rtc_registers[RTC_DAYS_HIGH] & 0xFE) |
-                        (((days >> 8) & 0x01) as u8);
-                }
-            }
-        }
-    }
-
-    // Latch RTC values for reading
-    fn latch_rtc(&mut self) {
-        self.update_rtc();
-        self.rtc_latch_registers.copy_from_slice(&self.rtc_registers);
     }
 }
 
@@ -185,21 +331,36 @@ impl MBC for MBC3 {
             },
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
-                    if self.is_rtc_register(self.ram_bank) {
+                    // Extract ram_bank first to avoid borrowing issues
+                    let bank = self.ram_bank;
+                    if self.is_rtc_register(bank) {
                         // Read from RTC register
-                        let rtc_reg = self.ram_bank_to_rtc_register(self.ram_bank);
-                        self.rtc_latch_registers[rtc_reg]
-                    } else if self.has_ram && self.ram_bank < self.ram_bank_count {
-                        // Read from RAM
-                        let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
-                        if ram_addr < self.ram.len() {
-                            self.ram[ram_addr]
+                        if let Some(rtc) = &self.rtc {
+                            // Convert bank to RTC register index inline instead of calling a method
+                            let rtc_reg = match bank {
+                                0x08 => RTC_SECONDS,
+                                0x09 => RTC_MINUTES,
+                                0x0A => RTC_HOURS,
+                                0x0B => RTC_DAYS_LOW,
+                                0x0C => RTC_DAYS_HIGH,
+                                _ => 0 // Should never happen if is_rtc_register check is done first
+                            };
+                            rtc.read_latched(rtc_reg)
                         } else {
-                            error!("Attempted to read from non-existent RAM at bank {} addr {:04X}", self.ram_bank, address);
+                            error!("Attempted to read from RTC register but RTC is not available");
+                            0xFF
+                        }
+                    } else if self.has_ram {
+                        // Read from RAM if it exists
+                        if let Some(sram) = &self.sram {
+                            let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                            sram.read(ram_addr)
+                        } else {
+                            error!("Attempted to read from RAM but RAM is not available");
                             0xFF
                         }
                     } else {
-                        error!("Attempted to read from invalid RAM/RTC bank: {}", self.ram_bank);
+                        error!("Attempted to read from RAM/RTC but neither is available");
                         0xFF
                     }
                 } else {
@@ -240,71 +401,48 @@ impl MBC for MBC3 {
             0x6000..=0x7FFF => {
                 // Latch Clock Data
                 // When write changes from non-zero to zero, latch the RTC data
-                let old_latch = self.rtc_latch_state;
-                let new_latch = value & 0x01 != 0;
-
-                if old_latch && !new_latch {
-                    // Latch the RTC data
-                    debug!("MBC3 latching RTC data");
-                    let mut mbc = unsafe { &mut *(self as *const MBC3 as *mut MBC3) };
-                    mbc.latch_rtc();
+                if let Some(rtc) = &mut self.rtc {
+                    rtc.update_latch_state(value);
+                    debug!("MBC3 RTC latch state updated: {:02X}", value);
                 }
-
-                self.rtc_latch_state = new_latch;
             },
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
-                    if self.is_rtc_register(self.ram_bank) {
+                    // Extract ram_bank first to avoid borrowing issues
+                    let bank = self.ram_bank;
+                    if self.is_rtc_register(bank) {
                         // Write to RTC register
-                        let rtc_reg = self.ram_bank_to_rtc_register(self.ram_bank);
-
-                        // Special handling for RTC registers
-                        let mut mbc = unsafe { &mut *(self as *const MBC3 as *mut MBC3) };
-
-                        // First, ensure RTC is up-to-date
-                        mbc.update_rtc();
-
-                        // Apply value to the actual register with validation
-                        match rtc_reg {
-                            RTC_SECONDS => mbc.rtc_registers[rtc_reg] = value & 0x3F,  // 0-59
-                            RTC_MINUTES => mbc.rtc_registers[rtc_reg] = value & 0x3F,  // 0-59
-                            RTC_HOURS => mbc.rtc_registers[rtc_reg] = value & 0x1F,    // 0-23
-                            RTC_DAYS_LOW => mbc.rtc_registers[rtc_reg] = value,        // 0-255
-                            RTC_DAYS_HIGH => {
-                                // Preserve day carry flag if set
-                                let day_carry = mbc.rtc_registers[rtc_reg] & RTC_DAY_CARRY_BIT;
-                                mbc.rtc_registers[rtc_reg] = (value & 0xC1) | day_carry;
-
-                                // If halt bit changes, reset base time
-                                if (value & RTC_HALT_BIT) != (mbc.rtc_registers[rtc_reg] & RTC_HALT_BIT) {
-                                    mbc.rtc_base_time = SystemTime::now();
-                                }
-                            }
-                            _ => {} // Should never happen
+                        if let Some(rtc) = &mut self.rtc {
+                            // Convert bank to RTC register index inline instead of calling a method
+                            let rtc_reg = match bank {
+                                0x08 => RTC_SECONDS,
+                                0x09 => RTC_MINUTES,
+                                0x0A => RTC_HOURS,
+                                0x0B => RTC_DAYS_LOW,
+                                0x0C => RTC_DAYS_HIGH,
+                                _ => 0 // Should never happen if is_rtc_register check is done first
+                            };
+                            rtc.write_register(rtc_reg, value);
+                            debug!("MBC3 RTC register {:02X} write: {:02X}", self.ram_bank, value);
+                        } else {
+                            debug!("Attempted to write to RTC register but RTC is not available");
                         }
-
-                        // Update latched registers too if RTC is halted
-                        if (mbc.rtc_registers[RTC_DAYS_HIGH] & RTC_HALT_BIT) != 0 {
-                            mbc.rtc_latch_registers[rtc_reg] = mbc.rtc_registers[rtc_reg];
-                        }
-
-                        debug!("MBC3 RTC register {:02X} write: {:02X}", self.ram_bank, value);
-                    } else if self.has_ram && self.ram_bank < self.ram_bank_count {
+                    } else if self.has_ram {
                         // Write to RAM
-                        let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
-                        if ram_addr < self.ram.len() {
-                            self.ram[ram_addr] = value;
+                        if let Some(sram) = &mut self.sram {
+                            let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                            sram.write(ram_addr, value);
 
-                            // If this is battery-backed RAM, mark it for saving
+                            // If this is battery-backed RAM, debug log
                             if self.has_battery {
                                 debug!("Battery-backed MBC3 RAM write at bank {} addr {:04X} = {:02X}", 
                                       self.ram_bank, address, value);
                             }
                         } else {
-                            debug!("Attempted to write to non-existent RAM at bank {} addr {:04X}", self.ram_bank, address);
+                            debug!("Attempted to write to RAM but RAM is not available");
                         }
                     } else {
-                        debug!("Attempted to write to invalid RAM/RTC bank: {}", self.ram_bank);
+                        debug!("Attempted to write to RAM/RTC but neither is available");
                     }
                 } else {
                     debug!("Attempted to write to disabled RAM/RTC: {:04X} = {:02X}", address, value);
@@ -331,5 +469,23 @@ impl MBC for MBC3 {
 
     fn is_ram_enabled(&self) -> bool {
         self.ram_enabled
+    }
+
+    fn save_ram(&mut self) -> Result<(), io::Error> {
+        // Save RAM if it exists and has battery
+        if self.has_battery {
+            if let Some(sram) = &mut self.sram {
+                sram.save();
+            }
+        }
+
+        // Save RTC if it exists
+        if self.has_rtc {
+            if let Some(rtc) = &mut self.rtc {
+                rtc.save()?;
+            }
+        }
+
+        Ok(())
     }
 }

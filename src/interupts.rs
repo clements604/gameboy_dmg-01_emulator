@@ -1,7 +1,7 @@
 use crate::constants::{CARRY_FLAG_BYTE_POSITION, HALF_CARRY_FLAG_BYTE_POSITION, SUBTRACT_FLAG_BYTE_POSITION, ZERO_FLAG_BYTE_POSITION};
 use crate::CPU::{CPU, FlagsRegister};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Interrupt {
     VBLANK,
     LCDSTAT,

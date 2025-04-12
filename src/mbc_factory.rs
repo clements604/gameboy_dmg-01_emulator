@@ -1,3 +1,4 @@
+use std::path::Path;
 use log::{debug, error, info};
 use crate::mbc::{MBC, MBCType};
 use crate::mbc0::MBC0;
@@ -38,11 +39,11 @@ pub fn create_mbc(rom: &ROM) -> Box<dyn MBC> {
         },
         MBCType::MBC1 => {
             info!("Creating MBC1 controller");
-            Box::new(MBC1::new(rom_banks, rom.rom_size, rom.ram_size, has_battery))
+            Box::new(MBC1::new(rom_banks, rom.rom_size, rom.ram_size, has_battery, Path::new(&rom.rom_file_path)))
         },
         MBCType::MBC2 => {
             info!("Creating MBC2 controller");
-            Box::new(MBC2::new(rom_banks, has_battery))
+            Box::new(MBC2::new(rom_banks, has_battery, Path::new(&rom.rom_file_path)))
         },
         MBCType::MBC3 => {
             if has_rtc {
@@ -50,7 +51,7 @@ pub fn create_mbc(rom: &ROM) -> Box<dyn MBC> {
             } else {
                 info!("Creating MBC3 controller");
             }
-            Box::new(MBC3::new(rom_banks, rom.ram_size, has_battery, has_rtc))
+            Box::new(MBC3::new(rom_banks, rom.ram_size, has_battery, has_rtc, Path::new(&rom.rom_file_path)))
         },
         MBCType::MBC5 => {
             if has_rumble {
@@ -58,7 +59,7 @@ pub fn create_mbc(rom: &ROM) -> Box<dyn MBC> {
             } else {
                 info!("Creating MBC5 controller");
             }
-            Box::new(MBC5::new(rom_banks, rom.ram_size, has_battery, has_rumble))
+            Box::new(MBC5::new(rom_banks, rom.ram_size, has_battery, has_rumble, Path::new(&rom.rom_file_path)))
         },
         _ => {
             panic!("Unsupported MBC type: {:?}", mbc_type);

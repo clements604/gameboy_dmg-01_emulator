@@ -1,3 +1,5 @@
+use std::{fs, io};
+use std::path::{Path, PathBuf};
 use log::{debug, error, info};
 use crate::constants::*;
 
@@ -7,6 +9,7 @@ pub trait MBC {
     fn get_rom_bank(&self) -> usize;
     fn get_ram_bank(&self) -> usize;
     fn is_ram_enabled(&self) -> bool;
+    fn save_ram(&mut self) -> Result<(), io::Error>;
 }
 #[derive(Debug, Clone, Copy)]
 pub enum MBCType {
@@ -80,4 +83,51 @@ pub fn get_ram_banks(ram_size: u8) -> usize {
         0x05 => 8,             // 8 banks
         _ => 0,                // Default to no banks
     }
+}
+
+pub struct SRAM {
+    data: Vec<u8>,
+    dirty: bool,
+    save_file_path: PathBuf,
+}
+
+impl SRAM {
+    pub fn new(size: usize, rom_file_path: &Path) -> Self{
+        let mut data = vec![0; size];
+        let save_path = rom_file_path.with_extension("sav");
+
+        if save_path.exists() {
+            if let Ok(saved_data) = std::fs::read(&save_path) {
+                if saved_data.len() == size {
+                    data.copy_from_slice(&saved_data);
+                }
+            }
+        }
+
+        Self {
+            data,
+            dirty: false,
+            save_file_path: save_path,
+        }
+    }
+    
+    pub fn read(&self, address: usize) -> u8 {
+        self.data[address]
+    }
+    
+    pub fn write(&mut self, address: usize, value: u8) {
+        self.data[address] = value;
+        self.dirty = true;
+    }
+    
+    pub fn save(&mut self) -> Result<(), io::Error> {
+        if self.dirty {
+            // Write to file
+            std::fs::write(&self.save_file_path, &self.data).unwrap();
+            self.dirty = false;
+            info!("Saved RAM data to {:?}", &self.save_file_path);
+        }
+        Ok(())
+    }
+    
 }

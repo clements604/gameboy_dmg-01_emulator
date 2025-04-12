@@ -1,3 +1,4 @@
+use std::io;
 use log::{debug, error, info};
 use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks};
 use crate::rom::ROMBanks;
@@ -145,4 +146,10 @@ impl MBC for MBC0 {
     fn is_ram_enabled(&self) -> bool {
         self.ram_enabled && self.has_ram
     }
+
+    fn save_ram(&mut self) -> Result<(), io::Error> {
+        //unimplemented!("Saving is not implemented for MBC0!")
+        Ok(())
+    }
+
 }

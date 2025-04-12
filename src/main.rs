@@ -32,9 +32,9 @@ use std::io::{self, Read};
 use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use sdl2::keyboard::Keycode;
-use crate::timer::{Timer, TimerFrequency};
+use crate::timer::{Timer};
 
 use crate::display::LIGHTEST_GREEN;
 use crate::interupts::Interrupt::JOYPAD;
@@ -66,6 +66,7 @@ struct Emulator {
 
     previous_keys: Vec<Keycode>,
     running: bool,
+    last_save_time: Instant,
 }
 
 impl Emulator {
@@ -129,6 +130,7 @@ impl Emulator {
             last_frame_time: Instant::now(),
             previous_keys: Vec::new(),
             running: true,
+            last_save_time: Instant::now(),
         }
     }
 
@@ -255,6 +257,11 @@ impl Emulator {
             }
             self.last_frame_time = Instant::now();
         }
+
+        if self.last_save_time.elapsed() > Duration::from_secs(5) {
+            self.memory_bus.borrow_mut().mbc.as_mut().unwrap().save_ram();
+            self.last_save_time = Instant::now();
+        }
     }
 
     // This method is no longer needed as input handling is moved to the cycle method
@@ -280,10 +287,57 @@ fn main() {
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
-    let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
+    //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
+    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
     /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));*/
+
+    /*
+     * CPU instructions
+    */
+    //let rom = load_rom(String::from("roms/test/cpu/individual/01-special.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/02-interrupts.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/03-op sp,hl.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/04-op r,imm.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/05-op rp.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/06-ld r,r.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/07-jr,jp,call,ret,rst.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/08-misc instrs.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to no MBC implementation
+
+    /*
+    * CPU timing
+     */
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/add_sp_e_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/boot_div2-S.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/call_timing.gb"));// TODO FAILED
+
+    /*
+     * Graphics
+    */
+    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
+    //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED
+
+    /*
+     * Memory timing
+    */
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/mem_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/01-read_timing.gb")); // TODO
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/02-write_timing.gb")); // TODO no debug output
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/memory/03-modify_timing.gb")); // TODO no debug output
+
+    /*
+    * Interrupt timing
+    */
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/interrupts/interrupt_time.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb"));
 
     let mut emulator = Emulator::new(boot_rom, &rom);
 
@@ -294,8 +348,8 @@ fn main() {
 }
 
 fn load_rom(file_path: String) -> ROM {
-    debug!("Loading ROM: {}", file_path);
-    let mut file = File::open(file_path).expect("ROM file not found");
+    debug!("Loading ROM: {}", &file_path);
+    let mut file = File::open(&file_path).expect("ROM file not found");
     let mut buffer: Vec<u8> = Vec::new();
 
     // Read the file into a buffer
@@ -306,7 +360,7 @@ fn load_rom(file_path: String) -> ROM {
             buffer.len() / 1024
         );
 
-    let rom = ROM::new(buffer);
+    let rom = ROM::new(file_path, buffer);
     debug!("{}", rom);
     rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
 

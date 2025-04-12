@@ -45,6 +45,7 @@ pub struct ROM {
     pub header_checksum: u8,
     pub global_checksum: u16,
     pub rom: Vec<u8>,
+    pub rom_file_path: String,
 }
 
 pub struct ROMBanks {
@@ -60,7 +61,7 @@ impl ROMBanks {
 }
 
 impl ROM {
-    pub fn new(rom: Vec<u8>) -> ROM {
+    pub fn new(rom_file_path: String, rom: Vec<u8>) -> ROM {
         let title = String::from_utf8(rom[TITLE_START as usize..TITLE_END as usize].to_vec()).unwrap();
         /*let manufacturer_code = u16::from_str_radix(
             &String::from_utf8_lossy(&rom[MANUFACTURER_CODE_START as usize..MANUFACTURER_CODE_END as usize]),
@@ -86,6 +87,7 @@ impl ROM {
             header_checksum: rom[HEADER_CHECKSUM as usize],
             global_checksum: global_checksum,
             rom: rom,
+            rom_file_path,
         }
     }
 

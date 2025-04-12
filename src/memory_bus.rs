@@ -88,7 +88,7 @@ pub struct MemoryBus {
     pub interrupt_enable_register: u8,
     pub interrupt_flags: u8,
 
-    mbc: Option<Box<dyn MBC>>,
+    pub mbc: Option<Box<dyn MBC>>,
 }
 
 impl MemoryBus {

@@ -996,7 +996,7 @@ impl Ppu {
 
         TileData::new(&sprite_tile_data, height)
     }
-    
+
     fn render_background_scanline(&mut self, line: &mut [u32; 160]) {
         if self.is_background_enabled() {
             //let ly = self.ly as usize;
@@ -1194,7 +1194,7 @@ impl Ppu {
 
             // Get the color and render
             let colour = self.lcd.borrow().get_bg_color(colour_id);
-            
+
             line[screen_x] = colour;
         }
 
@@ -1217,7 +1217,7 @@ impl Ppu {
             0x8800 // Tile data at 0x8800-0x97FF (signed)
         }
     }
-    
+
     fn render_scanline(&mut self) {
         let ly = self.ly as usize;
         let mut line = [LIGHTEST_GREEN; 160];

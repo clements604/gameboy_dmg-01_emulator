@@ -26,8 +26,8 @@ pub(crate) const RED: u32 = 0xFFFF0000;
 pub struct MainDisplay {
     pub canvas: Canvas<Window>,
     pub event_pump: sdl2::EventPump,
-    buffer: Vec<u32>,
     scale: u32,
+    keys_to_check: [Keycode; 8],
 }
 
 impl MainDisplay {
@@ -68,14 +68,23 @@ impl MainDisplay {
             panic!("Event pump creation failed: {}", e);
         });
 
-        // Initialize with red buffer
-        let buffer = vec![RED; SCREEN_WIDTH * SCREEN_HEIGHT];
+        let keys_to_check = [
+            Keycode::A,      // A button
+            Keycode::B,      // B button
+            Keycode::Return, // Start
+            Keycode::Space,  // Select
+            Keycode::Up,     // Up
+            Keycode::Down,   // Down
+            Keycode::Left,   // Left
+            Keycode::Right,  // Right
+        ];
 
         MainDisplay {
             canvas,
             event_pump,
-            buffer,
-            scale: scale,
+
+            scale,
+            keys_to_check
         }
     }
 
@@ -122,16 +131,7 @@ impl MainDisplay {
 
     pub fn get_pressed_keys(&mut self) -> Vec<Keycode> {
         // Create a vector of keys we're checking
-        let keys_to_check = [
-            Keycode::A,      // A button
-            Keycode::B,      // B button
-            Keycode::Return, // Start
-            Keycode::Space,  // Select
-            Keycode::Up,     // Up
-            Keycode::Down,   // Down
-            Keycode::Left,   // Left
-            Keycode::Right,  // Right
-        ];
+        
 
         // Process events to update key state and store pressed keys
         let mut pressed_keys = Vec::new();
@@ -140,7 +140,7 @@ impl MainDisplay {
         let keyboard_state = self.event_pump.keyboard_state();
 
         // The correct way to check if keys are pressed in SDL2
-        for &key in &keys_to_check {
+        for &key in &self.keys_to_check {
             // Convert the keycode to a scancode index for keyboard_state
             let scancode = sdl2::keyboard::Scancode::from_keycode(key);
             if let Some(sc) = scancode {

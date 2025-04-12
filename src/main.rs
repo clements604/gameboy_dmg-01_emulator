@@ -36,7 +36,6 @@ use std::time::{Duration, Instant};
 use sdl2::keyboard::Keycode;
 use crate::timer::{Timer};
 
-use crate::display::LIGHTEST_GREEN;
 use crate::interupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
 use crate::main_display::MainDisplay;
@@ -252,10 +251,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    /*let rom = load_rom(String::from(
+    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));*/
+    ));
 
     /*
      * CPU instructions
@@ -284,7 +283,7 @@ fn main() {
     /*
      * Graphics
     */
-    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
+    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED

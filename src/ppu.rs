@@ -1,16 +1,11 @@
-use crate::display::{DARKEST_GREEN, LIGHTEST_GREEN, SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::display::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
 use crate::CPU::{Flag, FlagsRegister, CPU};
 use crate::{display, interupts, lcd, main, main_display};
 use log::{debug, error, info};
-use std::cell::RefCell;
 use std::fmt;
-use std::rc::Rc;
-//use crate::display::Display;
 use crate::lcd::LCD;
-use crate::main_display::get_sdl_colour;
-use crate::memory_bus::MemoryBus;
-use crate::ppu::StatInterrupt::OAM;
+use crate::lcd::LIGHTEST_GREEN;
 
 const TILE_START: u16 = 0x8000;
 const TILE_END: u16 = 0x97FF;

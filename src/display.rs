@@ -22,16 +22,6 @@ const B_W_TOGGLE: bool = false;
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
 
-pub const COLOUR_WHITE: u8 = 0b11;
-pub const COLOUR_LIGHT_GREY: u8 = 0b10;
-pub const COLOUR_DARK_GREY: u8 = 0b01;
-pub const COLOUR_BLACK: u8 = 0b00;
-
-pub const DARKEST_GREEN: u32 = 0xFF0F380F;
-pub const DARK_GREEN: u32 = 0xFF306230;
-pub const LIGHT_GREEN: u32 = 0xFF8BAC0F;
-pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
-
 /*
 pub struct Display /*<'a>*/ {
     //memory_bus: &'a mut MemoryBus,

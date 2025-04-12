@@ -3,10 +3,13 @@ use std::rc::{Rc, Weak};
 use log::{debug, error, info};
 use crate::dma::Dma;
 
-const DARKEST_GREEN: u32 = 0xFF0F380F;
-const DARK_GREEN: u32 = 0xFF306230;
-const LIGHT_GREEN: u32 = 0xFF8BAC0F;
-pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
+const DARKEST_GREEN: u32 = 0xFF142C38;
+//const DARK_GREEN: u32 = 0xFF306230;
+const DARK_GREEN: u32 = 0xFF548C70;
+//const LIGHT_GREEN: u32 = 0xFF8BAC0F;
+const LIGHT_GREEN: u32 = 0xFFACD490;
+//pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
+pub const LIGHTEST_GREEN: u32 = 0xFFE8FCCC;
 pub(crate) const RED: u32 = 0xFFFF0000;
 pub const DEFAULT_COLOURS: [u32; 4] = [
     LIGHTEST_GREEN, // This would be the color for palette 00

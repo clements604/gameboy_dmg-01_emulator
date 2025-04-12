@@ -11,7 +11,7 @@ use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;
 use crate::interupts::{Interrupt, InterruptFlags};
-use crate::{timer};
+use crate::{dma, timer};
 use crate::timer::{Timer};
 
 use crate::mbc::MBC;
@@ -79,7 +79,7 @@ pub struct MemoryBus {
     
     rom_debug: rom_debug,
     pub dmg_io: Option<Rc<RefCell<IO>>>,
-    pub dma: Option<Rc<RefCell<Dma>>>,
+    pub dma: Dma,
     pub cpu:  Option<Rc<RefCell<CPU>>>,
 
     boot_rom_enabled: bool,
@@ -92,7 +92,7 @@ pub struct MemoryBus {
 }
 
 impl MemoryBus {
-    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, io: Option<Rc<RefCell<IO>>>, dma:Option<Rc<RefCell<Dma>>>, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
+    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, io: Option<Rc<RefCell<IO>>>, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
 
         let mbc = mbc_factory::create_mbc(rom);
         let rom_banks = rom.load_rom_to_banks();
@@ -127,7 +127,9 @@ impl MemoryBus {
             
             rom_debug: rom_debug::new(),
             dmg_io: io,
-            dma,
+            
+            dma: dma::Dma::new(),
+            
             cpu,
  
             interrupt_master_enable: false,
@@ -143,6 +145,20 @@ impl MemoryBus {
         memory_bus.update_visible_banks();
 
         memory_bus
+    }
+    
+    pub fn cycle(&mut self, cpu_cycles: u8) {
+        
+        // OAM
+        for _ in 0..cpu_cycles {
+            if let Some((src_addr, dest_addr)) = self.dma.dma_tick() {
+                let value = self.read_byte(src_addr);
+                if let Some(ppu) = &self.ppu {
+                    ppu.borrow_mut().oam_write(dest_addr, value);
+                }
+            }
+            
+        }
     }
 
     pub fn read_byte(&self, address: u16) -> u8 {
@@ -162,7 +178,7 @@ impl MemoryBus {
             WRAM_1_START..=WRAM_1_END => self.wram_1[(address - WRAM_1_START) as usize],
             ECHO_RAM_START..=ECHO_RAM_END => self.echo_ram[(address - ECHO_RAM_START) as usize],
             OAM_START..=OAM_END => {
-                if self.dma.as_ref().unwrap().borrow().is_transferring() {
+                if self.dma.is_transferring() {
                     //panic!("DMA active");
                     return 0xFF;
                 }
@@ -231,7 +247,7 @@ impl MemoryBus {
                 self.echo_ram[(address - ECHO_RAM_START) as usize] = value
             }
             OAM_START..=OAM_END => {
-                if !self.dma.as_ref().unwrap().borrow().is_transferring() {
+                if !self.dma.is_transferring() {
                     self.ppu.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                     //self.ppu_experiment.as_ref().unwrap().borrow_mut().oam_write(address - OAM_START, value);
                 }
@@ -239,16 +255,22 @@ impl MemoryBus {
             //UNUSED_START..=UNUSED_END => self.unused[(address - UNUSED_START) as usize] = value,
             UNUSED_START..=UNUSED_END => error!("Write to unused memory"),
             IO_REGISTERS_START..=IO_REGISTERS_END => {
-                if address == 0xFF0F {
-                    self.interrupt_flags = value;
+                match address {
+                    0xFF0F => {
+                        self.interrupt_flags = value;
+                    },
+                    0xFF50 => {
+                        info!("Boot ROM disable");
+                        self.boot_rom_enabled = false;
+                    },
+                    0xFF46 => {
+                        debug!("DMA transfer start: {:#X}", value);
+                        self.dma.dma_start(value);
+                    },
+                    _ => {
+                        self.dmg_io.as_ref().unwrap().borrow_mut().write(address, value);
+                    }
                 }
-                if address == 0xFF50 {
-                    info!("Boot ROM disable");
-                    self.boot_rom_enabled = false;
-                    //panic!("Boot ROM disable");
-                    return;
-                }
-                self.dmg_io.as_ref().unwrap().borrow_mut().write(address, value);
             },
             HRAM_START..=HRAM_END => {
                 //unimplemented!("HRAM write");

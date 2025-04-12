@@ -49,7 +49,6 @@ struct Emulator {
     //ppu_experiment: Rc<RefCell<ppu_experiment::Ppu>>,
 
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
-    dma: Rc<RefCell<dma::Dma>>,
     //display: Rc<RefCell<display::Display>>,
     main_display: MainDisplay,
 
@@ -81,23 +80,22 @@ impl Emulator {
             },
         };
 
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None, None)));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None, None)));
 
         let mut main_display = MainDisplay::new();
 
         let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
 
-        let dma = Rc::new(RefCell::new(dma::Dma::new(memory_bus.clone())));
-        let lcd = Rc::new(RefCell::new(lcd::LCD::new(dma.clone())));
+        
+        let lcd = Rc::new(RefCell::new(lcd::LCD::new()));
 
         let ppu = Rc::new(RefCell::new(ppu::Ppu::new(cpu.clone(), lcd.clone()/*, display.clone()*/)));
 
         //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
 
-        let io = Rc::new(RefCell::new(dmg_io::IO::new(cpu.clone(), lcd.clone(), ppu.clone())));
+        let io = Rc::new(RefCell::new(dmg_io::IO::new(lcd.clone(), ppu.clone())));
 
         memory_bus.borrow_mut().dmg_io = Some(io.clone());
-        memory_bus.borrow_mut().dma = Some(dma.clone());
 
         memory_bus.borrow_mut().ppu = Some(ppu.clone());
         //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
@@ -118,7 +116,6 @@ impl Emulator {
             cpu,
             ppu,
             memory_bus,
-            dma,
             main_display,
             previous_frame: 0,
             previous_ly: 0,
@@ -225,9 +222,10 @@ impl Emulator {
 
         self.ppu.borrow_mut().tick(cpu_cycles);
 
-        for _ in 0..cpu_cycles {
+        self.memory_bus.borrow_mut().cycle(cpu_cycles);
+        /*for _ in 0..cpu_cycles {
             self.dma.borrow_mut().dma_tick();
-        }
+        }*/
 
         self.cpu.borrow_mut().check_interrupts();
 

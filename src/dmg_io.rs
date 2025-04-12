@@ -14,25 +14,20 @@ pub struct IO {
     io_registers: [u8; IO_REGISTERS_SIZE],
     serial_data: [char; 2],
     pub lcd: Rc<RefCell<LCD>>,
-    //dma: Rc<RefCell<Dma>>,
-    cpu: Rc<RefCell<CPU>>,
     pub ppu: Rc<RefCell<Ppu>>,
     pub joypad: joypad::Joypad,
     pub timer: Timer,
 }
 
 impl IO {
-    pub fn new(/*dma: Rc<RefCell<Dma>>, */cpu: Rc<RefCell<CPU>>, lcd: Rc<RefCell<LCD>>, ppu: Rc<RefCell<Ppu>>) -> IO {
+    pub fn new(lcd: Rc<RefCell<LCD>>, ppu: Rc<RefCell<Ppu>>) -> IO {
 
         IO {
             io_registers: [0; IO_REGISTERS_SIZE],
             serial_data: ['\0'; 2],
             lcd,
-            //dma,
-            cpu: cpu.clone(),
             ppu,
             joypad: joypad::Joypad::new(),
-            //timer: Timer::new(cpu.clone()),
             timer: Timer::new(),//TODO why have four variants if this is a constant? timer::TimerFrequency::Hz4096
         }
     }
@@ -66,7 +61,7 @@ impl IO {
             }
         }
     }
-    pub fn write(&mut self, address: u16, value: u8/*, cpu: &mut CPU*/) {
+    pub fn write(&mut self, address: u16, value: u8) {
         //debug!("Write to IO address: {:#X}", address);
         match address {
             0xFF00 => {
@@ -89,6 +84,7 @@ impl IO {
                 self.timer.enabled = (value & 0b100) != 0; // Check if bit 2 is set
             },
             0xFF40..=0xFF46 => {
+                
                 self.ppu.as_ref().borrow_mut().write(address, value);
             },
             0xFF47..=0xFF4B => {

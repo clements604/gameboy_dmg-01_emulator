@@ -74,13 +74,9 @@ pub struct MemoryBus {
     pub oam: [u8; OAM_SIZE],
     pub unused: [u8; UNUSED_SIZE],
     pub hram: [u8; HRAM_SIZE],
-    
-    //pub ppu: Option<Rc<RefCell<Ppu>>>,
-    
     rom_debug: rom_debug,
     pub dmg_io: IO,
     pub dma: Dma,
-    pub cpu:  Option<Rc<RefCell<CPU>>>,
 
     boot_rom_enabled: bool,
     pub interrupt_master_enable: bool,
@@ -92,7 +88,7 @@ pub struct MemoryBus {
 }
 
 impl MemoryBus {
-    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM, cpu: Option<Rc<RefCell<CPU>>>) -> MemoryBus {
+    pub fn new(boot_rom:Option<Vec<u8>>, rom: &ROM) -> MemoryBus {
 
         let mbc = mbc_factory::create_mbc(rom);
         let rom_banks = rom.load_rom_to_banks();
@@ -129,9 +125,7 @@ impl MemoryBus {
             dmg_io: dmg_io::IO::new(),
             
             dma: dma::Dma::new(),
-            
-            cpu,
- 
+
             interrupt_master_enable: false,
             enabling_ime: false,
             interrupt_enable_register: 0,

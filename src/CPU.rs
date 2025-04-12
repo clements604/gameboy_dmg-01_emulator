@@ -50,17 +50,13 @@ pub enum Flag {
 
 pub struct CPU/*<'a>*/ {
     pub registers: Registers,
-    //work_ram: [u8; 0xFFFFF],
+
     video_ram: [u16; 8192],
-    
-    //pub memory_bus: &'a mut MemoryBus,
+
     pub memory_bus: Rc<RefCell<MemoryBus>>,
     pub halted: bool,
     stopped: bool,
-    /*pub interrupt_master_enable: bool,
-    pub enabling_ime: bool,
-    pub interrupt_enable_register: u8,
-    pub interrupt_flags: u8,*/
+
     rom_debug: rom_debug::rom_debug,
 }
 
@@ -250,19 +246,14 @@ impl std::convert::From<u16> for FlagsRegister {
     }
 }
 
-impl/*<'a>*/ CPU/*<'a>*/ {
-    pub fn new(/*memory_bus: &'a mut MemoryBus*/memory_bus: Rc<RefCell<MemoryBus>>) -> Self {
+impl CPU {
+    pub fn new(memory_bus: Rc<RefCell<MemoryBus>>) -> Self {
         CPU {
             registers: Registers::new(),
             video_ram: [0; 8192],
-            //gpu: GPU::new(),
             memory_bus,
             halted: false,
             stopped: false,
-            /*interrupt_master_enable: false,
-            enabling_ime: false,
-            interrupt_enable_register: 0,
-            interrupt_flags: 0,*/
             rom_debug: rom_debug::rom_debug::new(),
         }
     }

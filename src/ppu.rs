@@ -43,7 +43,6 @@ pub struct Ppu {
     start_time: u32,
     frame_count: u16,
     pub lcd: LCD,
-    //display: Rc<RefCell<Display>>,
     pub lcdc: u8,
     pub stat: u8,
     pub scroll_x: u8,

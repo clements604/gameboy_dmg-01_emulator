@@ -43,12 +43,10 @@ use crate::main_display::MainDisplay;
 
 struct Emulator {
     ticks: u64,
-    cpu: Rc<RefCell<CPU::CPU>>,
-
-    //ppu: Rc<RefCell<ppu::Ppu>>,
+    cpu: CPU::CPU,
 
     memory_bus: Rc<RefCell<memory_bus::MemoryBus>>,
-    //display: Rc<RefCell<display::Display>>,
+
     main_display: MainDisplay,
 
     previous_frame: u32,
@@ -79,30 +77,18 @@ impl Emulator {
             },
         };
 
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom, None)));
+        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(boot_rom, &rom)));
 
         let main_display = MainDisplay::new();
 
-        let cpu = Rc::new(RefCell::new(CPU::CPU::new(memory_bus.clone())));
-
-        //let ppu = Rc::new(RefCell::new(ppu::Ppu::new()));
-
-        //let ppu_experiment = Rc::new(RefCell::new(ppu_experiment::Ppu::new(cpu.clone(), lcd.clone(), display.clone())));
-
-        //let io = Rc::new(RefCell::new(dmg_io::IO::new()));
-        //memory_bus.borrow_mut().dmg_io = Some(io.clone());
-
-        //memory_bus.borrow_mut().ppu = Some(ppu.clone());
-        //memory_bus.borrow_mut().ppu_experiment = Some(ppu_experiment.clone());
-
-        memory_bus.borrow_mut().cpu = Some(cpu.clone());
+        let mut cpu = CPU::CPU::new(memory_bus.clone());
 
         match boot_rom_enabled {
             true => {
-                cpu.borrow_mut().registers.pc = 0x0000
+                cpu.registers.pc = 0x0000
             },
             false => {
-                cpu.borrow_mut().registers.pc = 0x0100
+                cpu.registers.pc = 0x0100
             },
         }
 
@@ -185,7 +171,7 @@ impl Emulator {
             self.previous_keys = current_keys;
         }
         
-        let cpu_cycles = self.cpu.borrow_mut().cycle();
+        let cpu_cycles = self.cpu.cycle();
 
         if self.memory_bus.borrow().enabling_ime {
             self.memory_bus.borrow_mut().interrupt_master_enable = true;
@@ -208,7 +194,7 @@ impl Emulator {
             self.dma.borrow_mut().dma_tick();
         }*/
 
-        self.cpu.borrow_mut().check_interrupts();
+        self.cpu.check_interrupts();
 
         if self.previous_frame != self.memory_bus.borrow_mut().dmg_io.ppu.current_frame {
             // Update display with the new frame buffer

@@ -111,7 +111,7 @@ impl Emulator {
     }
 
     fn cycle(&mut self) {
-        if self.input_check_counter % 8 == 0 {
+        if self.input_check_counter % 16 == 0 {
             if !self.main_display.process_events() {
                 self.running = false;
                 return;
@@ -160,7 +160,9 @@ impl Emulator {
 
             // Trigger interrupt if state changed
             let new_joypad_state = u8::from(joypad);
-            if new_joypad_state != previous_joypad_state {
+            // Only generate interrupt on transition from not-pressed to pressed (1→0)
+            let just_pressed = (previous_joypad_state & 0x0F) & !(new_joypad_state & 0x0F);
+            if just_pressed != 0 {
                 self.memory_bus.trigger_interrupt(JOYPAD);
             }
 
@@ -251,10 +253,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    let rom = load_rom(String::from(
+    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));
+    ));*/
 
     /*
      * CPU instructions
@@ -283,7 +285,7 @@ fn main() {
     /*
      * Graphics
     */
-    let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
+    //let rom = load_rom(String::from("roms/test/ppu/dmg-acid2.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Downloads/lyc.gb")); // PASSED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/lcdon_timing-GS.gb")); //TODO LYC
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ppu/hblank_ly_scx_timing-GS.gb")); //TODO FAILED

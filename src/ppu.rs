@@ -445,6 +445,8 @@ impl Ppu {
 
                     // Render scanline
                     self.render_scanline();
+                    // sleep for half a second
+                    std::thread::sleep(std::time::Duration::from_nanos(100000));
 
                     // Mode transition
                     if self.ly == 143 {
@@ -1038,12 +1040,12 @@ impl Ppu {
         }
 
         // Sort sprites by X position for correct priority handling
-        sprites_to_render.sort_by_key(|sprite| sprite.x);
+        //sprites_to_render.sort_by_key(|sprite| sprite.x);
 
         // Process each pixel in the scanline
         for x in 0..160 {
             // Store the current background/window pixel color for priority checks
-            let bg_color = line[x];
+            //let bg_color = line[x];
 
             // Check each sprite for this x position
             for sprite in &sprites_to_render {
@@ -1091,14 +1093,14 @@ impl Ppu {
                 // Apply sprite priority rules:
                 // - If sprite has priority bit set (BG over OBJ), only show sprite if BG is transparent
                 // - If sprite doesn't have priority, sprite is always on top unless LCDC background priority is set
-                if sprite.flags.priority {
+                if !sprite.flags.priority {
                     // BG has priority over sprite
-                    if bg_color == LIGHTEST_GREEN {
+                    if line[x] == LIGHTEST_GREEN {
                         line[x] = sprite_color;
                     }
                 } else {
                     // Sprite has priority over BG
-                    if !self.lcdc_background_priority() || bg_color == LIGHTEST_GREEN {
+                    if !self.lcdc_background_priority() && line[x] == LIGHTEST_GREEN {
                         line[x] = sprite_color;
                     }
                 }
@@ -1233,19 +1235,15 @@ impl Ppu {
     */
     fn get_sprites(&self) -> Vec<Sprite> {
         let mut sprites: Vec<Sprite> = Vec::new();
+
         for i in 0..40 {
-            //let address = 0xFE00 + i * 4;
-            let address = i * 4;
-            let y = self.oam_read(address) as u8;
-            let x = self.oam_read(address + 1) as u8;
-            let tile_number = self.oam_read(address + 2) as u8;
-            let flags = OAMFlags::from(self.oam_read(address + 3));
-            sprites.push(Sprite {
-                y,
-                x,
-                tile_number,
-                flags,
-            });
+            let offset = (i * 4) as u16;  // Make the intent clear
+            let y = self.oam_read(offset);
+            let x = self.oam_read(offset + 1);
+            let tile_number = self.oam_read(offset + 2);
+            let flags = OAMFlags::from(self.oam_read(offset + 3));
+
+            sprites.push(Sprite { y, x, tile_number, flags });
         }
 
         sprites

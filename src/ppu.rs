@@ -445,8 +445,6 @@ impl Ppu {
 
                     // Render scanline
                     self.render_scanline();
-                    // sleep for half a second
-                    std::thread::sleep(std::time::Duration::from_nanos(100000));
 
                     // Mode transition
                     if self.ly == 143 {
@@ -460,6 +458,11 @@ impl Ppu {
 
                     self.increment_ly();
                     self.line_ticks -= 204;
+
+                    if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x.saturating_sub(7) <= 166 {
+                        self.window_line_counter = self.window_line_counter.wrapping_add(1);
+                        info!("Window line counter increased to {} with LY = {} and Window Y = {} and Window X = {}", self.window_line_counter, self.ly, self.lcd.window_y, self.lcd.window_x.saturating_sub(7));
+                    }
                 }
             }
             VBLANK_MODE => {
@@ -530,6 +533,9 @@ impl Ppu {
             }
             0xFF45 => self.ly_compare = value,
             0xFF47..=0xFF4B => {
+                if address == 0xFF4B {
+                    info!("WX register written: {} at LY={}", value, self.ly);
+                }
                 self.lcd.write(address, value);
             },
             _ => panic!("Invalid LCD address: {:#X}", address),
@@ -1016,114 +1022,100 @@ impl Ppu {
     }
 
     fn render_sprite_scanline(&mut self, line: &mut [u32; 160]) {
-        // Return early if sprites are disabled
         if !self.sprites_enabled() {
             return;
         }
 
         let current_scanline = self.ly as isize;
-        let sprite_height = self.sprite_size() as isize; // 8 or 16 from LCDC bit 2
+        let sprite_height = self.sprite_size() as isize;
         let sprite_data = self.get_sprites();
 
         // Collect sprites that intersect with current scanline (max 10)
         let mut sprites_to_render = Vec::with_capacity(10);
         for sprite in sprite_data.iter() {
-            let screen_y = sprite.y as isize - 16; // Adjust for hardware offset
-
-            // Check if the sprite intersects the current scanline based on its height
+            let screen_y = sprite.y as isize - 16;
             if screen_y <= current_scanline && (screen_y + sprite_height) > current_scanline {
                 sprites_to_render.push(*sprite);
                 if sprites_to_render.len() >= 10 {
-                    break; // Max 10 sprites per line
+                    break;
                 }
             }
         }
 
-        // Sort sprites by X position for correct priority handling
-        //sprites_to_render.sort_by_key(|sprite| sprite.x);
-
         // Process each pixel in the scanline
         for x in 0..160 {
-            // Store the current background/window pixel color for priority checks
-            //let bg_color = line[x];
+            let mut best_sprite: Option<(Sprite, u32)> = None; // (sprite, color)
 
-            // Check each sprite for this x position
+            // Check all sprites for this x position to find the highest priority one
             for sprite in &sprites_to_render {
                 let screen_x = sprite.x as isize - 8;
-                let screen_y = sprite.y as isize - 16;
                 let sprite_x_pos = x as isize - screen_x;
 
-                // Skip if this pixel is outside the sprite's x-range
                 if sprite_x_pos < 0 || sprite_x_pos >= 8 {
                     continue;
                 }
 
-                // Calculate sprite row based on current scanline
+                let screen_y = sprite.y as isize - 16;
                 let mut sprite_row = current_scanline - screen_y;
                 let mut sprite_col = sprite_x_pos;
 
-                // Apply Y-flip if set
+                // Apply flips
                 if sprite.flags.y_flip {
                     sprite_row = (sprite_height - 1) - sprite_row;
                 }
-
-                // Apply X-flip if set
                 if sprite.flags.x_flip {
                     sprite_col = 7 - sprite_col;
                 }
 
-                // Get sprite tile data and pixel color
                 let sprite_tile_data = self.get_sprite_data(sprite);
                 let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
 
-                // Skip transparent pixels (value 0)
+                // Skip transparent pixels
                 if sprite_pixel == 0 {
                     continue;
                 }
 
-                // Determine sprite color based on palette
                 let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
                 let sprite_color = self.lcd.get_sprite_color(sprite_palette_index, sprite_pixel);
 
-                // Skip if sprite color is transparent (same as lightest green)
-                /*if sprite_color == LIGHTEST_GREEN {
-                    continue;
-                }*/
-
-                // Apply sprite priority rules:
-                // - If sprite has priority bit set (BG over OBJ), only show sprite if BG is transparent
-                // - If sprite doesn't have priority, sprite is always on top unless LCDC background priority is set
-                if !sprite.flags.priority {
-                    // BG has priority over sprite
-                    if line[x] == LIGHTEST_GREEN {
-                        line[x] = sprite_color;
-                    }
+                // Determine if this sprite should be drawn based on priority
+                let should_draw = if sprite.flags.priority {
+                    // Behind background - only draw if background is transparent
+                    line[x] == LIGHTEST_GREEN
                 } else {
-                    // Sprite has priority over BG
-                    if !self.lcdc_background_priority() && line[x] == LIGHTEST_GREEN {
-                        line[x] = sprite_color;
+                    // Above background - always draw
+                    true
+                };
+
+                if should_draw {
+                    // Check if this sprite has higher priority than current best
+                    let has_higher_priority = match &best_sprite {
+                        None => true,
+                        Some((best, _)) => {
+                            // X-coordinate priority: smaller X wins
+                            sprite.x < best.x
+                        }
+                    };
+
+                    if has_higher_priority {
+                        best_sprite = Some((*sprite, sprite_color));
                     }
                 }
+            }
 
-                // Once we've drawn a non-transparent sprite pixel, we're done with this x position
-                // (first sprite in X-sorted list wins)
-                break;
+            // Draw the highest priority sprite (if any)
+            if let Some((_, color)) = best_sprite {
+                line[x] = color;
             }
         }
     }
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
         // Early return if window is not visible
-        if !self.window_enabled() {
+        if !self.window_enabled() || self.ly < self.lcd.window_y {
             return;
         }
 
-        let window_y = self.lcd.window_y;
-        let window_x = self.lcd.window_x;
-
-        // Only proceed if we're on or after the window's Y position
-        if self.ly < window_y {
-            return;
-        }
+        let window_x = self.lcd.window_x.wrapping_sub(7);
 
         // Calculate window line (Y position within the window)
         let window_line = self.window_line_counter;
@@ -1143,15 +1135,15 @@ impl Ppu {
         let tile_line = window_line % 8;
 
         // Render window pixels for this scanline
-        for screen_x in 0..160 {
+        for screen_x in window_x..160 {
             // Only draw window pixels if we're at or past window_x - 7
-            if screen_x + 7 < window_x as usize {
+            /*if screen_x < window_x {
                 continue;
-            }
+            }*/
 
             // Calculate the offset into the window tile map
             let tile_map_offset = (
-                ((screen_x as u16 + 7 - window_x as u16) / 8) +
+                ((screen_x as u16 - window_x as u16) / 8) +
                     (w_tile_y * 32)
             ) as u16;
 
@@ -1178,7 +1170,7 @@ impl Ppu {
             let tile_high = self.vram_read(tile_address + 1);
 
             // Calculate which pixel of the tile we need (0-7)
-            let pixel_x = (screen_x as u16 + 7 - window_x as u16) % 8;
+            let pixel_x = (screen_x as u16 - window_x as u16) % 8;
 
             // Get the color bits
             let pixel_bit_position = 7 - (pixel_x as u8);
@@ -1189,7 +1181,7 @@ impl Ppu {
             // Get the color and render
             let colour = self.lcd.get_bg_color(colour_id);
 
-            line[screen_x] = colour;
+            line[screen_x as usize] = colour;
         }
 
     }
@@ -1221,9 +1213,7 @@ impl Ppu {
         self.render_sprite_scanline(&mut line);
 
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
-        if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x <= 166 {
-            self.window_line_counter = self.window_line_counter.wrapping_add(1);
-        }
+
     }
 
     /*

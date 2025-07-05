@@ -76,9 +76,6 @@ impl LCD{
             },
             0xFF4A => self.window_y = value,
             0xFF4B => {
-                if value < 7 {
-                    return;
-                }
                 self.window_x = value
             },
             _ => panic!("Invalid LCD address: {:#X}", address),

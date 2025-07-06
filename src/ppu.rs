@@ -1107,10 +1107,10 @@ impl Ppu {
     }
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
 
-        let window_x = self.lcd.window_x.wrapping_sub(7);
-        
+        let window_x = self.lcd.window_x.saturating_sub(7);
+
         // Early return if window is not visible
-        if !self.window_enabled() || self.ly < self.lcd.window_y || window_x > 166 {
+        if !self.window_enabled() || self.ly < self.lcd.window_y || self.lcd.window_x > 166 {
             return;
         }
 
@@ -1133,11 +1133,7 @@ impl Ppu {
 
         // Render window pixels for this scanline
         for screen_x in window_x..160 {
-            // Only draw window pixels if we're at or past window_x - 7
-            /*if screen_x < window_x {
-                continue;
-            }*/
-
+            
             // Calculate the offset into the window tile map
             let tile_map_offset = (
                 ((screen_x as u16 - window_x as u16) / 8) +

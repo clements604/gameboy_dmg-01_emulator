@@ -133,6 +133,7 @@ impl MainDisplay {
     }
 
     pub fn process_events(&mut self) -> bool {
+        false;
         let mut running = true;
 
         // Process window events (quit, etc.)

@@ -3,7 +3,7 @@ use std::rc::{Rc, Weak};
 use log::{debug, error, info};
 use crate::dma::Dma;
 
-const DARKEST_GREEN: u32 = 0xFF142C38;
+pub const DARKEST_GREEN: u32 = 0xFF142C38;
 //const DARK_GREEN: u32 = 0xFF306230;
 const DARK_GREEN: u32 = 0xFF548C70;
 //const LIGHT_GREEN: u32 = 0xFF8BAC0F;

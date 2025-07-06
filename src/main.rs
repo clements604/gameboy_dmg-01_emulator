@@ -170,7 +170,7 @@ impl Emulator {
         }
 
         self.input_check_counter = (self.input_check_counter + 1) % 32;
-        
+
         let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);
 
         if self.memory_bus.enabling_ime {
@@ -253,10 +253,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    /*let rom = load_rom(String::from(
+    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));*/
+    ));
 
     /*
      * CPU instructions

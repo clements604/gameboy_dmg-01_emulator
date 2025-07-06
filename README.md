@@ -1,5 +1,22 @@
 # Gameboy emulator
 
+## TODO
+### Super Mario Land Defect
+Super Mario Land has an issue where the game resets due to a combination of button presses being detectected.
+
+    This *MAY* be due to the joypad, however could be due to timing, interrupts, ect.
+
+### Pokemon Defects
+1. Pokemon Red has a defect for window rendering.
+
+    When certain battle animations are tirggered the screen goes blank.
+
+    After this happens once, subsequent window triggering such as the pause menu or Pokemon center dialog are not visible.
+
+2. Pokemon Red has a defect for sprite rendering.
+
+    When the game starts, the Gamefreak animation shows an issue with sprite pixel priority.
+
 ## Useful Links
 
 - Guide to follow

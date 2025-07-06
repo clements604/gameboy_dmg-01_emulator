@@ -75,9 +75,7 @@ impl LCD{
                 self.update_palette(value, 2);  // Update sp2_colours
             },
             0xFF4A => self.window_y = value,
-            0xFF4B => {
-                self.window_x = value
-            },
+            0xFF4B => self.window_x = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }

@@ -170,7 +170,7 @@ impl Emulator {
         }
 
         self.input_check_counter = (self.input_check_counter + 1) % 32;
-        
+
         let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);
 
         if self.memory_bus.enabling_ime {

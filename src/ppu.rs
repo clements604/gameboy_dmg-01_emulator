@@ -461,7 +461,6 @@ impl Ppu {
 
                     if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x.saturating_sub(7) <= 166 {
                         self.window_line_counter = self.window_line_counter.wrapping_add(1);
-                        info!("Window line counter increased to {} with LY = {} and Window Y = {} and Window X = {}", self.window_line_counter, self.ly, self.lcd.window_y, self.lcd.window_x.saturating_sub(7));
                     }
                 }
             }
@@ -515,6 +514,7 @@ impl Ppu {
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
             0xFF47 => self.lcd.bg_palette,
+            0xFF47..=0xFF4B => self.lcd.read(address),
             _ => {
                 debug!("Invalid LCD address: {:#X}", address);
                 0xFF
@@ -532,12 +532,7 @@ impl Ppu {
                 //self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
-            0xFF47..=0xFF4B => {
-                if address == 0xFF4B {
-                    info!("WX register written: {} at LY={}", value, self.ly);
-                }
-                self.lcd.write(address, value);
-            },
+            0xFF47..=0xFF4B => self.lcd.write(address, value),
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
@@ -1111,7 +1106,7 @@ impl Ppu {
     }
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
         // Early return if window is not visible
-        if !self.window_enabled() || self.ly < self.lcd.window_y {
+        if !self.window_enabled() || self.ly < self.lcd.window_y || self.lcd.window_x > 166 {
             return;
         }
 

@@ -446,6 +446,10 @@ impl Ppu {
                     // Render scanline
                     self.render_scanline();
 
+                    if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x.saturating_sub(7) <= 166 {
+                        self.window_line_counter = self.window_line_counter.wrapping_add(1);
+                    }
+
                     // Mode transition
                     if self.ly == 143 {
                         debug!("Transition to VBLANK, STAT before: {:#X}, {:8b}", self.stat, self.stat);
@@ -459,9 +463,6 @@ impl Ppu {
                     self.increment_ly();
                     self.line_ticks -= 204;
 
-                    if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x.saturating_sub(7) <= 166 {
-                        self.window_line_counter = self.window_line_counter.wrapping_add(1);
-                    }
                 }
             }
             VBLANK_MODE => {
@@ -1105,12 +1106,13 @@ impl Ppu {
         }
     }
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
-        // Early return if window is not visible
-        if !self.window_enabled() || self.ly < self.lcd.window_y || self.lcd.window_x > 166 {
-            return;
-        }
 
         let window_x = self.lcd.window_x.wrapping_sub(7);
+        
+        // Early return if window is not visible
+        if !self.window_enabled() || self.ly < self.lcd.window_y || window_x > 166 {
+            return;
+        }
 
         // Calculate window line (Y position within the window)
         let window_line = self.window_line_counter;

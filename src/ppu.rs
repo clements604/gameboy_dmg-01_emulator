@@ -559,6 +559,10 @@ impl Ppu {
         self.oam_ram[(address) as usize]
     }
 
+    pub fn oam_dma_write(&mut self, address: u16, value: u8) {
+        self.oam_ram[address as usize] = value;
+    }
+
     pub fn oam_write(&mut self, address: u16, value: u8) {
         //debug!("OAM write at address: {:#X}", address);
         if self.mode == OAM_MODE || self.mode == VRAM_MODE {
@@ -1133,7 +1137,7 @@ impl Ppu {
 
         // Render window pixels for this scanline
         for screen_x in window_x..160 {
-            
+
             // Calculate the offset into the window tile map
             let tile_map_offset = (
                 ((screen_x as u16 - window_x as u16) / 8) +

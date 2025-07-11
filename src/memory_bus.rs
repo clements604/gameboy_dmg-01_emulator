@@ -140,22 +140,21 @@ impl MemoryBus {
 
         memory_bus
     }
-    
+
     pub fn cycle(&mut self, cpu_cycles: u8) {
-        
+
         // Timer
         if self.dmg_io.timer.cycle(cpu_cycles) {
             // If timer overflows, trigger a Timer interrupt
             self.trigger_interrupt(interupts::Interrupt::TIMER);
         }
-        
+
         // OAM
         for _ in 0..cpu_cycles {
             if let Some((src_addr, dest_addr)) = self.dma.dma_tick() {
                 let value = self.read_byte(src_addr);
-                self.dmg_io.ppu.oam_write(dest_addr, value);
+                self.dmg_io.ppu.oam_dma_write(dest_addr, value); // ← Use DMA function
             }
-            
         }
     }
 

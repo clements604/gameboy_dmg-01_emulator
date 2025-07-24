@@ -162,7 +162,7 @@ impl Emulator {
             let new_joypad_state = u8::from(joypad);
             // Only generate interrupt on transition from not-pressed to pressed (1→0)
             let just_pressed = (previous_joypad_state & 0x0F) & !(new_joypad_state & 0x0F);
-            if just_pressed != 0 {
+            if just_pressed == 0 {
                 self.memory_bus.trigger_interrupt(JOYPAD);
             }
 
@@ -238,7 +238,7 @@ impl Emulator {
 
 fn main() {
     // Open the log file
-    //let file = File::create("output.log").unwrap();
+    let file = File::create("output.log").unwrap();
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
         //.target(env_logger::Target::Pipe(Box::new(file)))
@@ -253,10 +253,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    let rom = load_rom(String::from(
+    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));
+    ));*/
 
     /*
      * CPU instructions

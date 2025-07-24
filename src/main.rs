@@ -138,6 +138,8 @@ impl Emulator {
             joypad.down = true;
             joypad.left = true;
             joypad.right = true;
+            
+            let mut pressed = false;
 
             // Apply current keys
             for key in current_keys {
@@ -152,6 +154,7 @@ impl Emulator {
                     Keycode::Backspace => joypad.select = false,
                     _ => (),
                 }
+                pressed = true;
             }
 
             // IMPORTANT: Restore the selection bits after updating button states
@@ -162,7 +165,7 @@ impl Emulator {
             let new_joypad_state = u8::from(joypad);
             // Only generate interrupt on transition from not-pressed to pressed (1→0)
             let just_pressed = (previous_joypad_state & 0x0F) & !(new_joypad_state & 0x0F);
-            if just_pressed == 0 {
+            if pressed {
                 self.memory_bus.trigger_interrupt(JOYPAD);
             }
 

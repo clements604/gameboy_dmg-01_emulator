@@ -49,6 +49,8 @@ pub struct Ppu {
     pub framebuffer: Vec<u32>,
     pub viewport: Vec<u32>,
     interrupts: Vec<Interrupt>, // Experimental for change in ownership model
+    prev_lyc_coincidence: bool,
+    prev_mode: u8,
 }
 
 //Display for Ppu
@@ -247,6 +249,8 @@ impl Ppu {
                 main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT
             ],
             interrupts: Vec::new(),
+            prev_lyc_coincidence: false,
+            prev_mode: 2,
         }
     }
 
@@ -361,7 +365,8 @@ impl Ppu {
             self.stat |= 0x04; // Set coincidence flag
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
                 //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-                self.interrupts.push(Interrupt::LCDSTAT);
+                //self.interrupts.push(Interrupt::LCDSTAT);
+                self.update_stat_interrupts(); // Ensure this is called to check for interrupts
             }
         } else {
             self.stat &= !0x04; // Clear coincidence flag
@@ -413,7 +418,8 @@ impl Ppu {
                     // Check for OAM interrupt
                     if self.is_stat_interrupt_enabled(StatInterrupt::OAM) {
                         //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-                        self.interrupts.push(Interrupt::LCDSTAT);
+                        //self.interrupts.push(Interrupt::LCDSTAT);
+                        //self.update_stat_interrupts();
                     }
 
                     // Check for LYC=LY interrupt
@@ -440,7 +446,8 @@ impl Ppu {
                     // Check for H-Blank interrupt
                     if self.is_stat_interrupt_enabled(StatInterrupt::HBLANK) {
                         //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-                        self.interrupts.push(Interrupt::LCDSTAT);
+                        //self.interrupts.push(Interrupt::LCDSTAT);
+                        //self.update_stat_interrupts();
                     }
 
                     // Render scanline
@@ -503,6 +510,7 @@ impl Ppu {
         {
             //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
             self.interrupts.push(Interrupt::LCDSTAT);
+            //self.update_stat_interrupts();
         }
     }
 

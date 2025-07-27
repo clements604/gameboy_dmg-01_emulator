@@ -51,6 +51,7 @@ pub struct Ppu {
     interrupts: Vec<Interrupt>, // Experimental for change in ownership model
     prev_lyc_coincidence: bool,
     prev_mode: u8,
+    prev_stat_line: bool,
 }
 
 //Display for Ppu
@@ -251,6 +252,7 @@ impl Ppu {
             interrupts: Vec::new(),
             prev_lyc_coincidence: false,
             prev_mode: 2,
+            prev_stat_line: false,
         }
     }
 
@@ -377,8 +379,9 @@ impl Ppu {
             self.window_line_counter = 0;
             self.current_frame += 1;
             self.change_mode(OAM_MODE);
+            self.update_stat_interrupts(); // Ensure this is called to check for interrupts
         }
-        self.update_stat_interrupts(); // Ensure this is called to check for interrupts
+        
     }
 
     fn get_current_mode(&self) -> u8 {
@@ -503,15 +506,20 @@ impl Ppu {
         // Update STAT register's mode bits
         self.stat = (self.stat & 0b11111100) | self.mode;
 
-        if (self.stat & 0x40 != 0 && self.ly == self.ly_compare) || // LYC=LY interrupt
-            (self.stat & 0x20 != 0 && self.mode == 2) || // OAM interrupt
-            (self.stat & 0x10 != 0 && self.mode == 1) || // V-Blank interrupt
-            (self.stat & 0x08 != 0 && self.mode == 0)
-        {
-            //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
+        // Calculate current STAT interrupt line state (OR of all conditions)
+        let current_stat_line =
+            (self.stat & 0x40 != 0 && self.ly == self.ly_compare) || // LYC=LY interrupt
+                (self.stat & 0x20 != 0 && self.mode == 2) ||             // OAM interrupt  
+                (self.stat & 0x10 != 0 && self.mode == 1) ||             // V-Blank interrupt
+                (self.stat & 0x08 != 0 && self.mode == 0);               // H-Blank interrupt
+
+        // Only fire interrupt on rising edge (false → true)
+        if current_stat_line && !self.prev_stat_line {
             self.interrupts.push(Interrupt::LCDSTAT);
-            //self.update_stat_interrupts();
         }
+
+        // Update previous state for next time
+        self.prev_stat_line = current_stat_line;
     }
 
     pub fn read(&self, address: u16) -> u8 {

@@ -275,7 +275,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to no MBC implementation
+    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
 
     /*
     * CPU timing

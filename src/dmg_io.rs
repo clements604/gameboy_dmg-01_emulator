@@ -5,6 +5,7 @@ use crate::CPU::CPU;
 //use crate::display::Display;
 use crate::dma::Dma;
 use crate::{joypad, timer};
+use crate::interupts::Interrupt;
 use crate::lcd::LCD;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE, MemoryBus};
 use crate::ppu::Ppu;
@@ -36,10 +37,7 @@ impl IO {
             0xFF00 => u8::from(self.joypad),
             0xFF01 => self.serial_data[0] as u8,
             0xFF02 => self.serial_data[1] as u8,
-            0xFF04 => {
-                let low_byte = (self.timer.div & 0xFF) as u8;
-                low_byte
-            },
+            0xFF04 => self.timer.div,
             0xFF05 => self.timer.tima,
             0xFF06 => self.timer.tma,
             0xFF07 => {
@@ -58,7 +56,7 @@ impl IO {
             }
         }
     }
-    pub fn write(&mut self, address: u16, value: u8) {
+    pub fn write(&mut self, address: u16, value: u8) -> Option<Interrupt> {
         //debug!("Write to IO address: {:#X}", address);
         match address {
             0xFF00 => {
@@ -74,11 +72,14 @@ impl IO {
                 //self.timer.div = 0; // Reset DIV when written to
                 self.timer.reset_div();
             },
-            0xFF05 => self.timer.tima = value,
+            0xFF05 => {
+                self.timer.write_tima(value);
+            },
             0xFF06 => self.timer.tma = value,
             0xFF07 => {
-                self.timer.tac = value;
-                self.timer.enabled = (value & 0b100) != 0; // Check if bit 2 is set
+                if self.timer.set_tac(value) {
+                    return Some(Interrupt::TIMER)
+                }
             },
             0xFF40..=0xFF46 => {
 
@@ -92,7 +93,7 @@ impl IO {
                 self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
             }
         }
-        //self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
+        None
     }
 
 }

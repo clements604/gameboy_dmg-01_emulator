@@ -103,15 +103,24 @@ impl Timer {
     fn increment_tima(&mut self) -> bool {
         let (new_tima, overflow) = self.tima.overflowing_add(1);
         if overflow {
-            info!("TIMA OVERFLOW: starting 4-cycle reload, TMA=0x{:02X}", self.tma);
-            // Game Boy behavior: TIMA becomes 0x00 and stays there for 4 cycles
+            info!("TIMA OVERFLOW: starting reload");
             self.tima = 0x00;
-            self.tima_reload_cycles = 4;  // Reload after 4 cycles
+            self.tima_reload_cycles = 4;  // TIMA shows 0x00 for 4 cycles
             self.tima_reload_value = self.tma;
             true
         } else {
             self.tima = new_tima;
             false
+        }
+    }
+
+    pub fn write_tma(&mut self, value: u8) {
+        self.tma = value;
+
+        // TMA writes can affect reload for longer window (empirically determined)
+        if self.tima_reload_cycles > 0 && self.tima_reload_cycles >= 2 {
+            info!("TMA WRITE during extended reload window: cycles_left={}", self.tima_reload_cycles);
+            self.tima_reload_value = value;
         }
     }
 
@@ -166,18 +175,18 @@ impl Timer {
 
     pub fn write_tima(&mut self, value: u8) {
         if self.tima_reload_cycles > 0 {
-            info!("TIMA WRITE DEBUG: value=0x{:02X}, reload_cycles={}, current_tima=0x{:02X}",
+            debug!("TIMA WRITE DEBUG: value=0x{:02X}, reload_cycles={}, current_tima=0x{:02X}",
                      value, self.tima_reload_cycles, self.tima);
 
             // During reload delay: write behavior depends on exact timing
             // Based on the test pattern, only writes during cycle 2 are ignored
             if self.tima_reload_cycles == 2 {
-                info!("  -> IGNORED (reload_cycles={})", self.tima_reload_cycles);
+                debug!("  -> IGNORED (reload_cycles={})", self.tima_reload_cycles);
                 // Specific cycle where writes are ignored
                 // TIMA will still reload with TMA value
                 return;
             } else {
-                info!("  -> ACCEPTED (reload_cycles={}), canceling reload", self.tima_reload_cycles);
+                debug!("  -> ACCEPTED (reload_cycles={}), canceling reload", self.tima_reload_cycles);
                 // All other cycles during reload - write takes effect
                 // Cancel the reload and use the written value
                 self.tima = value;
@@ -187,9 +196,11 @@ impl Timer {
         }
 
         // Normal write when not reloading
-        info!("TIMA WRITE NORMAL: value=0x{:02X}", value);
+        debug!("TIMA WRITE NORMAL: value=0x{:02X}", value);
         self.tima = value;
     }
+
+
     
 }
 

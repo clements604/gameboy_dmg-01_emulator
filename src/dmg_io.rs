@@ -75,7 +75,7 @@ impl IO {
             0xFF05 => {
                 self.timer.write_tima(value);
             },
-            0xFF06 => self.timer.tma = value,
+            0xFF06 => self.timer.write_tma(value),
             0xFF07 => {
                 if self.timer.set_tac(value) {
                     return Some(Interrupt::TIMER)

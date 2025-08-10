@@ -1,4 +1,5 @@
 use log::{debug, info};
+use serde::{Serialize, Deserialize};
 
 pub struct Timer {
     internal_div_counter: u16,
@@ -10,6 +11,7 @@ pub struct Timer {
     // New fields for delayed reload
     tima_reload_cycles: u8,  // Countdown for reload delay
     tima_reload_value: u8,   // Value to reload with
+    tma_write_window: u8,
 }
 
 impl Timer {
@@ -23,6 +25,7 @@ impl Timer {
             enabled: false,
             tima_reload_cycles: 0,
             tima_reload_value: 0,
+            tma_write_window: 0,
         }
     }
 
@@ -58,7 +61,7 @@ impl Timer {
             // Get the bit that was being monitored before the change
             let old_bit_position = match old_frequency {
                 0 => 9,  // 4096 Hz
-                1 => 3,  // 262144 Hz  
+                1 => 3,  // 262144 Hz
                 2 => 5,  // 65536 Hz
                 3 => 7,  // 16384 Hz
                 _ => unreachable!(),
@@ -103,10 +106,11 @@ impl Timer {
     fn increment_tima(&mut self) -> bool {
         let (new_tima, overflow) = self.tima.overflowing_add(1);
         if overflow {
-            info!("TIMA OVERFLOW: starting reload");
+            debug!("TIMA OVERFLOW: starting reload");
             self.tima = 0x00;
-            self.tima_reload_cycles = 4;  // TIMA shows 0x00 for 4 cycles
+            self.tima_reload_cycles = 4;
             self.tima_reload_value = self.tma;
+            self.tma_write_window = 5;    // NEW: Accept TMA writes for 5 cycles
             true
         } else {
             self.tima = new_tima;
@@ -115,18 +119,26 @@ impl Timer {
     }
 
     pub fn write_tma(&mut self, value: u8) {
+        debug!("TMA WRITE: value=0x{:02X}, reload_cycles={}, write_window={}", 
+           value, self.tima_reload_cycles, self.tma_write_window);
         self.tma = value;
 
-        // TMA writes can affect reload for longer window (empirically determined)
-        if self.tima_reload_cycles > 0 && self.tima_reload_cycles >= 2 {
-            info!("TMA WRITE during extended reload window: cycles_left={}", self.tima_reload_cycles);
-            self.tima_reload_value = value;
+        if self.tma_write_window > 0 {
+            debug!("  -> ACCEPTED: in write window");
+            if self.tima_reload_cycles > 0 {
+                // Still reloading - update reload value
+                self.tima_reload_value = value;
+            } else {
+                // Reload complete but still in window - update TIMA directly  
+                self.tima = value;
+            }
         }
     }
 
     pub fn cycle(&mut self, cycles: u8) -> bool {
 
         debug!("TIMER CYCLE: {} cycles, tima=0x{:02X}, enabled={}", cycles, self.tima, self.enabled);
+        debug!("CYCLE START: internal_counter=0x{:04X}, cycles_to_add={}", self.internal_div_counter, cycles);
         
         let mut interrupt = false;
 
@@ -137,6 +149,10 @@ impl Timer {
                 if self.tima_reload_cycles == 0 {
                     self.tima = self.tima_reload_value;
                 }
+            }
+
+            if self.tma_write_window > 0 {
+                self.tma_write_window -= 1;
             }
 
             // Get current state of the TIMA bit before incrementing
@@ -157,7 +173,9 @@ impl Timer {
                 let new_bit = (self.internal_div_counter >> bit_position) & 1 != 0;
 
                 // Falling edge: was 1, now 0
+                // In the falling edge detection part
                 if old_bit && !new_bit {
+                    debug!("FALLING EDGE at cycle {}: incrementing TIMA from 0x{:02X}", self.internal_div_counter, self.tima);
                     if self.increment_tima() {
                         interrupt = true;
                     }

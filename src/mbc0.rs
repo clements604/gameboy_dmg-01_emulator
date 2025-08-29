@@ -151,5 +151,8 @@ impl MBC for MBC0 {
         //unimplemented!("Saving is not implemented for MBC0!")
         Ok(())
     }
+    fn dirty_sram(&self) -> bool {
+        false
+    }
 
 }

@@ -113,8 +113,19 @@ impl Emulator {
     fn cycle(&mut self) {
         if self.input_check_counter % 16 == 0 {
             if !self.main_display.process_events() {
-                self.running = false;
-                return;
+                match self.memory_bus.mbc.as_mut() {
+                    Some(mbc) => {
+                        if ! mbc.dirty_sram() {
+                            self.running = false;
+                            return;
+                        }
+                        else {
+                            error!("Emulator requested to stop but save SRAM is dirty, not stopping to prevent data loss");
+                        }
+                    },
+                    None => {},
+                }
+                
             }
         }
 
@@ -256,10 +267,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    /*let rom = load_rom(String::from(
+    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));*/
+    ));
 
     /*
      * CPU instructions
@@ -280,7 +291,7 @@ fn main() {
     /*
     * CPU timing
      */
-    let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// TODO FAILED
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/cpu/timing/instr_timing.gb"));// TODO FAILED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/add_sp_e_timing.gb"));// TODO FAILED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/boot_div2-S.gb"));// TODO FAILED
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/call_timing.gb"));// TODO FAILED
@@ -323,7 +334,7 @@ fn main() {
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim11_div_trigger.gb"));
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_reload.gb"));
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_write_reloading.gb")); //TODO failed
-    let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb")); //TODO failed
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
 
     let mut emulator = Emulator::new(boot_rom, &rom);
 

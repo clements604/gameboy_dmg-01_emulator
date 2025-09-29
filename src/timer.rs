@@ -1,5 +1,5 @@
 use log::{debug, info};
-use serde::{Serialize, Deserialize};
+//use serde::{Serialize, Deserialize};
 
 pub struct Timer {
     internal_div_counter: u16,

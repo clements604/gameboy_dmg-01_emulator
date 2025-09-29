@@ -255,9 +255,6 @@ impl CPU {
      *   CPU cycle - fetch, decode, execute
      */
     pub fn cycle(&mut self, memory_bus: &mut MemoryBus) -> u8 {
-        debug!("##################################################");
-
-        //self.gameboy_doctor_output_log();
 
         if !self.halted {
 
@@ -266,9 +263,6 @@ impl CPU {
             debug!("PC = {:#4X}", self.pc);
 
             self.pc = self.pc.wrapping_add(1);
-
-            self.debug_update(memory_bus);
-            self.debug_print();
 
             match opcode {
                 0x00 => {
@@ -3152,19 +3146,17 @@ impl CPU {
     }
 
     fn op_halt(&mut self) {
-        debug!("op_halt");
         //memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
         self.halted = true;
     }
     fn op_stop(&mut self, memory_bus: &mut MemoryBus) {
-        error!("op_stop");
         /*
         https://gbdev.io/pandocs/Timer_and_Divider_Registers.html
         */
+        self.stopped = true;
         memory_bus.write_byte(0xFF04, 0);
     }
     fn op_di(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_di");
         memory_bus.interrupt_master_enable = false;
     }
 
@@ -3173,14 +3165,14 @@ impl CPU {
      *   Schedules interrupt handling to be enabled after the next machine cycle.
      */
     fn op_ei(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_ei");
         memory_bus.enabling_ime = true;
     }
 
     /*
-     *   RCL (Rotate Left Through Carry)
+     * RCL (Rotate Left Through Carry)
+     * Shift the register value left by one bit.
+     * If the most significant bit is set, then set the lest significant bit to 1 and set the carry flag.
      */
-    // TODO add detailed description
     fn op_rlc(&mut self, register: &mut u8) {
         debug!("op_rlc");
         let carry = *register & 0x80 != 0;
@@ -3191,9 +3183,11 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, carry);
     }
 
-    // TODO add detailed description
     /*
-     *   Rotate Right through Carry
+     * RRC (Rotate Right Through Carry)
+     * Shift the register value right by one bit.
+     * If the least significant bit is set, move it into the carry flag
+     * and set the most significant bit to the previous carry value.
      */
     fn op_rrc(&mut self, register: &mut u8) {
         debug!("op_rrc");
@@ -3205,9 +3199,11 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, carry);
     }
 
-    // TODO add detailed description
     /*
-     *   Rotate Left
+     * RL (Rotate Left through Carry)
+     * Shift the register value left by one bit.
+     * The old bit 7 is moved into the Carry flag.
+     * The previous Carry flag value is rotated into bit 0.
      */
     fn op_rl(&mut self, register: &mut u8) {
         debug!("op_rl");
@@ -3220,7 +3216,12 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, new_carry);
     }
 
-    // TODO add detailed description
+    /*
+     * RR (Rotate Right through Carry)
+     * Shift the register value right by one bit.
+     * The old bit 0 is moved into the Carry flag.
+     * The previous Carry flag value is rotated into bit 7.
+     */
     fn op_rr(&mut self, register: &mut u8) {
         debug!("op_rr");
         let carry = self.registers.f.get_flag(Flag::C);
@@ -3232,7 +3233,12 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, new_carry);
     }
 
-    // TODO add detailed description
+    /*
+     * SLA (Shift Left Arithmetic)
+     * Shift the register value left by one bit.
+     * The old bit 7 is moved into the Carry flag.
+     * Bit 0 is always cleared to 0.
+     */
     fn op_sla(&mut self, register: &mut u8) {
         let carry = *register >> 7;
         *register <<= 1;
@@ -3242,7 +3248,12 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, carry == 1);
     }
 
-    // TODO add detailed description
+    /*
+     * SRA (Shift Right Arithmetic)
+     * Shift the register value right by one bit.
+     * The old bit 0 is moved into the Carry flag.
+     * The most significant bit (bit 7) remains unchanged to preserve the sign.
+     */
     fn op_sra(&mut self, register: &mut u8) {
         debug!("op_sra");
         let carry = *register & 0x01 != 0;
@@ -3253,7 +3264,10 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, carry);
     }
 
-    // TODO add detailed description
+    /*
+     * Swap Nibbles
+     * Swap the upper and lower 4-bit nibbles of the register value.
+     */
     fn op_swap(&mut self, register: &mut u8) {
         debug!("op_swap");
         *register = (*register >> 4) | (*register << 4);
@@ -3263,7 +3277,12 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, false);
     }
 
-    // TODO add detailed description
+    /*
+     * SRL (Shift Right Logical)
+     * Shift the register value right by one bit.
+     * The old bit 0 is moved into the Carry flag.
+     * Bit 7 is always cleared to 0.
+     */
     fn op_srl(&mut self, register: &mut u8) {
         debug!("op_srl");
         let carry = *register & 0x01 != 0;
@@ -3274,8 +3293,11 @@ impl CPU {
         self.registers.f.set_flag(Flag::C, carry);
     }
 
-    // TODO add detailed description
-    // FIXME Get this to work with RC
+    /*
+     * BIT (Test Bit)
+     * Test whether the specified bit position is set in the register value.
+     * The Zero flag is set if the tested bit is 0.
+     */
     fn op_bit(&mut self, bit: u8, register: u8) {
         debug!("op_bit");
         self.registers.f.set_flag(Flag::Z, (register & (1 << bit)) == 0);
@@ -3292,83 +3314,25 @@ impl CPU {
         self.pc = address;
     }
 
+    /*
+    * PUSH
+    * Push the 16-bit value onto the stack.
+    */
     pub fn op_push_stack(&mut self, memory_bus: &mut MemoryBus, address: u16) {
         debug!("op_push_stack");
         self.sp = self.sp.wrapping_sub(2);
         memory_bus.write_short(self.sp, address);
     }
 
+    /*
+    * POP
+    * Pop the 16-bit value from the stack and return it.
+    */
     fn op_pop_stack(&mut self, memory_bus: &mut MemoryBus) -> u16 {
         debug!("op_pop_stack");
         let value = memory_bus.read_short(self.sp);
         self.sp = self.sp.wrapping_add(2);
         value
-    }
-
-    fn wait_for_input(&mut self) {
-        // Create a buffer to hold the user input
-        let mut buffer = [0; 1];
-
-        // Create an instance of Stdin
-        let stdin = io::stdin();
-
-        // Lock stdin and get a mutable reference to it
-        let mut handle = stdin.lock();
-
-        loop {
-            // Read a single byte of input
-            match handle.read_exact(&mut buffer) {
-                Ok(_) => {
-                    // If a key was pressed, break out of the loop
-                    break;
-                }
-                Err(_) => {
-                    // Handle any errors (e.g., if reading from stdin fails)
-                    println!("An error occurred while reading input.");
-                    break;
-                }
-            }
-        }
-    }
-
-    fn debug_update(&mut self, memory_bus: &mut MemoryBus) {
-        if memory_bus.read_byte(0xFF02) == 0x81 {
-            self.rom_debug.add_char(memory_bus.read_byte(0xFF01) as char);
-            memory_bus.write_byte(0xFF02, 0);
-        }
-    }
-
-    fn debug_print(&mut self) {
-        self.rom_debug.print();
-    }
-
-    fn gameboy_doctor_output_log(&mut self, memory_bus: &mut MemoryBus) {
-        // create or open (append mode) the log file
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("gameboy_doctor_output.log")
-            .unwrap();
-
-        // write line to file
-        writeln!(file, "A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:02X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}",
-                 self.registers.a,
-                 u8::from(self.registers.f),
-                 self.registers.b,
-                 self.registers.c,
-                 self.registers.d,
-                 self.registers.e,
-                 self.registers.h,
-                 self.registers.l,
-                 self.sp,
-                 self.pc,
-                 memory_bus.read_byte(self.pc),
-                 memory_bus.read_byte(self.pc.wrapping_add(1)),
-                 memory_bus.read_byte(self.pc.wrapping_add(2)),
-                 memory_bus.read_byte(self.pc.wrapping_add(3)))
-            .unwrap();
-        // close file
-        file.flush().unwrap();
     }
 
 }

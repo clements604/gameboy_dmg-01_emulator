@@ -27,9 +27,7 @@ pub struct Registers {
     pub e: u8,
     pub f: FlagsRegister, // Flags
     pub h: u8,
-    pub l: u8,
-    pub pc: u16, // Program counter
-    pub sp: u16,     // Stack pointer
+    pub l: u8
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -50,7 +48,8 @@ pub enum Flag {
 
 pub struct CPU/*<'a>*/ {
     pub registers: Registers,
-
+    pub pc: u16, // Program counter
+    pub sp: u16,     // Stack pointer
     video_ram: [u16; 8192],
     
     pub halted: bool,
@@ -69,9 +68,7 @@ impl Registers {
             e: 0xD8,
             f: FlagsRegister::new(),
             h: 0x01,
-            l: 0x4D,
-            pc: 0x0100,
-            sp: 0xFFFE,
+            l: 0x4D
         }
     }
 
@@ -130,8 +127,6 @@ impl fmt::Display for Registers {
         BC: {:04X}
         DE: {:04X}
         HL: {:04X}
-        SP: {:04X}
-        PC: {:04X}
         F: {}",
             self.a,
             self.b,
@@ -144,8 +139,6 @@ impl fmt::Display for Registers {
             self.get_bc(),
             self.get_de(),
             self.get_hl(),
-            self.sp,
-            self.pc,
             self.f
         )
     }
@@ -249,6 +242,8 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             registers: Registers::new(),
+            pc: 0x0100,
+            sp: 0xFFFE,
             video_ram: [0; 8192],
             halted: false,
             stopped: false,
@@ -266,11 +261,11 @@ impl CPU {
 
         if !self.halted {
 
-            let opcode = memory_bus.read_byte(self.registers.pc);
+            let opcode = memory_bus.read_byte(self.pc);
             debug!("opcode = {:#4X}", opcode);
-            debug!("PC = {:#4X}", self.registers.pc);
+            debug!("PC = {:#4X}", self.pc);
 
-            self.registers.pc = self.registers.pc.wrapping_add(1);
+            self.pc = self.pc.wrapping_add(1);
 
             self.debug_update(memory_bus);
             self.debug_print();
@@ -319,7 +314,7 @@ impl CPU {
                 }
                 0x08 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
-                    self.write_immediate_short(memory_bus, nn, self.registers.sp);
+                    self.write_immediate_short(memory_bus, nn, self.sp);
                     20
                 }
                 0x09 => {
@@ -544,7 +539,7 @@ impl CPU {
                 }
                 0x31 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
-                    self.registers.sp = nn;
+                    self.sp = nn;
                     12
                 }
                 0x32 => {
@@ -554,7 +549,7 @@ impl CPU {
                     8
                 }
                 0x33 => {
-                    self.registers.sp = self.registers.sp.wrapping_add(1);
+                    self.sp = self.sp.wrapping_add(1);
                     8
                 }
                 0x34 => {
@@ -584,7 +579,7 @@ impl CPU {
                 }
                 0x39 => {
                     let hl = self.registers.get_hl();
-                    let value = self.registers.sp;
+                    let value = self.sp;
                     let result = self.op_add_r16(hl, value);
                     self.registers.set_hl(result);
                     8
@@ -596,7 +591,7 @@ impl CPU {
                     8
                 }
                 0x3B => {
-                    self.registers.sp = self.registers.sp.wrapping_sub(1);
+                    self.sp = self.sp.wrapping_sub(1);
                     8
                 }
                 0x3C => {
@@ -2589,7 +2584,7 @@ impl CPU {
                     16
                 }
                 0xE9 => {
-                    self.registers.pc = self.registers.get_hl();
+                    self.pc = self.registers.get_hl();
                     4
                 }
                 0xEA => {
@@ -2663,7 +2658,7 @@ impl CPU {
                 }
                 0xF8 => {
                     let value = self.read_immediate_byte(memory_bus) as i8;
-                    let sp = self.registers.sp;
+                    let sp = self.sp;
                     let result = sp.wrapping_add(value as i16 as u16);
                     self.registers.set_hl(result);
                     self.registers.f.set_flag(Flag::Z, false);
@@ -2673,7 +2668,7 @@ impl CPU {
                     12
                 }
                 0xF9 => {
-                    self.registers.sp = self.registers.get_hl();
+                    self.sp = self.registers.get_hl();
                     8
                 }
                 0xFA => {
@@ -2731,10 +2726,10 @@ impl CPU {
      *   Read the immediate 16-bit value from memory for the current program counter and program counter + 1.
      */
     fn read_immediate_short(&mut self, memory_bus: &mut MemoryBus) -> u16 {
-        let lsb = memory_bus.read_byte(self.registers.pc);
-        self.registers.pc = self.registers.pc.wrapping_add(1);
-        let msb = memory_bus.read_byte(self.registers.pc);
-        self.registers.pc = self.registers.pc.wrapping_add(1);
+        let lsb = memory_bus.read_byte(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+        let msb = memory_bus.read_byte(self.pc);
+        self.pc = self.pc.wrapping_add(1);
         (msb as u16) << 8 | lsb as u16
     }
 
@@ -2742,8 +2737,8 @@ impl CPU {
      *   Read the immediate 8-bit value from memory for the current program counter.
      */
     fn read_immediate_byte(&mut self, memory_bus: &mut MemoryBus) -> u8 {
-        let value = memory_bus.read_byte(self.registers.pc);
-        self.registers.pc = self.registers.pc.wrapping_add(1);
+        let value = memory_bus.read_byte(self.pc);
+        self.pc = self.pc.wrapping_add(1);
         value
     }
 
@@ -3025,9 +3020,9 @@ impl CPU {
     }
     fn op_add_sp_d8(&mut self, memory_bus: &mut MemoryBus) {
         let value = self.read_immediate_byte(memory_bus) as i8;
-        let sp = self.registers.sp as i16;
+        let sp = self.sp as i16;
         let result = sp.wrapping_add(value as i16);
-        self.registers.sp = result as u16;
+        self.sp = result as u16;
         let half_carry = ((sp & 0x0F) + (value as i16 & 0x0F)) & 0x10 != 0;
         self.registers.f.set_flag(Flag::H, half_carry);
         let carry = (sp & 0xFF) + (value as i16 & 0xFF) > 0xFF;
@@ -3042,7 +3037,7 @@ impl CPU {
      */
     fn op_jp_nn(&mut self, address: u16) {
         debug!("op_jp_nn");
-        self.registers.pc = address;
+        self.pc = address;
     }
 
     /*
@@ -3052,16 +3047,16 @@ impl CPU {
     /*fn op_jr_e(&mut self, offset: i8) {
         debug!(
             "Jumping to 0x{:04X}",
-            self.registers.pc.wrapping_add(offset as u16)
+            self.pc.wrapping_add(offset as u16)
         );
-        self.registers.pc = self.registers.pc.wrapping_add(offset as u16);
+        self.pc = self.pc.wrapping_add(offset as u16);
     }*/
     fn op_jr_e(&mut self, offset: i8) {
-        debug!("Program counter before jump: 0x{:04X}", self.registers.pc);
+        debug!("Program counter before jump: 0x{:04X}", self.pc);
         debug!("Offset: 0x{:02X}", offset);
-        let new_pc = self.registers.pc.wrapping_add(offset as u16);
+        let new_pc = self.pc.wrapping_add(offset as u16);
         debug!("Jumping to 0x{:04X}", new_pc);
-        self.registers.pc = new_pc;
+        self.pc = new_pc;
     }
 
     /*
@@ -3070,8 +3065,8 @@ impl CPU {
      */
     fn op_call_nn(&mut self, memory_bus: &mut MemoryBus, address: u16) {
         debug!("op_call_nn");
-        self.op_push_stack(memory_bus, self.registers.pc);
-        self.registers.pc = address;
+        self.op_push_stack(memory_bus, self.pc);
+        self.pc = address;
     }
 
     /*
@@ -3082,7 +3077,7 @@ impl CPU {
         debug!("op_ret");
         let address = self.op_pop_stack(memory_bus);
         debug!("Return address: 0x{:04X}", address);
-        self.registers.pc = address;
+        self.pc = address;
     }
 
     /*
@@ -3135,13 +3130,13 @@ impl CPU {
         };
         
         // Added for mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb
-        //self.registers.pc += 1;
+        //self.pc += 1;
 
         // Push the current PC to the stack
-        self.op_push_stack(memory_bus, self.registers.pc);
+        self.op_push_stack(memory_bus, self.pc);
 
         // Set PC to the interrupt vector
-        self.registers.pc = vector_address;
+        self.pc = vector_address;
 
         // Clear the interrupt flag
         match interrupt {
@@ -3293,20 +3288,20 @@ impl CPU {
      */
     fn op_rst_address(&mut self, memory_bus: &mut MemoryBus, address: u16) {
         debug!("rst_address {}", address);
-        self.op_push_stack(memory_bus, self.registers.pc);
-        self.registers.pc = address;
+        self.op_push_stack(memory_bus, self.pc);
+        self.pc = address;
     }
 
     pub fn op_push_stack(&mut self, memory_bus: &mut MemoryBus, address: u16) {
         debug!("op_push_stack");
-        self.registers.sp = self.registers.sp.wrapping_sub(2);
-        memory_bus.write_short(self.registers.sp, address);
+        self.sp = self.sp.wrapping_sub(2);
+        memory_bus.write_short(self.sp, address);
     }
 
     fn op_pop_stack(&mut self, memory_bus: &mut MemoryBus) -> u16 {
         debug!("op_pop_stack");
-        let value = memory_bus.read_short(self.registers.sp);
-        self.registers.sp = self.registers.sp.wrapping_add(2);
+        let value = memory_bus.read_short(self.sp);
+        self.sp = self.sp.wrapping_add(2);
         value
     }
 
@@ -3365,12 +3360,12 @@ impl CPU {
                  self.registers.e,
                  self.registers.h,
                  self.registers.l,
-                 self.registers.sp,
-                 self.registers.pc,
-                 memory_bus.read_byte(self.registers.pc),
-                 memory_bus.read_byte(self.registers.pc.wrapping_add(1)),
-                 memory_bus.read_byte(self.registers.pc.wrapping_add(2)),
-                 memory_bus.read_byte(self.registers.pc.wrapping_add(3)))
+                 self.sp,
+                 self.pc,
+                 memory_bus.read_byte(self.pc),
+                 memory_bus.read_byte(self.pc.wrapping_add(1)),
+                 memory_bus.read_byte(self.pc.wrapping_add(2)),
+                 memory_bus.read_byte(self.pc.wrapping_add(3)))
             .unwrap();
         // close file
         file.flush().unwrap();

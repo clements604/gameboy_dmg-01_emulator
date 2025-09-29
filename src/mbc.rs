@@ -10,6 +10,7 @@ pub trait MBC {
     fn get_ram_bank(&self) -> usize;
     fn is_ram_enabled(&self) -> bool;
     fn save_ram(&mut self) -> Result<(), io::Error>;
+    fn dirty_sram(&self) -> bool;
 }
 #[derive(Debug, Clone, Copy)]
 pub enum MBCType {
@@ -87,7 +88,7 @@ pub fn get_ram_banks(ram_size: u8) -> usize {
 
 pub struct SRAM {
     data: Vec<u8>,
-    dirty: bool,
+    pub(crate) dirty: bool,
     save_file_path: PathBuf,
 }
 

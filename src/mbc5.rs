@@ -203,4 +203,13 @@ impl MBC for MBC5 {
 
         Ok(())
     }
+
+    fn dirty_sram(&self) -> bool {
+        if let Some(sram) = &self.sram {
+            sram.dirty
+        } else {
+            false
+        }
+    }
+    
 }

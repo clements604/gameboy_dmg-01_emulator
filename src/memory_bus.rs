@@ -265,7 +265,13 @@ impl MemoryBus {
                         self.dma.dma_start(value);
                     },
                     _ => {
-                        self.dmg_io.write(address, value);
+                        let interrupt = self.dmg_io.write(address, value);
+                        match interrupt {
+                            Some(interrupt) => {
+                                self.trigger_interrupt(interrupt);
+                            },
+                            None => {}
+                        }
                     }
                 }
             },

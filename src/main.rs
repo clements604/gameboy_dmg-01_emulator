@@ -102,7 +102,7 @@ impl Emulator {
             frame_count: 0,
             input_check_counter: 0,
             // Set target frame time to ~16.67ms (60 FPS)
-            target_frame_time: std::time::Duration::from_micros(16667),
+            target_frame_time: std::time::Duration::from_micros(16742),
             last_frame_time: Instant::now(),
             previous_keys: Vec::new(),
             running: true,
@@ -113,8 +113,19 @@ impl Emulator {
     fn cycle(&mut self) {
         if self.input_check_counter % 16 == 0 {
             if !self.main_display.process_events() {
-                self.running = false;
-                return;
+                match self.memory_bus.mbc.as_mut() {
+                    Some(mbc) => {
+                        if ! mbc.dirty_sram() {
+                            self.running = false;
+                            return;
+                        }
+                        else {
+                            error!("Emulator requested to stop but save SRAM is dirty, not stopping to prevent data loss");
+                        }
+                    },
+                    None => {},
+                }
+                
             }
         }
 
@@ -138,6 +149,8 @@ impl Emulator {
             joypad.down = true;
             joypad.left = true;
             joypad.right = true;
+            
+            let mut pressed = false;
 
             // Apply current keys
             for key in current_keys {
@@ -152,6 +165,7 @@ impl Emulator {
                     Keycode::Backspace => joypad.select = false,
                     _ => (),
                 }
+                pressed = true;
             }
 
             // IMPORTANT: Restore the selection bits after updating button states
@@ -162,7 +176,7 @@ impl Emulator {
             let new_joypad_state = u8::from(joypad);
             // Only generate interrupt on transition from not-pressed to pressed (1→0)
             let just_pressed = (previous_joypad_state & 0x0F) & !(new_joypad_state & 0x0F);
-            if just_pressed == 0 {
+            if pressed {
                 self.memory_bus.trigger_interrupt(JOYPAD);
             }
 
@@ -253,10 +267,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    /*let rom = load_rom(String::from(
+    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));*/
+    ));
 
     /*
      * CPU instructions
@@ -272,7 +286,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));//TODO infinate loop due to no MBC implementation
+    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
 
     /*
     * CPU timing
@@ -303,6 +317,24 @@ fn main() {
     */
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/interrupts/interrupt_time.gb"));
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb"));
+
+    /*
+    *   Timer
+    */
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_reload.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/div_write.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/rapid_toggle.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim00.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim00_div_trigger.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim01.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim01_div_trigger.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim10.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim10_div_trigger.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim11.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tim11_div_trigger.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_reload.gb"));
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_write_reloading.gb")); //TODO failed
+    //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
 
     let mut emulator = Emulator::new(boot_rom, &rom);
 

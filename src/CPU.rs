@@ -1,22 +1,10 @@
-use log::{debug, error, info};
-use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
-use std::io::{self, Read};
-use std::{error, fmt, result};
-
+use log::{debug, error};
+use std::fmt;
 use crate::{constants, rom_debug};
-//use crate::display::GPU;
-use crate::display;
-use crate::rom;
 use crate::memory_bus;
 use constants::*;
-use rom::*;
-use crate::rom::ROM;
 use memory_bus::MemoryBus;
 use crate::interupts::*;
-
-use std::rc::Rc;
-use std::cell::RefCell;
 
 #[derive(Debug)]
 pub struct Registers {
@@ -50,12 +38,8 @@ pub struct CPU/*<'a>*/ {
     pub registers: Registers,
     pub pc: u16, // Program counter
     pub sp: u16,     // Stack pointer
-    video_ram: [u16; 8192],
-    
     pub halted: bool,
     stopped: bool,
-
-    rom_debug: rom_debug::rom_debug,
 }
 
 impl Registers {
@@ -186,7 +170,7 @@ impl fmt::Display for FlagsRegister {
     }
 }
 
-impl std::convert::From<FlagsRegister> for u8 {
+impl From<FlagsRegister> for u8 {
     fn from(flag: FlagsRegister) -> u8 {
         (if flag.zero { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION
             | (if flag.subtract { 1 } else { 0 }) << SUBTRACT_FLAG_BYTE_POSITION
@@ -195,7 +179,7 @@ impl std::convert::From<FlagsRegister> for u8 {
     }
 }
 
-impl std::convert::From<FlagsRegister> for u16 {
+impl From<FlagsRegister> for u16 {
     fn from(flag: FlagsRegister) -> u16 {
         let mut result: u16 = 0;
         result |= (if flag.zero { 1 } else { 0 }) << ZERO_FLAG_BYTE_POSITION;
@@ -206,7 +190,7 @@ impl std::convert::From<FlagsRegister> for u16 {
     }
 }
 
-impl std::convert::From<u8> for FlagsRegister {
+impl From<u8> for FlagsRegister {
     fn from(byte: u8) -> Self {
         let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0;
         let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0;
@@ -222,7 +206,7 @@ impl std::convert::From<u8> for FlagsRegister {
     }
 }
 
-impl std::convert::From<u16> for FlagsRegister {
+impl From<u16> for FlagsRegister {
     fn from(byte: u16) -> Self {
         let zero = ((byte >> ZERO_FLAG_BYTE_POSITION) & 0b1) != 0;
         let subtract = ((byte >> SUBTRACT_FLAG_BYTE_POSITION) & 0b1) != 0;
@@ -244,10 +228,8 @@ impl CPU {
             registers: Registers::new(),
             pc: 0x0100,
             sp: 0xFFFE,
-            video_ram: [0; 8192],
             halted: false,
             stopped: false,
-            rom_debug: rom_debug::rom_debug::new(),
         }
     }
 
@@ -448,7 +430,7 @@ impl CPU {
                         self.op_jr_e(offset);
                         return 12;
                     }
-                    return 8;
+                    8
                 }
                 0x21 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -487,7 +469,7 @@ impl CPU {
                         self.op_jr_e(offset);
                         return 12;
                     }
-                    return 8;
+                    8
                 }
                 0x29 => {
                     let hl = self.registers.get_hl();
@@ -529,7 +511,7 @@ impl CPU {
                         self.op_jr_e(offset);
                         return 12;
                     }
-                    return 8;
+                    8
                 }
                 0x31 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -569,7 +551,7 @@ impl CPU {
                         self.op_jr_e(offset);
                         return 12;
                     }
-                    return 8;
+                    8
                 }
                 0x39 => {
                     let hl = self.registers.get_hl();
@@ -1143,7 +1125,7 @@ impl CPU {
                         self.op_ret(memory_bus);
                         return 20;
                     }
-                    return 8;
+                    8
                 }
                 0xC1 => {
                     let value = self.op_pop_stack(memory_bus);
@@ -1156,7 +1138,7 @@ impl CPU {
                         self.op_jp_nn(nn);
                         return 16;
                     }
-                    return 12;
+                    12
                 }
                 0xC3 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -1170,7 +1152,7 @@ impl CPU {
                         self.op_call_nn(memory_bus, nn);
                         return 24;
                     }
-                    return 12;
+                    12
                 }
                 0xC5 => {
                     self.op_push_stack(memory_bus, self.registers.get_bc());
@@ -1189,7 +1171,7 @@ impl CPU {
                         self.op_ret(memory_bus);
                         return 20;
                     }
-                    return 8;
+                    8
                 }
                 0xC9 => {
                     self.op_ret(memory_bus);
@@ -1201,7 +1183,7 @@ impl CPU {
                         self.op_jp_nn(nn);
                         return 16;
                     }
-                    return 12;
+                    12
                 }
                 0xCB => {
                     // Get the next byte and use it as the extended opcode
@@ -2429,7 +2411,7 @@ impl CPU {
                         self.op_call_nn(memory_bus, nn);
                         return 24;
                     }
-                    return 12;
+                    12
                 }
                 0xCD => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -2451,7 +2433,7 @@ impl CPU {
                         self.op_ret(memory_bus);
                         return 20;
                     }
-                    return 8;
+                    8
                 }
                 0xD1 => {
                     let value = self.op_pop_stack(memory_bus);
@@ -2464,7 +2446,7 @@ impl CPU {
                         self.op_jp_nn(nn);
                         return 16;
                     }
-                    return 12;
+                    12
                 }
                 0xD3 => {
                     error!("Unsupported opcode: 0xD3");
@@ -2476,7 +2458,7 @@ impl CPU {
                         self.op_call_nn(memory_bus, nn);
                         return 24;
                     }
-                    return 12;
+                    12
                 }
                 0xD5 => {
                     self.op_push_stack(memory_bus, self.registers.get_de());
@@ -2495,7 +2477,7 @@ impl CPU {
                         self.op_ret(memory_bus);
                         return 20;
                     }
-                    return 8;
+                    8
                 }
                 0xD9 => {
                     self.op_ret(memory_bus);
@@ -2508,7 +2490,7 @@ impl CPU {
                         self.op_jp_nn(nn);
                         return 16;
                     }
-                    return 12;
+                    12
                 }
                 0xDB => {
                     error!("Unsupported opcode: 0xDB");
@@ -2520,7 +2502,7 @@ impl CPU {
                         self.op_call_nn(memory_bus, nn);
                         return 24;
                     }
-                    return 12;
+                    12
                 }
                 0xDD => {
                     error!("Unsupported opcode: 0xDD");

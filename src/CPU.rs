@@ -5,8 +5,8 @@ use crate::memory_bus;
 use constants::*;
 use memory_bus::MemoryBus;
 use crate::interupts::*;
+use bitflags::bitflags;
 
-#[derive(Debug)]
 pub struct Registers {
     pub a: u8, // Accumulator register
     pub b: u8,
@@ -18,7 +18,7 @@ pub struct Registers {
     pub l: u8
 }
 
-#[derive(Debug, Clone, Copy)]
+/*#[derive(Debug, Clone, Copy)]
 pub struct FlagsRegister {
     zero: bool,
     subtract: bool,
@@ -32,6 +32,15 @@ pub enum Flag {
     N, // Subtract flag
     H, // Half-carry flag
     C, // Carry flag
+}*/
+
+bitflags! {
+    struct FlagsRegister: u8 {
+        const ZERO      = 0b1000_0000;
+        const SUBTRACT  = 0b0100_0000;
+        const HALF_CARRY= 0b0010_0000;
+        const CARRY     = 0b0001_0000;
+    }
 }
 
 pub struct CPU/*<'a>*/ {
@@ -43,14 +52,19 @@ pub struct CPU/*<'a>*/ {
 }
 
 impl Registers {
+    
     pub fn new() -> Self {
+        let mut f: FlagsRegister = FlagsRegister::empty();
+        f.insert(FlagsRegister::ZERO);
+        f.insert(FlagsRegister::HALF_CARRY);
+        f.insert(FlagsRegister::CARRY);
         Registers {
             a: 0x01,
             b: 0x0,
             c: 0x13,
             d: 0x0,
             e: 0xD8,
-            f: FlagsRegister::new(),
+            f,
             h: 0x01,
             l: 0x4D
         }
@@ -123,12 +137,12 @@ impl fmt::Display for Registers {
             self.get_bc(),
             self.get_de(),
             self.get_hl(),
-            self.f
+            self.f.bits()
         )
     }
 }
 
-impl FlagsRegister {
+/*impl FlagsRegister {
     pub fn new() -> Self {
         FlagsRegister {
             zero: true,
@@ -220,7 +234,7 @@ impl From<u16> for FlagsRegister {
             carry,
         }
     }
-}
+}*/
 
 impl CPU {
     pub fn new() -> Self {

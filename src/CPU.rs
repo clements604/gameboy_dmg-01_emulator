@@ -5,15 +5,15 @@ use memory_bus::MemoryBus;
 use crate::interupts::*;
 use bitflags::bitflags;
 
-pub struct Registers {
-    pub a: u8, // Accumulator register
-    pub b: u8,
-    pub c: u8,
-    pub d: u8,
-    pub e: u8,
-    f: FlagsRegister, // Flags
-    pub h: u8,
-    pub l: u8
+struct Registers {
+    a: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+    f: FlagsRegister,
+    h: u8,
+    l: u8
 }
 
 bitflags! {
@@ -25,11 +25,11 @@ bitflags! {
     }
 }
 
-pub struct CPU/*<'a>*/ {
-    pub registers: Registers,
+pub struct CPU {
+    registers: Registers,
     pub pc: u16, // Program counter
-    pub sp: u16,     // Stack pointer
-    pub halted: bool,
+    sp: u16,     // Stack pointer
+    halted: bool,
     stopped: bool,
 }
 
@@ -107,7 +107,7 @@ impl fmt::Display for Registers {
         BC: {:04X}
         DE: {:04X}
         HL: {:04X}
-        F: {}",
+        F: {:08b}",
             self.a,
             self.b,
             self.c,
@@ -2920,9 +2920,6 @@ impl CPU {
             Interrupt::SERIAL => 0x0058,
             Interrupt::JOYPAD => 0x0060,
         };
-        
-        // Added for mooney/mts-20240127-1204-74ae166/acceptance/ei_sequence.gb
-        //self.pc += 1;
 
         // Push the current PC to the stack
         self.op_push_stack(memory_bus, self.pc);
@@ -2944,7 +2941,6 @@ impl CPU {
     }
 
     fn op_halt(&mut self) {
-        //memory_bus.write_byte(memory_bus::INTERRUPT_ENABLE_REGISTER, 1);
         self.halted = true;
     }
     fn op_stop(&mut self, memory_bus: &mut MemoryBus) {

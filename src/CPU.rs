@@ -1,6 +1,6 @@
 use log::{debug, error};
 use std::fmt;
-use crate::{constants, rom_debug};
+use crate::{constants};
 use crate::memory_bus;
 use constants::*;
 use memory_bus::MemoryBus;
@@ -2597,14 +2597,7 @@ impl CPU {
                 }
                 0xF1 => {
                     let value = self.op_pop_stack(memory_bus);
-                    self.registers.a = (value >> 8) as u8; // Upper byte to A
-
-                    // Set flags directly
-                    self.registers.f.set_flag(Flag::Z, (value & 0x80) != 0); // Bit 7 of F
-                    self.registers.f.set_flag(Flag::N, (value & 0x40) != 0); // Bit 6 of F
-                    self.registers.f.set_flag(Flag::H, (value & 0x20) != 0); // Bit 5 of F
-                    self.registers.f.set_flag(Flag::C, (value & 0x10) != 0); // Bit 4 of F
-
+                    self.registers.set_af(value);
                     12
                 }
                 0xF2 => {

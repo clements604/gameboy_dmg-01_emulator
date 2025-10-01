@@ -1,4 +1,4 @@
-use log::{debug, error};
+use log::error;
 use std::fmt;
 use crate::{constants};
 use crate::memory_bus;
@@ -241,9 +241,6 @@ impl CPU {
         if !self.halted {
 
             let opcode = memory_bus.read_byte(self.pc);
-            debug!("opcode = {:#4X}", opcode);
-            debug!("PC = {:#4X}", self.pc);
-
             self.pc = self.pc.wrapping_add(1);
 
             match opcode {
@@ -332,9 +329,7 @@ impl CPU {
                     4
                 }
                 0x10 => {
-                    // TODO - Implement STOP
-                    debug!("CPU stopped");
-                    self.stopped = true;
+                    self.op_stop(memory_bus);
                     4
                 }
                 0x11 => {
@@ -804,7 +799,6 @@ impl CPU {
                     8
                 }
                 0x76 => {
-                    debug!("Halting CPU");
                     self.op_halt();
                     4
                 }
@@ -1142,7 +1136,6 @@ impl CPU {
                 }
                 0xC3 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
-                    debug!("Jumping to 0x{:X}", nn);
                     self.op_jp_nn(nn);
                     16
                 }
@@ -1189,7 +1182,6 @@ impl CPU {
                     // Get the next byte and use it as the extended opcode
                     let extended_opcode = self.read_immediate_byte(memory_bus);
                     let cb_cycles = 4;
-                    debug!("0xCB{:X}", extended_opcode);
                     match extended_opcode {
                         0x00 => {
                             let mut value = self.registers.b;
@@ -2400,9 +2392,6 @@ impl CPU {
                             self.registers.a |= 1 << 7;
                             cb_cycles + 8
                         }
-                        _ => {
-                            panic!("Unsupported opcode: 0xCB{:02X}", opcode);
-                        }
                     }
                 }
                 0xCC => {
@@ -2415,7 +2404,6 @@ impl CPU {
                 }
                 0xCD => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
-                    debug!("CALL {:04X}", nn);
                     self.op_call_nn(memory_bus, nn);
                     24
                 }
@@ -2520,8 +2508,6 @@ impl CPU {
                 0xE0 => {
                     let offset = self.read_immediate_byte(memory_bus) as u16;
                     let address = 0xFF00 + offset;
-                    debug!("LDH (0xFF00 + {:02X}), A", offset);
-                    debug!("Address = {:02X}", address);
                     memory_bus.write_byte(address, self.registers.a);
                     12
                 }
@@ -2666,18 +2652,12 @@ impl CPU {
                     self.op_rst_address(memory_bus, 0x0038);
                     16
                 }
-                _ => {
-                    panic!("Unsupported opcode: {:X}", opcode);
-                }
             }
         }
         else {
-            debug!("CPU halted");
-
             if u8::from(memory_bus.interrupt_flags) != 0 {
                 self.halted = false;
             }
-
             4
         }
 
@@ -2687,9 +2667,7 @@ impl CPU {
      *   NOP
      *   No operation.
      */
-    fn op_nop(&mut self) {
-        debug!("op_nop");
-    }
+    fn op_nop(&mut self) {}
 
     /*
      *   Read the immediate 16-bit value from memory for the current program counter and program counter + 1.
@@ -2715,33 +2693,16 @@ impl CPU {
      *   Write the immediate 16-bit value to memory.
      */
     fn write_immediate_short(&mut self, memory_bus: &mut MemoryBus, address: u16, value: u16) {
-        debug!("write immediate short address {:X} value {:X}", address, value);
         let lsb = (value & 0x00FF) as u8;
         let msb = (value >> 8) as u8;
         memory_bus.write_byte(address, lsb);
         memory_bus.write_byte(address.wrapping_add(1), msb);
-        /*match address {
-            0x0000..=0x7FFF  => {
-                let lsb = (value & 0x00FF) as u8;
-                let msb = (value >> 8) as u8;
-                memory_bus.write_byte(address, lsb);
-                memory_bus.write_byte(address.wrapping_add(1), msb);
-            },
-            0x8000..=0x9FFF => {
-                self.gpu.write_short(address, value);
-            },
-            _ => {
-                panic!("Unsupported address: {:X}", address);
-
-            }
-        }*/
     }
 
     /*
     * 8-bit arithmetic and logical operations
     */
     fn op_inc_r8(&mut self, register: u8) -> u8{
-        debug!("op_inc_r8");
         let result = register.wrapping_add(1);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -2750,7 +2711,6 @@ impl CPU {
     }
 
     fn op_dec_r8(&mut self, register: u8) -> u8{
-        debug!("op_dec_r8");
         let result = register.wrapping_sub(1);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, true);
@@ -2759,7 +2719,6 @@ impl CPU {
     }
 
     fn op_add_r8(&mut self, value: u8) {
-        debug!("op_add_r8");
         let result: u8 = self.registers.a.wrapping_add(value);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -2773,7 +2732,6 @@ impl CPU {
     }
 
     fn op_add_d8(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_add_r8");
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a.wrapping_add(value);
         self.registers.f.set_flag(Flag::Z, result == 0);
@@ -2788,7 +2746,6 @@ impl CPU {
     }
 
     fn op_sub_r8(&mut self, value: u8) {
-        debug!("op_sub_r8");
         let result: u8 = self.registers.a.wrapping_sub(value);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, true);
@@ -2802,7 +2759,6 @@ impl CPU {
     }
     
     fn op_sub_d8(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_sub_d8");
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a.wrapping_sub(value);
         self.registers.f.set_flag(Flag::Z, result == 0);
@@ -2817,7 +2773,6 @@ impl CPU {
     }
 
     fn op_or_r8(&mut self, value: u8) {
-        debug!("op_or_r8");
         let result: u8 = self.registers.a | value;
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -2827,7 +2782,6 @@ impl CPU {
     }
     
     fn op_or_d8(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_or_d8");
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a | value;
         self.registers.f.set_flag(Flag::Z, result == 0);
@@ -2838,7 +2792,6 @@ impl CPU {
     }
 
     fn op_and_r8(&mut self, value: u8) {
-        debug!("op_and_r8");
         let result: u8 = self.registers.a & value;
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -2848,7 +2801,6 @@ impl CPU {
     }
     
     fn op_and_d8(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_and_d8");
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a & value;
         self.registers.f.set_flag(Flag::Z, result == 0);
@@ -2859,7 +2811,6 @@ impl CPU {
     }
 
     fn op_cp_r8(&mut self, value: u8) {
-        debug!("op_cp_r8");
         let result: u8 = self.registers.a.wrapping_sub(value);
         self.registers.f.set_flag(Flag::Z, result == 0);
         self.registers.f.set_flag(Flag::N, true);
@@ -2868,7 +2819,6 @@ impl CPU {
     }
 
     fn op_xor_r8(&mut self, value: u8) {
-        debug!("op_xor_r8");
         self.registers.a ^= value;
         self.registers.f.set_flag(Flag::Z, self.registers.a == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -2877,7 +2827,6 @@ impl CPU {
     }
 
     fn op_adc_r8(&mut self, value: u8) {
-        debug!("op_adc_r8");
         let carry = if self.registers.f.get_flag(Flag::C) {
             1
         } else {
@@ -2899,28 +2848,24 @@ impl CPU {
 
     // Complement
     fn op_cpl(&mut self) {
-        debug!("op_cpl");
         self.registers.a = !self.registers.a;
         self.registers.f.set_flag(Flag::N, true);
         self.registers.f.set_flag(Flag::H, true);
     }
 
     fn op_ccf(&mut self) {
-        debug!("op_ccf");
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, false);
         self.registers.f.set_flag(Flag::C, !self.registers.f.get_flag(Flag::C));
     }
 
     fn op_scf(&mut self) {
-        debug!("op_scf");
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, false);
         self.registers.f.set_flag(Flag::C, true);
     }
 
     fn op_daa(&mut self) {
-        debug!("op_daa");
         let mut a = self.registers.a;
         if !self.registers.f.get_flag(Flag::N) {
             if self.registers.f.get_flag(Flag::C) || a > 0x99 {
@@ -2958,7 +2903,6 @@ impl CPU {
      *   16-bit arithmetic operations
      */
     fn op_inc_hl(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_inc_hl");
         let address = self.registers.get_hl();
         let mut value = memory_bus.read_byte(address);
         value = value.wrapping_add(1);
@@ -2969,7 +2913,6 @@ impl CPU {
     }
 
     fn op_dec_hl(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_dec_hl");
         let address = self.registers.get_hl();
         let mut value = memory_bus.read_byte(address);
         value = value.wrapping_sub(1);
@@ -2980,7 +2923,6 @@ impl CPU {
     }
 
     fn op_add_r16(&mut self, register: u16, value: u16) -> u16{
-        debug!("op_add_r16");
         let result = register.wrapping_add(value);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, (register & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
@@ -3005,7 +2947,6 @@ impl CPU {
      *   Unconditional jump to the absolute address specified by the 16-bit operand nn.
      */
     fn op_jp_nn(&mut self, address: u16) {
-        debug!("op_jp_nn");
         self.pc = address;
     }
 
@@ -3013,18 +2954,8 @@ impl CPU {
      *   JR e
      *   Unconditional jump to the relative address specified by the signed 8-bit operand e.
      */
-    /*fn op_jr_e(&mut self, offset: i8) {
-        debug!(
-            "Jumping to 0x{:04X}",
-            self.pc.wrapping_add(offset as u16)
-        );
-        self.pc = self.pc.wrapping_add(offset as u16);
-    }*/
     fn op_jr_e(&mut self, offset: i8) {
-        debug!("Program counter before jump: 0x{:04X}", self.pc);
-        debug!("Offset: 0x{:02X}", offset);
         let new_pc = self.pc.wrapping_add(offset as u16);
-        debug!("Jumping to 0x{:04X}", new_pc);
         self.pc = new_pc;
     }
 
@@ -3033,7 +2964,6 @@ impl CPU {
      *   Unconditional function call to the absolute address specified by the 16-bit operand nn.
      */
     fn op_call_nn(&mut self, memory_bus: &mut MemoryBus, address: u16) {
-        debug!("op_call_nn");
         self.op_push_stack(memory_bus, self.pc);
         self.pc = address;
     }
@@ -3043,9 +2973,7 @@ impl CPU {
      *   Unconditional return from a function.
      */
     fn op_ret(&mut self, memory_bus: &mut MemoryBus) {
-        debug!("op_ret");
         let address = self.op_pop_stack(memory_bus);
-        debug!("Return address: 0x{:04X}", address);
         self.pc = address;
     }
 
@@ -3069,19 +2997,14 @@ impl CPU {
 
             // Check if the interrupt is both flagged and enabled
             if interrupt_flags.vblank && (interrupt_enable_register & 0x01) != 0 {
-                debug!("VBLANK interrupt");
                 self.service_interrupt(memory_bus, Interrupt::VBLANK);
             } else if interrupt_flags.lcd_stat && (interrupt_enable_register & 0x02) != 0 {
-                debug!("LCDSTAT interrupt");
                 self.service_interrupt(memory_bus, Interrupt::LCDSTAT);
             } else if interrupt_flags.timer && (interrupt_enable_register & 0x04) != 0 {
-                debug!("TIMER interrupt");
                 self.service_interrupt(memory_bus, Interrupt::TIMER);
             } else if interrupt_flags.serial && (interrupt_enable_register & 0x08) != 0 {
-                debug!("SERIAL interrupt");
                 self.service_interrupt(memory_bus, Interrupt::SERIAL);
             } else if interrupt_flags.joypad && (interrupt_enable_register & 0x10) != 0 {
-                debug!("JOYPAD interrupt");
                 self.service_interrupt(memory_bus, Interrupt::JOYPAD);
             }
         }
@@ -3149,7 +3072,6 @@ impl CPU {
      * If the most significant bit is set, then set the lest significant bit to 1 and set the carry flag.
      */
     fn op_rlc(&mut self, register: &mut u8) {
-        debug!("op_rlc");
         let carry = *register & 0x80 != 0;
         *register = (*register << 1) | (if carry { 1 } else { 0 });
         self.registers.f.set_flag(Flag::Z, *register == 0);
@@ -3165,7 +3087,6 @@ impl CPU {
      * and set the most significant bit to the previous carry value.
      */
     fn op_rrc(&mut self, register: &mut u8) {
-        debug!("op_rrc");
         let carry = *register & 0x01 != 0;
         *register = (*register >> 1) | (if carry { 0x80 } else { 0 });
         self.registers.f.set_flag(Flag::Z, *register == 0);
@@ -3181,7 +3102,6 @@ impl CPU {
      * The previous Carry flag value is rotated into bit 0.
      */
     fn op_rl(&mut self, register: &mut u8) {
-        debug!("op_rl");
         let carry = self.registers.f.get_flag(Flag::C);
         let new_carry = *register & 0x80 != 0;
         *register = (*register << 1) | (if carry { 1 } else { 0 });
@@ -3198,7 +3118,6 @@ impl CPU {
      * The previous Carry flag value is rotated into bit 7.
      */
     fn op_rr(&mut self, register: &mut u8) {
-        debug!("op_rr");
         let carry = self.registers.f.get_flag(Flag::C);
         let new_carry = *register & 0x01 != 0;
         *register = (*register >> 1) | (if carry { 0x80 } else { 0 });
@@ -3230,7 +3149,6 @@ impl CPU {
      * The most significant bit (bit 7) remains unchanged to preserve the sign.
      */
     fn op_sra(&mut self, register: &mut u8) {
-        debug!("op_sra");
         let carry = *register & 0x01 != 0;
         *register = (*register & 0x80) | (*register >> 1);
         self.registers.f.set_flag(Flag::Z, *register == 0);
@@ -3244,7 +3162,6 @@ impl CPU {
      * Swap the upper and lower 4-bit nibbles of the register value.
      */
     fn op_swap(&mut self, register: &mut u8) {
-        debug!("op_swap");
         *register = (*register >> 4) | (*register << 4);
         self.registers.f.set_flag(Flag::Z, *register == 0);
         self.registers.f.set_flag(Flag::N, false);
@@ -3259,7 +3176,6 @@ impl CPU {
      * Bit 7 is always cleared to 0.
      */
     fn op_srl(&mut self, register: &mut u8) {
-        debug!("op_srl");
         let carry = *register & 0x01 != 0;
         *register >>= 1;
         self.registers.f.set_flag(Flag::Z, *register == 0);
@@ -3274,7 +3190,6 @@ impl CPU {
      * The Zero flag is set if the tested bit is 0.
      */
     fn op_bit(&mut self, bit: u8, register: u8) {
-        debug!("op_bit");
         self.registers.f.set_flag(Flag::Z, (register & (1 << bit)) == 0);
         self.registers.f.set_flag(Flag::N, false);
         self.registers.f.set_flag(Flag::H, true);
@@ -3284,7 +3199,6 @@ impl CPU {
      *   Unconditional function call to the absolute fixed address defined by the opcode.
      */
     fn op_rst_address(&mut self, memory_bus: &mut MemoryBus, address: u16) {
-        debug!("rst_address {}", address);
         self.op_push_stack(memory_bus, self.pc);
         self.pc = address;
     }
@@ -3294,7 +3208,6 @@ impl CPU {
     * Push the 16-bit value onto the stack.
     */
     pub fn op_push_stack(&mut self, memory_bus: &mut MemoryBus, address: u16) {
-        debug!("op_push_stack");
         self.sp = self.sp.wrapping_sub(2);
         memory_bus.write_short(self.sp, address);
     }
@@ -3304,7 +3217,6 @@ impl CPU {
     * Pop the 16-bit value from the stack and return it.
     */
     fn op_pop_stack(&mut self, memory_bus: &mut MemoryBus) -> u16 {
-        debug!("op_pop_stack");
         let value = memory_bus.read_short(self.sp);
         self.sp = self.sp.wrapping_add(2);
         value

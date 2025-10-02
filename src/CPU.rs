@@ -182,7 +182,7 @@ impl CPU {
                     let new_carry = (a & 0x80) != 0;
                     self.registers.a = (a << 1) | if new_carry { 0x01 } else { 0x00 };
                     self.registers.f.set(FlagsRegister::CARRY, new_carry);
-                    self.registers.f.set(FlagsRegister::ZERO, false); // The Z flag is not affected
+                    self.registers.f.set(FlagsRegister::ZERO, false);
                     self.registers.f.set(FlagsRegister::SUBTRACT, false);
                     self.registers.f.set(FlagsRegister::HALF_CARRY, false);
                     4
@@ -902,11 +902,7 @@ impl CPU {
                     8
                 }
                 0xA7 => {
-                    self.registers.a &= self.registers.a;
-                    self.registers.f.set(FlagsRegister::ZERO, self.registers.a == 0);
-                    self.registers.f.set(FlagsRegister::SUBTRACT, false);
-                    self.registers.f.set(FlagsRegister::HALF_CARRY, true);
-                    self.registers.f.set(FlagsRegister::CARRY, false);
+                    self.op_and_r8(self.registers.a);
                     4
                 }
                 0xA8 => {
@@ -939,11 +935,7 @@ impl CPU {
                     8
                 }
                 0xAF => {
-                    self.registers.a = 0x0000;
-                    self.registers.f.set(FlagsRegister::ZERO, true);
-                    self.registers.f.set(FlagsRegister::SUBTRACT, false);
-                    self.registers.f.set(FlagsRegister::HALF_CARRY, false);
-                    self.registers.f.set(FlagsRegister::CARRY, false);
+                    self.op_xor_r8(self.registers.a);
                     4
                 }
                 0xB0 => {
@@ -1009,11 +1001,7 @@ impl CPU {
                     8
                 }
                 0xBF => {
-                    let result = self.registers.a.wrapping_sub(self.registers.a);
-                    self.registers.f.set(FlagsRegister::ZERO, result == 0);
-                    self.registers.f.set(FlagsRegister::SUBTRACT, true); // Set the subtraction flag
-                    self.registers.f.set(FlagsRegister::HALF_CARRY, false); // Clear the half-carry flag
-                    self.registers.f.set(FlagsRegister::CARRY, false); // Clear the carry flag
+                    self.op_cp_r8(self.registers.a);
                     4
                 }
                 0xC0 => {

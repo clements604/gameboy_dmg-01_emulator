@@ -95,31 +95,43 @@ impl fmt::Display for Registers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Registers:
-        A: {:02X}
-        B: {:02X}
-        C: {:02X}
-        D: {:02X}
-        E: {:02X}
-        H: {:02X}
-        L: {:02X}
-        AF: {:04X}
-        BC: {:04X}
-        DE: {:04X}
-        HL: {:04X}
-        F: {:08b}",
-            self.a,
-            self.b,
-            self.c,
-            self.d,
-            self.e,
-            self.h,
-            self.l,
-            self.get_af(),
-            self.get_bc(),
-            self.get_de(),
-            self.get_hl(),
-            self.f.bits()
+            "A: {:02X}
+             B: {:02X}
+             C: {:02X}
+             D: {:02X}
+             E: {:02X}
+             H: {:02X}
+             L: {:02X}
+             AF: {:04X}
+             BC: {:04X}
+             DE: {:04X}
+             HL: {:04X}
+             F: {:08b}",
+                self.a,
+                self.b,
+                self.c,
+                self.d,
+                self.e,
+                self.h,
+                self.l,
+                self.get_af(),
+                self.get_bc(),
+                self.get_de(),
+                self.get_hl(),
+                self.f.bits()
+        )
+    }
+}
+impl fmt::Display for CPU {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PC: {:04X}
+             SP: {:04X}
+             Halted: {}
+             Stopped: {}
+             Registers: {}",
+             self.pc, self.sp, self.halted, self.stopped, self.registers
         )
     }
 }
@@ -2592,6 +2604,10 @@ impl CPU {
     /*
     * 8-bit arithmetic and logical operations
     */
+    
+    /*
+    *   Increment register value by 1 and set flags accordingly.
+    */
     fn op_inc_r8(&mut self, register: u8) -> u8{
         let result = register.wrapping_add(1);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2600,6 +2616,9 @@ impl CPU {
         result
     }
 
+    /*
+    *   Decrement register value by 1 and set flags accordingly.
+    */
     fn op_dec_r8(&mut self, register: u8) -> u8{
         let result = register.wrapping_sub(1);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2608,6 +2627,9 @@ impl CPU {
         result
     }
 
+    /*
+    *   Add value to register A and set flags accordingly.
+    */
     fn op_add_r8(&mut self, value: u8) {
         let result: u8 = self.registers.a.wrapping_add(value);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2621,6 +2643,9 @@ impl CPU {
         self.registers.a = result;
     }
 
+    /*
+    *   Add immediate 8-bit value to register A and set flags accordingly.
+    */
     fn op_add_d8(&mut self, memory_bus: &mut MemoryBus) {
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a.wrapping_add(value);
@@ -2635,6 +2660,9 @@ impl CPU {
         self.registers.a = result;
     }
 
+    /*
+    *   Subtract value from register A and set flags accordingly.
+    */
     fn op_sub_r8(&mut self, value: u8) {
         let result: u8 = self.registers.a.wrapping_sub(value);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2648,6 +2676,9 @@ impl CPU {
         self.registers.a = result;
     }
     
+    /*
+    *   Subtract immediate 8-bit value from register A and set flags accordingly.
+    */
     fn op_sub_d8(&mut self, memory_bus: &mut MemoryBus) {
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a.wrapping_sub(value);
@@ -2662,6 +2693,9 @@ impl CPU {
         self.registers.a = result;
     }
 
+    /*
+    *   Logical OR between register A and value, store result in register A and set flags accordingly.
+    */
     fn op_or_r8(&mut self, value: u8) {
         let result: u8 = self.registers.a | value;
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2671,6 +2705,9 @@ impl CPU {
         self.registers.a = result;
     }
     
+    /*
+    *   Logical OR between register A and immediate 8-bit value, store result in register A and set flags accordingly.
+    */
     fn op_or_d8(&mut self, memory_bus: &mut MemoryBus) {
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a | value;
@@ -2681,6 +2718,9 @@ impl CPU {
         self.registers.a = result;
     }
 
+    /*
+    *   Logical AND between register A and value, store result in register A and set flags accordingly.
+    */
     fn op_and_r8(&mut self, value: u8) {
         let result: u8 = self.registers.a & value;
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2690,6 +2730,9 @@ impl CPU {
         self.registers.a = result;
     }
     
+    /*
+    *   Logical AND between register A and immediate 8-bit value, store result in register A and set flags accordingly.
+    */
     fn op_and_d8(&mut self, memory_bus: &mut MemoryBus) {
         let value = self.read_immediate_byte(memory_bus);
         let result: u8 = self.registers.a & value;
@@ -2700,6 +2743,10 @@ impl CPU {
         self.registers.a = result;
     }
 
+    /*
+    *   Compare value with register A and set flags accordingly (A - value).
+    *   A register is unaffected.
+    */
     fn op_cp_r8(&mut self, value: u8) {
         let result: u8 = self.registers.a.wrapping_sub(value);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
@@ -2708,6 +2755,9 @@ impl CPU {
         self.registers.f.set(FlagsRegister::CARRY, self.registers.a < value);
     }
 
+    /*
+    *   Logical XOR between register A and value, store result in register A and set flags accordingly.
+    */
     fn op_xor_r8(&mut self, value: u8) {
         self.registers.a ^= value;
         self.registers.f.set(FlagsRegister::ZERO, self.registers.a == 0);
@@ -2716,6 +2766,9 @@ impl CPU {
         self.registers.f.set(FlagsRegister::CARRY, false);
     }
 
+    /*
+    *   Add value and carry flag to register A and set flags accordingly.
+    */
     fn op_adc_r8(&mut self, value: u8) {
         let carry = if self.registers.f.contains(FlagsRegister::CARRY) {
             1
@@ -2734,25 +2787,37 @@ impl CPU {
         self.registers.a = result;
     }
 
-    // Complement
+    
+    /*
+    *   Complement all bits in register A and set flags accordingly.
+    */
     fn op_cpl(&mut self) {
         self.registers.a = !self.registers.a;
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
         self.registers.f.set(FlagsRegister::HALF_CARRY, true);
     }
 
+    /*
+    *   Complement carry flag.
+    */
     fn op_ccf(&mut self) {
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
         self.registers.f.set(FlagsRegister::HALF_CARRY, false);
         self.registers.f.set(FlagsRegister::CARRY, !self.registers.f.contains(FlagsRegister::CARRY));
     }
 
+    /*
+    *   Set carry flag.
+    */
     fn op_scf(&mut self) {
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
         self.registers.f.set(FlagsRegister::HALF_CARRY, false);
         self.registers.f.set(FlagsRegister::CARRY, true);
     }
 
+    /*
+    *   Decimal Adjust for Addition (DAA)
+    */
     fn op_daa(&mut self) {
         let mut a = self.registers.a;
         if !self.registers.f.contains(FlagsRegister::SUBTRACT) {
@@ -2776,6 +2841,9 @@ impl CPU {
         self.registers.a = a;
     }
 
+    /*
+    *   Subtract value and carry flag from register A and set flags accordingly.
+    */
     fn op_sbc_r8(&mut self, r: u8) {
         let carry = if self.registers.f.contains(FlagsRegister::CARRY) { 1 } else { 0 } as u8;
         let result = self.registers.a.wrapping_sub(r).wrapping_sub(carry);
@@ -2790,6 +2858,9 @@ impl CPU {
     /*
      *   16-bit arithmetic operations
      */
+    /*
+     *   Increment the 16-bit value at the memory address pointed to by the HL register.
+    */
     fn op_inc_hl(&mut self, memory_bus: &mut MemoryBus) {
         let address = self.registers.get_hl();
         let mut value = memory_bus.read_byte(address);
@@ -2800,6 +2871,10 @@ impl CPU {
         self.registers.f.set(FlagsRegister::HALF_CARRY, (value & 0x0F) == 0x00);
     }
 
+    
+    /*
+    *   Decrement the 16-bit value at the memory address pointed to by the HL register.
+    */
     fn op_dec_hl(&mut self, memory_bus: &mut MemoryBus) {
         let address = self.registers.get_hl();
         let mut value = memory_bus.read_byte(address);
@@ -2810,6 +2885,9 @@ impl CPU {
         self.registers.f.set(FlagsRegister::HALF_CARRY, (value & 0x0F) == 0x0F);
     }
 
+    /*
+    *   Add value to 16-bit register and set flags accordingly.
+    */
     fn op_add_r16(&mut self, register: u16, value: u16) -> u16{
         let result = register.wrapping_add(value);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
@@ -2817,6 +2895,10 @@ impl CPU {
         self.registers.f.set(FlagsRegister::CARRY, (register as u32) + (value as u32) > 0xFFFF);
         result
     }
+    
+    /*
+    *   Add signed immediate 8-bit value to stack pointer and set flags accordingly.
+    */
     fn op_add_sp_d8(&mut self, memory_bus: &mut MemoryBus) {
         let value = self.read_immediate_byte(memory_bus) as i8;
         let sp = self.sp as i16;
@@ -2864,14 +2946,10 @@ impl CPU {
         let address = self.op_pop_stack(memory_bus);
         self.pc = address;
     }
-
+   
     /*
-     *   HALT
-     *   STOP
-     *   DI
-     *   Disables interrupt handling by setting IME=0 and cancelling any scheduled effects of the EI instruction if any.
-     */
-
+    * Checks and services interrupts if they are enabled and requested.
+    */
     pub fn check_interrupts(&mut self, memory_bus: &mut MemoryBus) {
         // Check if interrupts are scheduled to be enabled
         if memory_bus.enabling_ime {
@@ -2898,6 +2976,9 @@ impl CPU {
         }
     }
 
+    /*
+    * Services the specified interrupt by pushing the current PC to the stack,
+    */
     fn service_interrupt(&mut self, memory_bus: &mut MemoryBus, interrupt: Interrupt) {
         let mut interrupts: InterruptFlags = memory_bus.interrupt_flags.into();
         memory_bus.interrupt_master_enable = false;
@@ -2928,9 +3009,19 @@ impl CPU {
         memory_bus.interrupt_flags = interrupts.into();
     }
 
+    
+    /*
+    *   Called for halt opcode.
+    *   Sets the CPU into a halted state until an interrupt occurs.
+    */
     fn op_halt(&mut self) {
         self.halted = true;
     }
+   
+   /*
+   *   Called for stop opcode.
+   *   Stops the CPU and timer until a button is pressed.
+   */
     fn op_stop(&mut self, memory_bus: &mut MemoryBus) {
         /*
         https://gbdev.io/pandocs/Timer_and_Divider_Registers.html
@@ -2938,6 +3029,10 @@ impl CPU {
         self.stopped = true;
         memory_bus.write_byte(0xFF04, 0);
     }
+    
+    /*
+    * Sets the interrupt master enable flag to false in memory bus.
+    */
     fn op_di(&mut self, memory_bus: &mut MemoryBus) {
         memory_bus.interrupt_master_enable = false;
     }

@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, Read};
 use std::rc::{Rc, Weak};
-use crate::CPU::CPU;
+use crate::cpu::CPU;
 use crate::dma::Dma;
 use crate::rom_debug::rom_debug;
 use crate::dmg_io::IO;

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use log::{debug, error, info};
-use crate::CPU::CPU;
+use crate::cpu::CPU;
 //use crate::display::Display;
 use crate::dma::Dma;
 use crate::{joypad, timer};

@@ -1,4 +1,4 @@
-mod CPU;
+mod cpu;
 mod constants;
 mod display;
 mod rom;
@@ -29,7 +29,6 @@ use crate::rom::ROM;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, Read};
-use crate::CPU::Flag;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
@@ -43,7 +42,7 @@ use crate::memory_bus::MemoryBus;
 
 struct Emulator {
     ticks: u64,
-    cpu: CPU::CPU,
+    cpu: cpu::CPU,
 
     memory_bus: memory_bus::MemoryBus,
 
@@ -80,14 +79,14 @@ impl Emulator {
 
         let main_display = MainDisplay::new();
 
-        let mut cpu = CPU::CPU::new();
+        let mut cpu = cpu::CPU::new();
 
         match boot_rom_enabled {
             true => {
-                cpu.registers.pc = 0x0000
+                cpu.pc = 0x0000
             },
             false => {
-                cpu.registers.pc = 0x0100
+                cpu.pc = 0x0100
             },
         }
 
@@ -267,10 +266,10 @@ fn main() {
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    let rom = load_rom(String::from(
+    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));
+    ));*/
 
     /*
      * CPU instructions
@@ -286,7 +285,7 @@ fn main() {
     //let rom = load_rom(String::from("roms/test/cpu/individual/09-op r,r.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/10-bit ops.gb")); // PASSED
     //let rom = load_rom(String::from("roms/test/cpu/individual/11-op a,(hl).gb")); // PASSED
-    //let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
+    let rom = load_rom(String::from("roms/test/cpu/cpu_instrs.gb"));
 
     /*
     * CPU timing
@@ -337,7 +336,7 @@ fn main() {
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
 
     let mut emulator = Emulator::new(boot_rom, &rom);
-
+    
     // Main loop - no need for separate input handling now
     while emulator.running {
         emulator.cycle();

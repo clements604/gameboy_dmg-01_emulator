@@ -1,6 +1,6 @@
 use crate::display::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
-use crate::CPU::{Flag, FlagsRegister, CPU};
+use crate::cpu::CPU;
 use crate::{display, interupts, lcd, main, main_display};
 use log::{debug, error, info};
 use std::fmt;

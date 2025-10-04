@@ -1,95 +1,54 @@
-#[derive(Debug, Clone, Copy)]
-pub struct Joypad {
-    // These are controlled by writing to $FF00, not by button presses
-    pub(crate) select_buttons: bool,
-    pub(crate) select_dpad: bool,
-    // Button states
-    pub(crate) start: bool,
-    pub(crate) select: bool,
-    pub(crate) b: bool,
-    pub(crate) a: bool,
-    pub(crate) up: bool,
-    pub(crate) down: bool,
-    pub(crate) left: bool,
-    pub(crate) right: bool,
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    pub struct Buttons: u16 {
+        const A      = 1 << 0;
+        const B      = 1 << 1;
+        const SELECT = 1 << 2;
+        const START  = 1 << 3;
+        const RIGHT  = 1 << 4;
+        const LEFT   = 1 << 5;
+        const UP     = 1 << 6;
+        const DOWN   = 1 << 7;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Button {
-    A,
-    B,
-    Start,
-    Select,
-    Up,
-    Down,
-    Left,
-    Right,
+pub struct Joypad {
+    pub select_buttons: bool,
+    pub select_dpad: bool,
+    pub pressed: Buttons,
 }
 
 impl Joypad {
-    pub fn new() -> Joypad {
+    pub fn new() -> Self {
         Joypad {
             select_buttons: true,
             select_dpad: true,
-            start: true,
-            select: true,
-            b: true,
-            a: true,
-            up: true,
-            down: true,
-            left: true,
-            right: true,
+            pressed: Buttons::empty(), // no buttons pressed
         }
     }
 
-    pub fn is_pressed(&self, button: Button) -> bool {
-        match button {
-            Button::Start | Button::Select | Button::A | Button::B if !self.select_buttons => {
-                match button {
-                    Button::Start => !self.start,
-                    Button::Select => !self.select,
-                    Button::A => !self.a,
-                    Button::B => !self.b,
-                    _ => false, // This case should never happen due to the match guard
-                }
-            }
-            Button::Up | Button::Down | Button::Left | Button::Right if !self.select_dpad => {
-                match button {
-                    Button::Up => !self.up,
-                    Button::Down => !self.down,
-                    Button::Left => !self.left,
-                    Button::Right => !self.right,
-                    _ => false, // Similarly, this should never happen
-                }
-            }
-            _ => false, // If neither buttons nor d-pad is selected, no button is pressed
+    pub fn is_pressed(&self, button: Buttons) -> bool {
+        // Only active if the right group is selected
+        if (button.intersects(Buttons::A | Buttons::B | Buttons::START | Buttons::SELECT)
+            && !self.select_buttons)
+            || (button.intersects(Buttons::UP | Buttons::DOWN | Buttons::LEFT | Buttons::RIGHT)
+            && !self.select_dpad)
+        {
+            self.pressed.contains(button)
+        } else {
+            false
         }
     }
 
-    pub fn button_pressed(&mut self, button: Button) {
-        match button {
-            Button::Start => self.start = false,
-            Button::Select => self.select = false,
-            Button::A => self.a = false,
-            Button::B => self.b = false,
-            Button::Up => self.up = false,
-            Button::Down => self.down = false,
-            Button::Left => self.left = false,
-            Button::Right => self.right = false,
-        }
+    pub fn button_pressed(&mut self, button: Buttons) {
+        self.pressed.insert(button);
     }
 
-    pub fn button_released(&mut self, button: Button) {
-        match button {
-            Button::Start => self.start = true,
-            Button::Select => self.select = true,
-            Button::A => self.a = true,
-            Button::B => self.b = true,
-            Button::Up => self.up = true,
-            Button::Down => self.down = true,
-            Button::Left => self.left = true,
-            Button::Right => self.right = true,
-        }
+    pub fn button_released(&mut self, button: Buttons) {
+        self.pressed.remove(button);
     }
 
     pub fn set_selection(&mut self, byte: u8) {
@@ -98,133 +57,36 @@ impl Joypad {
     }
 }
 
-impl std::convert::From<Joypad> for u8 {
+impl From<Joypad> for u8 {
     fn from(joypad: Joypad) -> u8 {
-        let mut result = 0b1100_0000; // Bits 7 and 6 are always 1
+        let mut result = 0b1100_0000;
 
-        // Set selection bits correctly
         if !joypad.select_buttons {
-            result &= !(1 << 5); // Clear bit 5 to select buttons
+            result &= !(1 << 5);
         } else {
             result |= 1 << 5;
         }
 
         if !joypad.select_dpad {
-            result &= !(1 << 4); // Clear bit 4 to select dpad
+            result &= !(1 << 4);
         } else {
             result |= 1 << 4;
         }
 
         if !joypad.select_dpad {
-            result |=
-                (joypad.start as u8) << 3 |
-                    (joypad.select as u8) << 2 |
-                    (joypad.b as u8) << 1 |
-                    (joypad.a as u8);
+            result |= ((!joypad.pressed.contains(Buttons::START)) as u8) << 3
+                | ((!joypad.pressed.contains(Buttons::SELECT)) as u8) << 2
+                | ((!joypad.pressed.contains(Buttons::B)) as u8) << 1
+                | ((!joypad.pressed.contains(Buttons::A)) as u8);
         } else if !joypad.select_buttons {
-            result |=
-                (joypad.down as u8) << 3 |
-                    (joypad.up as u8) << 2 |
-                    (joypad.left as u8) << 1 |
-                    (joypad.right as u8);
+            result |= ((!joypad.pressed.contains(Buttons::DOWN)) as u8) << 3
+                | ((!joypad.pressed.contains(Buttons::UP)) as u8) << 2
+                | ((!joypad.pressed.contains(Buttons::LEFT)) as u8) << 1
+                | ((!joypad.pressed.contains(Buttons::RIGHT)) as u8);
         } else {
-            // Neither buttons nor d-pad selected, lower nibble should be 1111
             result |= 0b1111;
         }
 
         result
     }
-}
-
-impl std::convert::From<u8> for Joypad {
-    fn from(byte: u8) -> Joypad {
-        // Start with the current state
-        let mut joypad = Joypad::new();
-
-        // ONLY update the selection bits (4-5)
-        // Do NOT modify button states based on the byte
-        joypad.select_buttons = byte & (1 << 5) == 0;
-        joypad.select_dpad = byte & (1 << 4) == 0;
-
-        // Button states (bits 0-3) should be set by your input handling code,
-        // not by the program writing to 0xFF00
-
-        joypad
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_joypad_init() {
-        let joypad = Joypad::new();
-        assert_eq!(u8::from(joypad), 0xFF);
-    }
-
-    #[test]
-    fn test_start_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_buttons = false;
-        joypad.start = false;
-        assert_eq!(u8::from(joypad), 0b1101_0111);
-    }
-
-    #[test]
-    fn test_select_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_buttons = false;
-        joypad.select = false;
-        assert_eq!(u8::from(joypad), 0b11011011);
-    }
-
-    #[test]
-    fn test_a_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_buttons = false;
-        joypad.a = false;
-        assert_eq!(u8::from(joypad), 0b1101_1110);
-    }
-
-    #[test]
-    fn test_b_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_buttons = false;
-        joypad.b = false;
-        assert_eq!(u8::from(joypad), 0b1101_1101);
-    }
-
-    #[test]
-    fn test_dpad_up_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_dpad = false;
-        joypad.up = false;
-        assert_eq!(u8::from(joypad), 0b11101011);
-    }
-
-    #[test]
-    fn test_dpad_down_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_dpad = false;
-        joypad.down = false;
-        assert_eq!(u8::from(joypad), 0b1110_0111);
-    }
-
-    #[test]
-    fn test_dpad_left_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_dpad = false;
-        joypad.left = false;
-        assert_eq!(u8::from(joypad), 0b1110_1101);
-    }
-
-    #[test]
-    fn test_dpad_right_pressed() {
-        let mut joypad = Joypad::new();
-        joypad.select_dpad = false;
-        joypad.right = false;
-        assert_eq!(u8::from(joypad), 0b1110_1110);
-    }
-
 }

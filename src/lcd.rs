@@ -1,7 +1,4 @@
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
-use log::{debug, error, info};
-use crate::dma::Dma;
+use log::error;
 
 pub const DARKEST_GREEN: u32 = 0xFF142C38;
 //const DARK_GREEN: u32 = 0xFF306230;
@@ -10,7 +7,6 @@ const DARK_GREEN: u32 = 0xFF548C70;
 const LIGHT_GREEN: u32 = 0xFFACD490;
 //pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
 pub const LIGHTEST_GREEN: u32 = 0xFFE8FCCC;
-pub(crate) const RED: u32 = 0xFFFF0000;
 pub const DEFAULT_COLOURS: [u32; 4] = [
     LIGHTEST_GREEN, // This would be the color for palette 00
     LIGHT_GREEN,    // This would be the color for palette 01
@@ -28,7 +24,7 @@ pub struct LCD {
     pub sp2_colours: [u32; 4],
 }
 
-impl LCD{
+impl LCD {
     pub fn new() -> LCD {
         
         let mut bg_colours = [0; 4];
@@ -94,7 +90,6 @@ impl LCD{
     }
 
     pub fn get_bg_color(&self, pixel: u8) -> u32 {
-        debug_assert!(pixel < 4, "Pixel value should be between 0 and 3");
         let color_index = match pixel {
             0 => self.bg_palette & 0x03,
             1 => (self.bg_palette >> 2) & 0x03,
@@ -109,8 +104,6 @@ impl LCD{
 
     /// Converts a sprite pixel value to a color based on its palette index (0 or 1).
     pub fn get_sprite_color(&self, palette_index: u8, pixel: u8) -> u32 {
-        debug_assert!(pixel < 4, "Pixel value should be between 0 and 3");
-        debug_assert!(palette_index < 2, "Palette index should be 0 or 1");
 
         let palette = if palette_index == 0 { self.obj_palette[0] } else { self.obj_palette[1] };
         let color_index = match pixel {

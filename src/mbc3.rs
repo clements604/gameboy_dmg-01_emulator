@@ -1,10 +1,10 @@
-use log::{debug, error, info};
-use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks, SRAM};
+use log::{debug, error};
+use crate::mbc::{MBC, get_ram_size_in_bytes, SRAM};
 use crate::rom::ROMBanks;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::SystemTime;
 use std::path::{Path, PathBuf};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io;
 
 const MBC3_MAX_ROM_BANKS: usize = 128; // 2MB
 const RTC_REG_COUNT: usize = 5;
@@ -207,10 +207,6 @@ impl RtcData {
         self.latch_state = new_latch;
     }
 
-    /// Check if RTC data is dirty and needs saving
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
 }
 
 pub struct MBC3 {
@@ -225,7 +221,6 @@ pub struct MBC3 {
     has_battery: bool,
     has_rtc: bool,
     rom_bank_count: usize,
-    ram_bank_count: usize,
 }
 
 impl MBC3 {
@@ -233,7 +228,6 @@ impl MBC3 {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         let has_ram = ram_size > 0;
         let rom_bank_count = std::cmp::min(MBC3_MAX_ROM_BANKS, rom_banks.data.len());
-        let ram_bank_count = get_ram_banks(ram_size);
 
         // Create SRAM only if there is RAM
         let sram = if has_ram {
@@ -261,7 +255,6 @@ impl MBC3 {
             has_battery,
             has_rtc,
             rom_bank_count,
-            ram_bank_count,
         }
     }
 
@@ -353,7 +346,7 @@ impl MBC for MBC3 {
                     } else if self.has_ram {
                         // Read from RAM if it exists
                         if let Some(sram) = &self.sram {
-                            let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                            let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
                             sram.read(ram_addr)
                         } else {
                             error!("Attempted to read from RAM but RAM is not available");
@@ -430,7 +423,7 @@ impl MBC for MBC3 {
                     } else if self.has_ram {
                         // Write to RAM
                         if let Some(sram) = &mut self.sram {
-                            let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                            let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
                             sram.write(ram_addr, value);
 
                             // If this is battery-backed RAM, debug log

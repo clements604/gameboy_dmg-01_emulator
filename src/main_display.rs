@@ -3,12 +3,8 @@ use log::error;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::{Canvas, TextureCreator};
-use sdl2::video::{Window, WindowContext};
-use std::ops::Index;
-use std::time::Duration;
-use crate::display::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use sdl2::render::Canvas;
+use sdl2::video::Window;
 
 const FPS: usize = 60;
 pub(crate) const TILE_SIZE: usize = 8;
@@ -23,6 +19,9 @@ const DARK_GREEN: u32 = 0xFF306230;
 const LIGHT_GREEN: u32 = 0xFF8BAC0F;
 pub(crate) const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
 pub(crate) const RED: u32 = 0xFFFF0000;
+
+pub const SCREEN_WIDTH: usize = 160;
+pub const SCREEN_HEIGHT: usize = 144;
 
 pub struct MainDisplay {
     pub canvas: Canvas<Window>,
@@ -128,8 +127,6 @@ impl MainDisplay {
         // Present the rendered frame
         self.canvas.present();
 
-        // Cap the frame rate
-        //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / FPS as u32)); // FIXME was 1_000_000_000u32 / FPS
     }
 
     pub fn process_events(&mut self) -> bool {
@@ -167,16 +164,11 @@ impl MainDisplay {
 
         running
     }
-
-    // Simplified get_pressed_keys
+    
     pub fn get_pressed_keys(&self) -> &Vec<Keycode> {
         &self.current_keys
     }
 
-    // Check if key state changed
-    pub fn has_key_state_changed(&self) -> bool {
-        self.key_state_changed
-    }
 }
 
 pub fn get_sdl_colour(color_u32: u32) -> Color {

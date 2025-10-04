@@ -1,7 +1,3 @@
-use crate::memory_bus::MemoryBus;
-use log::{debug, error};
-use std::cell::RefCell;
-use std::rc::Rc;
 pub struct Dma {
     active: bool,
     dma_byte: u8,
@@ -38,21 +34,11 @@ impl Dma {
         let src_addr = (self.dma_value as u16 * 0x100) + self.dma_byte as u16;
         let dest_addr = self.dma_byte as u16;
         
-        debug!(
-            "DMA transfer: {:#X} -> {:#X}",
-            (self.dma_value as u16 * 0x100) + self.dma_byte as u16,
-            self.dma_byte
-        );
         self.dma_byte += 1;
         self.active = self.dma_byte < 0xA0;
 
-        if !self.active {
-            debug!("DMA transfer complete");
-        }
-
         Some((src_addr, dest_addr))
     }
-
     pub fn is_transferring(&self) -> bool {
         self.active
     }

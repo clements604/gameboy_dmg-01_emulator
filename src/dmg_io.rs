@@ -1,15 +1,8 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use log::{debug, error, info};
-use crate::cpu::CPU;
-//use crate::display::Display;
-use crate::dma::Dma;
-use crate::{joypad, timer};
+use crate::joypad;
 use crate::interupts::Interrupt;
-use crate::lcd::LCD;
-use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE, MemoryBus};
+use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE};
 use crate::ppu::Ppu;
-use crate::timer::{Timer};
+use crate::timer::Timer;
 
 pub struct IO {
     io_registers: [u8; IO_REGISTERS_SIZE],
@@ -27,12 +20,11 @@ impl IO {
             serial_data: ['\0'; 2],
             ppu: Ppu::new(),
             joypad: joypad::Joypad::new(),
-            timer: Timer::new(),//TODO why have four variants if this is a constant? timer::TimerFrequency::Hz4096
+            timer: Timer::new(),
         }
     }
 
     pub fn read(&self, address: u16) -> u8 {
-        debug!("Read from IO address: {:#X}", address);
         match address {
             0xFF00 => u8::from(self.joypad),
             0xFF01 => self.serial_data[0] as u8,
@@ -42,7 +34,6 @@ impl IO {
             0xFF06 => self.timer.tma,
             0xFF07 => {
                 let mut value = self.timer.tac;
-                // Frequency is now determined by the lower 2 bits of tac directly
                 if self.timer.enabled {
                     value |= 0b100; // Set the enable bit
                 }
@@ -51,16 +42,18 @@ impl IO {
             0xFF40..=0xFF46 => self.ppu.read(address),
             0xFF47..=0xFF4B => self.ppu.read(address),
             _ => {
-                debug!("Reading from IO address: {:#X}", address);
                 self.io_registers[(address - IO_REGISTERS_START) as usize]
             }
         }
     }
     pub fn write(&mut self, address: u16, value: u8) -> Option<Interrupt> {
-        //debug!("Write to IO address: {:#X}", address);
         match address {
             0xFF00 => {
-                self.joypad = joypad::Joypad::from(value);
+                // Only update the selection bits; button states are managed by input
+                let mut joypad = self.joypad;
+                joypad.select_buttons = value & (1 << 5) == 0;
+                joypad.select_dpad = value & (1 << 4) == 0;
+                self.joypad = joypad;
             },
             0xFF01 => {
                 self.serial_data[0] = value as char;
@@ -69,7 +62,6 @@ impl IO {
                 self.serial_data[1] = value as char;
             },
             0xFF04 => {
-                //self.timer.div = 0; // Reset DIV when written to
                 self.timer.reset_div();
             },
             0xFF05 => {
@@ -89,7 +81,6 @@ impl IO {
                 self.ppu.write(address, value);
             },
             _ => {
-                //debug!("Write to IO address: {:#X}", address);
                 self.io_registers[(address - IO_REGISTERS_START) as usize] = value;
             }
         }

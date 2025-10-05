@@ -1,6 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use log::info;
+use log::{debug, info};
 
 pub trait MBC {
     fn read_byte(&self, address: u16) -> u8;
@@ -124,7 +124,7 @@ impl SRAM {
         if self.dirty {
             std::fs::write(&self.save_file_path, &self.data).expect("Failed to save SRAM data");
             self.dirty = false;
-            info!("Saved RAM data to {:?}", &self.save_file_path);
+            debug!("Saved RAM data to {:?}", &self.save_file_path);
         }
     }
     

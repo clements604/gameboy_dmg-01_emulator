@@ -1,36 +1,35 @@
-use crate::display::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::interupts::Interrupt;
-use crate::cpu::CPU;
-use crate::{display, interupts, lcd, main, main_display};
-use log::{debug, error, info};
-use std::fmt;
 use crate::lcd::LCD;
 use crate::lcd::LIGHTEST_GREEN;
-
-const TILE_START: u16 = 0x8000;
-const TILE_END: u16 = 0x97FF;
+use bitflags::bitflags;
+use log::{debug, error};
+use std::fmt;
 
 const TILE_MAP_0_START: u16 = 0x9800;
 const TILE_MAP_1_START: u16 = 0x9C00;
-
 const OAM_MODE: u8 = 2;
 const VRAM_MODE: u8 = 3;
 const HBLANK_MODE: u8 = 0;
 const VBLANK_MODE: u8 = 1;
 const LINES_PER_FRAME: u8 = 153;
 const TICKS_PER_LINE: u16 = 456;
-const Y_RES: u8 = 144;
-const X_RES: u8 = 160;
-const TARGET_FRAME_TIME: u32 = 1000 / 60; // 60 FPS
-
-pub(crate) const VIEWPORT_WIDTH: usize = 160;
-pub(crate) const VIEWPORT_HEIGHT: usize = 144;
+const Y_RES: usize = 144;
+const X_RES: usize = 160;
+const TILE_SIZE_BYTES: usize = 16;
+const MAX_SPRITES_PER_LINE: usize = 10;
+const TILE_WIDTH: usize = 8;
+const TILE_HEIGHT_EIGHT: usize = 8;
+const TILE_HEIGHT_SIXTEEN: usize = 16;
+const TILE_SIZE_EIGHT: usize = 16;
+const TILE_SIZE_SIXTEEN: usize = 32;
+const UNSIGNED_TILE_START: u16 = 0x8000;
+const SIGNED_TILE_START: u16 = 0x8800;
+const LYC_COINCIDENCE_FLAG: u8 = 0x04;
+const BG_TILEMAP_SIZE: usize = 1024;
 
 pub struct Ppu {
     oam_ram: [u8; 0xA0],
     pub vram: [u8; 0x2000],
-    //pub ly: u8, // LY register
-    //pub lyc: u8,
     pub mode: u8,
     line_ticks: u16,
     pub current_frame: u32,
@@ -45,16 +44,11 @@ pub struct Ppu {
     pub ly: u8,
     pub ly_compare: u8,
     window_line_counter: u8,
-    pub background_buffer: Vec<u32>,
     pub framebuffer: Vec<u32>,
-    pub viewport: Vec<u32>,
-    interrupts: Vec<Interrupt>, // Experimental for change in ownership model
-    prev_lyc_coincidence: bool,
-    prev_mode: u8,
+    interrupts: Vec<Interrupt>,
     prev_stat_line: bool,
 }
 
-//Display for Ppu
 impl fmt::Display for Ppu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -87,23 +81,12 @@ impl fmt::Display for Ppu {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone)]
 pub struct Sprite {
     y: u8,
     x: u8,
     tile_number: u8,
     flags: OAMFlags,
-    //TODO make each flag its own bit variable
-
-    /*
-    FLAGS:
-        Bit 7 - Priority: 0 = No, 1 = BG and Window colors 1–3 are drawn over this OBJ
-        Bit 6 - Y flip: 0 = Normal, 1 = Entire OBJ is vertically mirrored
-        Bit 5 - X flip: 0 = Normal, 1 = Entire OBJ is horizontally mirrored
-        Bit 4 - DMG palette [Non CGB Mode only]: 0 = OBP0, 1 = OBP1
-        Bit 3 - Bank [CGB Mode Only]: 0 = Fetch tile from VRAM bank 0, 1 = Fetch tile from VRAM bank 1
-        Bits 2,1,0 - CGB palette [CGB Mode Only]: Which of OBP0–7 to use
-     */
 }
 
 enum StatInterrupt {
@@ -113,115 +96,51 @@ enum StatInterrupt {
     HBLANK = 0x08,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum OamFlag {
-    PRIORITY,
-    Y_FLIP,
-    X_FLIP,
-    DMG_PALETTE,
-    BANK,
-    CGB_PALETTE,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct OAMFlags {
-    priority: bool,
-    y_flip: bool,
-    x_flip: bool,
-    dmg_palette: bool,
-    bank: bool,
-    cgb_palette: u8,
+bitflags! {
+    #[derive(Clone)]
+    pub struct OAMFlags: u8 {
+        const PRIORITY     = 0b1000_0000;
+        const Y_FLIP       = 0b0100_0000;
+        const X_FLIP       = 0b0010_0000;
+        const DMG_PALETTE  = 0b0001_0000;
+        const BANK         = 0b0000_1000;
+    }
 }
 
 impl fmt::Display for OAMFlags {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Priority: {}, Y Flip: {}, X Flip: {}, DMG Palette: {}, Bank: {}, CGB Palette: {}",
-            if self.priority { "1" } else { "0" },
-            if self.y_flip { "1" } else { "0" },
-            if self.x_flip { "1" } else { "0" },
-            if self.dmg_palette { "1" } else { "0" },
-            if self.bank { "1" } else { "0" },
-            self.cgb_palette
+            "Priority: {}, Y Flip: {}, X Flip: {}, DMG Palette: {}, Bank: {}",
+            if self.contains(OAMFlags::PRIORITY) {
+                "1"
+            } else {
+                "0"
+            },
+            if self.contains(OAMFlags::Y_FLIP) {
+                "1"
+            } else {
+                "0"
+            },
+            if self.contains(OAMFlags::X_FLIP) {
+                "1"
+            } else {
+                "0"
+            },
+            if self.contains(OAMFlags::DMG_PALETTE) {
+                "1"
+            } else {
+                "0"
+            },
+            if self.contains(OAMFlags::BANK) {
+                "1"
+            } else {
+                "0"
+            },
         )
     }
 }
 
-impl std::convert::From<OAMFlags> for u8 {
-    fn from(flag: OAMFlags) -> u8 {
-        (if flag.priority { 1 } else { 0 } << 7)
-            | (if flag.y_flip { 1 } else { 0 } << 6)
-            | (if flag.x_flip { 1 } else { 0 } << 5)
-            | (if flag.dmg_palette { 1 } else { 0 } << 4)
-            | (if flag.bank { 1 } else { 0 } << 3)
-            | flag.cgb_palette
-    }
-}
-
-impl std::convert::From<u8> for OAMFlags {
-    fn from(byte: u8) -> Self {
-        let priority = byte & 0b1000_0000 != 0;
-        let y_flip = byte & 0b0100_0000 != 0;
-        let x_flip = byte & 0b0010_0000 != 0;
-        let dmg_palette = byte & 0b0001_0000 != 0;
-        let bank = byte & 0b0000_1000 != 0;
-        let cgb_palette = byte & 0b0000_0111;
-        OAMFlags {
-            priority,
-            y_flip,
-            x_flip,
-            dmg_palette,
-            bank,
-            cgb_palette,
-        }
-    }
-}
-impl OAMFlags {
-    pub fn new() -> Self {
-        OAMFlags {
-            priority: false,
-            y_flip: false,
-            x_flip: false,
-            dmg_palette: false,
-            bank: false,
-            cgb_palette: 0,
-        }
-    }
-
-    pub fn get_flag(&self, flag: OamFlag) -> bool {
-        match flag {
-            OamFlag::PRIORITY => self.priority,
-            OamFlag::Y_FLIP => self.y_flip,
-            OamFlag::X_FLIP => self.x_flip,
-            OamFlag::DMG_PALETTE => self.dmg_palette,
-            OamFlag::BANK => self.bank,
-            OamFlag::CGB_PALETTE => self.cgb_palette != 0,
-        }
-    }
-
-    pub fn set_flag(&mut self, flag: OamFlag, value: bool) {
-        match flag {
-            OamFlag::PRIORITY => self.priority = value,
-            OamFlag::Y_FLIP => self.y_flip = value,
-            OamFlag::X_FLIP => self.x_flip = value,
-            OamFlag::DMG_PALETTE => self.dmg_palette = value,
-            OamFlag::BANK => self.bank = value,
-            OamFlag::CGB_PALETTE => self.cgb_palette = value as u8,
-        }
-    }
-}
-
-impl Sprite {
-    pub fn new() -> Sprite {
-        Sprite {
-            y: 0,
-            x: 0,
-            tile_number: 0,
-            flags: OAMFlags::from(0),
-        }
-    }
-}
 impl Ppu {
     pub fn new() -> Ppu {
         Ppu {
@@ -233,9 +152,7 @@ impl Ppu {
             previous_frame_time: 0,
             start_time: 0,
             frame_count: 0,
-            
-            lcd: lcd::LCD::new(),
-
+            lcd: LCD::new(),
             lcdc: 0x91,
             stat: 0x85,
             scroll_x: 0,
@@ -243,112 +160,29 @@ impl Ppu {
             ly: 0,
             ly_compare: 0,
             window_line_counter: 0,
-            framebuffer: vec![LIGHTEST_GREEN; VIEWPORT_WIDTH * VIEWPORT_HEIGHT],
-            background_buffer: vec![main_display::RED; main_display::WIDTH * main_display::HEIGHT],
-            viewport: vec![
-                main_display::RED;
-                main_display::VIEWPORT_WIDTH * main_display::VIEWPORT_HEIGHT
-            ],
+            framebuffer: vec![LIGHTEST_GREEN; X_RES * Y_RES],
             interrupts: Vec::new(),
-            prev_lyc_coincidence: false,
-            prev_mode: 2,
             prev_stat_line: false,
         }
     }
 
-    pub(crate) fn lcd_ppu_enabled(&self) -> bool {
+    pub fn lcd_ppu_enabled(&self) -> bool {
         self.lcdc & 0x80 != 0
     }
 
     fn window_enabled(&self) -> bool {
         self.lcdc & 0x20 != 0
     }
-
-    fn bg_window_tile_data(&self) -> u16 {
-        if self.lcdc & 0x10 != 0 {
-            0x8000
-        } else {
-            0x8800
-        }
-    }
-
-    fn bg_tile_map(&self) -> u16 {
-        if self.lcdc & 0x08 != 0 {
-            0x9C00
-        } else {
-            0x9800
-        }
-    }
-
     fn sprite_size(&self) -> u8 {
-        if self.lcdc & 0x04 != 0 {
-            16
+        if self.lcdc & LYC_COINCIDENCE_FLAG != 0 {
+            TILE_HEIGHT_SIXTEEN as u8
         } else {
-            8
+            TILE_HEIGHT_EIGHT as u8
         }
     }
 
-    /**
-    Mode 2 int select
-     */
-    fn get_lyc_int_select(&self) -> bool {
-        self.stat & 0x40 != 0
-    }
-    fn set_lyc_int_select(&mut self, value: bool) {
-        if value {
-            self.stat |= 0x40;
-        } else {
-            self.stat &= !0x40;
-        }
-    }
-
-    /**
-    Mode 1 int select
-     */
-    fn get_vblank_int_select(&self) -> bool {
-        self.stat & 0x10 != 0
-    }
-    fn set_vblank_int_select(&mut self, value: bool) {
-        if value {
-            self.stat |= 0x10;
-        } else {
-            self.stat &= !0x10;
-        }
-    }
-
-    /**
-    Mode 0 int select
-     */
-    fn get_hblank_int_select(&self) -> bool {
-        self.stat & 0x08 != 0
-    }
-    fn set_hblank_int_select(&mut self, value: bool) {
-        if value {
-            self.stat |= 0x08;
-        } else {
-            self.stat &= !0x08;
-        }
-    }
-
-    /**
-    LYC == LY
-     */
-    fn lyc_equals_ly(&self) -> bool {
-        self.ly == self.ly_compare
-    }
-
-    /**
-    PPU mode
-     */
-    fn get_ppu_mode(&self) -> u8 {
-        self.stat & 0x03
-    }
     fn set_ppu_mode(&mut self, mode: u8) {
         self.stat = (self.stat & 0xFC) | (mode & 0x03); // Update only mode bits
-    }
-
-    fn get_oam_int_select(&self) -> bool {
-        self.stat & 0x20 != 0
     }
 
     fn sprites_enabled(&self) -> bool {
@@ -364,14 +198,12 @@ impl Ppu {
 
         // Check for LYC coincidence
         if self.ly == self.ly_compare {
-            self.stat |= 0x04; // Set coincidence flag
+            self.stat |= LYC_COINCIDENCE_FLAG; // Set coincidence flag
             if self.is_stat_interrupt_enabled(StatInterrupt::LYC) {
-                //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-                //self.interrupts.push(Interrupt::LCDSTAT);
-                self.update_stat_interrupts(); // Ensure this is called to check for interrupts
+                self.update_stat_interrupts();
             }
         } else {
-            self.stat &= !0x04; // Clear coincidence flag
+            self.stat &= !LYC_COINCIDENCE_FLAG;
         }
 
         if self.ly >= LINES_PER_FRAME {
@@ -379,30 +211,24 @@ impl Ppu {
             self.window_line_counter = 0;
             self.current_frame += 1;
             self.change_mode(OAM_MODE);
-            self.update_stat_interrupts(); // Ensure this is called to check for interrupts
+
+            self.update_stat_interrupts();
         }
-        
     }
 
     fn get_current_mode(&self) -> u8 {
-        // TODO: Implement this
-        //unimplemented!("get_current_mode")
-        return self.mode
+        self.mode
     }
     fn change_mode(&mut self, mode: u8) {
         self.mode = mode;
-        debug!("PPU mode changed to: {}. STAT before change: {:2X}, STAT after change: {:2X}", mode, self.stat, (self.stat & 0xFC) | mode);
-        self.stat = (self.stat & 0xFC) | mode; // Only change mode bits
+        self.stat = (self.stat & 0xFC) | mode;
         self.update_stat_interrupts();
     }
 
     pub fn tick(&mut self, cycles: u8) -> Vec<Interrupt> {
-        debug!("PPU tick with cycles: {}", cycles);
-
         self.interrupts.clear();
 
         if !self.lcd_ppu_enabled() {
-            debug!("LCD is disabled");
             self.ly = 0;
             self.line_ticks = 0;
             self.window_line_counter = 0;
@@ -411,114 +237,78 @@ impl Ppu {
         }
 
         self.line_ticks += cycles as u16;
-        debug!("Line ticks: {}", self.line_ticks);
-
         self.mode = self.get_current_mode();
 
         match self.mode {
             OAM_MODE => {
                 if self.line_ticks >= 80 {
-                    // Check for OAM interrupt
-                    if self.is_stat_interrupt_enabled(StatInterrupt::OAM) {
-                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-                        //self.interrupts.push(Interrupt::LCDSTAT);
-                        //self.update_stat_interrupts();
-                    }
-
                     // Check for LYC=LY interrupt
                     if self.ly == self.ly_compare {
-                        self.stat |= 0x04;
+                        self.stat |= LYC_COINCIDENCE_FLAG;
                     } else {
-                        self.stat &= !0x04;
+                        self.stat &= !LYC_COINCIDENCE_FLAG;
                     }
-
-                    // Mode transition
                     self.line_ticks -= 80;
                     self.change_mode(VRAM_MODE);
                 }
             }
             VRAM_MODE => {
                 if self.line_ticks >= 172 {
-                    // Mode transition
                     self.line_ticks -= 172;
                     self.change_mode(HBLANK_MODE);
                 }
             }
             HBLANK_MODE => {
                 if self.line_ticks >= 204 {
-                    // Check for H-Blank interrupt
-                    if self.is_stat_interrupt_enabled(StatInterrupt::HBLANK) {
-                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::LCDSTAT);
-                        //self.interrupts.push(Interrupt::LCDSTAT);
-                        //self.update_stat_interrupts();
-                    }
-
-                    // Render scanline
                     self.render_scanline();
 
-                    if self.window_enabled() && self.ly >= self.lcd.window_y && self.lcd.window_x.saturating_sub(7) <= 166 {
+                    if self.window_enabled()
+                        && self.ly >= self.lcd.window_y
+                        && self.lcd.window_x.saturating_sub(7) <= 166
+                    {
                         self.window_line_counter = self.window_line_counter.wrapping_add(1);
                     }
 
-                    // Mode transition
                     if self.ly == 143 {
-                        debug!("Transition to VBLANK, STAT before: {:#X}, {:8b}", self.stat, self.stat);
                         self.change_mode(VBLANK_MODE);
-                        debug!("STAT after: {:#X}, {:8b}", self.stat, self.stat);
                     } else {
-                        //self.increment_line_counter(self.ly);
                         self.change_mode(OAM_MODE);
                     }
 
                     self.increment_ly();
                     self.line_ticks -= 204;
-
                 }
             }
             VBLANK_MODE => {
-                if self.line_ticks >= 456 {
-                    if self.ly == 144 {
-                        //self.cpu.borrow_mut().trigger_interrupt(Interrupt::VBLANK);
+                if self.line_ticks >= TICKS_PER_LINE {
+                    if self.ly == Y_RES as u8 {
                         self.interrupts.push(Interrupt::VBLANK);
                     }
-
-                    // Final line of V-Blank
-                    /*if self.ly == 153 {
-                        self.change_mode(OAM_MODE);
-                        self.ly = 0;
-                        self.current_frame += 1;
-                    }
-                    else {
-                        self.increment_ly();
-                    }*/
                     self.increment_ly();
-                    self.line_ticks -= 456;
+                    self.line_ticks -= TICKS_PER_LINE;
                 }
             }
             _ => {
                 panic!("Invalid PPU mode: {}", self.mode);
             }
         }
-        return self.interrupts.clone();
+        self.interrupts.clone()
     }
 
     fn update_stat_interrupts(&mut self) {
-        // Update STAT register's mode bits
         self.stat = (self.stat & 0b11111100) | self.mode;
 
-        // Calculate current STAT interrupt line state (OR of all conditions)
-        let current_stat_line =
-            (self.stat & 0x40 != 0 && self.ly == self.ly_compare) || // LYC=LY interrupt
-                (self.stat & 0x20 != 0 && self.mode == 2) ||             // OAM interrupt  
-                (self.stat & 0x10 != 0 && self.mode == 1) ||             // V-Blank interrupt
-                (self.stat & 0x08 != 0 && self.mode == 0);               // H-Blank interrupt
+        let enabled = |flag: StatInterrupt| (self.stat & flag as u8) != 0;
 
-        // Only fire interrupt on rising edge (false → true)
+        let current_stat_line = (enabled(StatInterrupt::LYC) && self.ly == self.ly_compare)
+            || (enabled(StatInterrupt::OAM) && self.mode == OAM_MODE)
+            || (enabled(StatInterrupt::VBLANK) && self.mode == VBLANK_MODE)
+            || (enabled(StatInterrupt::HBLANK) && self.mode == HBLANK_MODE);
+
         if current_stat_line && !self.prev_stat_line {
             self.interrupts.push(Interrupt::LCDSTAT);
         }
 
-        // Update previous state for next time
         self.prev_stat_line = current_stat_line;
     }
 
@@ -546,7 +336,6 @@ impl Ppu {
             0xFF43 => self.scroll_x = value,
             0xFF44 => {
                 error!("Attempt to write to read-only register: {:#X}", address);
-                //self.ly = 90;
             }
             0xFF45 => self.ly_compare = value,
             0xFF47..=0xFF4B => self.lcd.write(address, value),
@@ -562,17 +351,8 @@ impl Ppu {
             StatInterrupt::HBLANK => self.stat & 0x08 != 0,
         }
     }
-
-    fn lcdc_background_priority(&self) -> bool {
-        self.lcdc & 0x01 == 0
-    }
-
     pub fn oam_read(&self, address: u16) -> u8 {
-        //debug!("OAM read at address: {:#X}", address);
-        /*if address < 0xFE00 || address >= 0xFEA0 {
-            panic!("Attempt to read from invalid OAM address: {:#X}", address);
-        }*/
-        self.oam_ram[(address) as usize]
+        self.oam_ram[address as usize]
     }
 
     pub fn oam_dma_write(&mut self, address: u16, value: u8) {
@@ -580,374 +360,34 @@ impl Ppu {
     }
 
     pub fn oam_write(&mut self, address: u16, value: u8) {
-        //debug!("OAM write at address: {:#X}", address);
         if self.mode == OAM_MODE || self.mode == VRAM_MODE {
-            debug!("Attempt to write to OAM during mode {}", self.mode);
             return;
         }
-        self.oam_ram[(address) as usize] = value;
-        //debug!("OAM data: {:?}", self.oam_ram);
+        self.oam_ram[address as usize] = value;
     }
 
     pub fn vram_read(&self, address: u16) -> u8 {
-        //debug!("VRAM read at address: {:#X}", address);
-        self.vram[(address - 0x8000) as usize]
+        self.vram[(address - UNSIGNED_TILE_START) as usize]
     }
 
     pub fn vram_write(&mut self, address: u16, value: u8) {
-        //debug!("VRAM write {:#4X} at address: {:#4X}", value, address);
-        //TODO this won't work when boot rom is enabled
-        /*if self.mode == VRAM_MODE || self.mode == OAM_MODE {
-            debug!("Attempt to write to VRAM during mode {}", self.mode);
-            return;
-        }*/
-        self.vram[(address - 0x8000) as usize] = value;
-        //debug!("VRAM data: {:?}", self.vram);
-    }
-
-    fn trigger_interrupt(&mut self, interrupt: interupts::Interrupt) {
-        //debug!("Triggering interrupt: {:?}", interrupt);
-        match interrupt {
-            Interrupt::VBLANK => {
-                self.trigger_interrupt(interupts::Interrupt::VBLANK);
-            }
-            Interrupt::LCDSTAT => {
-                self.trigger_interrupt(interupts::Interrupt::LCDSTAT);
-            }
-            _ => {
-                panic!("Invalid interrupt: {:?}", interrupt);
-            }
-        }
-    }
-
-    pub fn get_tile_set(&self) -> [[u8; 16]; 256] {
-        let mut tile_set = [[0; 16]; 256]; //256 tiles
-
-        for tile_number in 0..256 {
-            //debug!("{:4X}", 0x8000 + (tile_number * 16));
-            tile_set[tile_number] = self.get_tile_from_memory((0x8000 + (tile_number * 16)) as u16);
-            // TODO this needs to be dynamic based on tile map value from memory?
-        }
-
-        tile_set
-    }
-
-    fn get_tile_from_memory(&self, address: u16) -> [u8; 16] {
-        let mut tile = [0; 16];
-
-        for x in 0..16 {
-            tile[x] = self.vram_read(address + x as u16);
-        }
-        tile
-    }
-
-    pub fn get_tile_map(&self) -> Vec<&[u8]> {
-        /*let mut tile_map: [u8; 1024] = [0; 1024];
-
-        for i in 0..1024 {
-            tile_map[i] = self.cpu.borrow().memory_bus.borrow().read_byte((0x9800 + i) as u16);
-        }
-
-        tile_map*/
-
-        let mut tiles: Vec<&[u8]> = Vec::new();
-        for i in 0..384 {
-            let tile_start = i * 16;
-            tiles.push(&self.vram[tile_start..tile_start + 16]);
-        }
-
-        tiles
-    }
-
-    fn get_bgp_palette(&self, bit_pair: u8) -> u8 {
-        let palette = self.lcd.bg_palette;
-        match bit_pair {
-            0b00 => palette & 0b0000_0011,
-            0b01 => (palette & 0b0000_1100) >> 2,
-            0b10 => (palette & 0b0011_0000) >> 4,
-            0b11 => (palette & 0b1100_0000) >> 4,
-            _ => palette & 0b0000_0011,
-        }
-    }
-
-    pub fn get_debug_background_tile_map(&self) -> Vec<&[u8]> {
-        /*
-        This function retrieves the tile data for all 32x32 tiles
-        in the background tile map for debugging purposes.
-        */
-
-        let mut tiles: Vec<&[u8]> = Vec::new();
-
-        // Background tile map range in VRAM: 0x1800 to 0x1BFF (32x32 = 1024 tiles)
-        for i in 0x1800..=0x1BFF {
-            let tile_index = self.vram[i] as usize; // Fetch tile index
-
-            // The tile data starts at tile_index * 16 (16 bytes per tile)
-            let tile_start = tile_index * 16;
-
-            // Prevent out-of-bounds access
-            if tile_start + 16 <= self.vram.len() {
-                tiles.push(&self.vram[tile_start..tile_start + 16]);
-            }
-        }
-
-        tiles
-    }
-
-    pub fn get_background_tile_map(&self) -> Vec<u8> {
-        /*
-        This function gets the memory addresses of the in order tiles that make up the background
-        */
-
-        let mut tile_map: Vec<u8> = Vec::new();
-        let bg_tile_map = self.bg_tile_map();
-        debug!("BG Tile Map: {:#X}", bg_tile_map);
-
-        for x in 0..1024 {
-            tile_map.push(self.vram_read(bg_tile_map + x as u16));
-        }
-        tile_map
-    }
-
-    /*fn get_window_tile_map(&self) -> Vec<u8> {
-        let mut tile_map: Vec<u8> = Vec::new();
-        let tile_map_base = if self.lcdc & (1 << 6) != 0 {
-            0x9C00
-        } else {
-            0x9800
-        };
-        for x in 0..1024 {
-            tile_map.push(self.vram_read(tile_map_base + x as u16));
-        }
-        tile_map
-    }*/
-
-    fn get_window_tiles(&self) -> Vec<TileData>{
-        // 0 = 0x9800-0x9BFF in hardware (0x1800-0x1BFF in VRAM array)
-        // 1 = 0x9C00-0x9FFF in hardware (0x1C00-0x1FFF in VRAM array)
-
-        let mut tiles: Vec<TileData> = Vec::new();
-
-        let window_tile_map_addr = if self.lcdc & 0x40 != 0 {
-            0x1C00
-        } else {
-            0x1800
-        };
-        info!("Window Tile Map Base: {:#X}", window_tile_map_addr);
-
-        let unsigned_tile_ids = self.lcdc & 0x10 != 0;
-        info!("Unsigned Tile IDs: {}", unsigned_tile_ids);
-
-        let tile_base_address = if unsigned_tile_ids {
-            0x0000
-        }
-        else {
-            0x0800
-        };
-        info!("Tile Base Address: {:#X}", tile_base_address);
-
-        for y in 0..32 {
-            for x in 0..32 {
-                let tile_map_index = window_tile_map_addr + (y * 32) + x;
-
-                // Get the tile ID from the tile map
-                let tile_id = self.vram[tile_map_index] as u16 & 0xFF;
-
-                // Calculate the address of the actual tile data
-                let tile_data_address = if unsigned_tile_ids {
-                    // Unsigned mode (LCDC bit 4 = 1): Tiles at 0x8000-0x8FFF
-                    // In VRAM array, this is offset 0x0000-0x0FFF
-                    (tile_id * 16) // Base address is already 0 in this case
-                } else {
-                    // Signed mode (LCDC bit 4 = 0)
-                    // If tile_id < 128, it's a positive number (0 to 127)
-                    // If tile_id >= 128, it's a negative number (equivalent to -128 to -1)
-                    if tile_id < 128 {
-                        // Positive tile IDs (0-127) -> 0x9000-0x97FF
-                        // In VRAM array, this is offset 0x1000-0x17FF
-                        0x1000 + (tile_id * 16)
-                    } else {
-                        // Negative tile IDs (128-255 as -128 to -1) -> 0x8800-0x8FFF
-                        // In VRAM array, this is offset 0x0800-0x0FFF
-                        0x0800 + ((tile_id - 128) * 16)
-                    }
-                };
-
-                // Read the tile data
-                let mut tile_data: [u8; 16] = [0; 16];
-                for pixel in 0..16 {
-                    tile_data[pixel] = self.vram[(tile_data_address + pixel as u16) as usize];
-                }
-                let tile = TileData::new(&tile_data, 8);
-                info!("tile {:?}", tile.data);
-                tiles.push(tile);
-            }
-        }
-
-        tiles
-    }
-    pub(crate) fn get_window_tile_map(&self) -> Vec<u8> {
-        let tile_map_base = if self.lcdc & (1 << 6) != 0 {
-            0x9C00
-        } else {
-            0x9800
-        };
-        (0..1024).map(|x| self.vram_read(tile_map_base + x as u16)).collect()
-    }
-
-    pub fn populate_background_tiles(&self) -> Vec<[u8; 16]> {
-        let mut tiles: Vec<[u8; 16]> = Vec::new();
-        let tile_map = self.get_background_tile_map();
-        let background_tile_set = self.get_tile_set();
-
-        for tile in tile_map.iter() {
-            //debug!("Tile: {:#X}", tile);
-            let tile_data = background_tile_set[*tile as usize].clone();
-            //debug!("BG Tiles: {:?}", tile_data);
-
-            tiles.push(tile_data);
-        }
-        //debug!("Number of tiles: {}", tiles.len());
-        //debug!("Tile Map: {:?}", tiles);
-
-        tiles
+        self.vram[(address - UNSIGNED_TILE_START) as usize] = value;
     }
 
     /*
     MAIN DISPLAY START
     */
-    fn get_bg_tile_map(&self) -> [u8; 1024] {
-        let mut tile_map: [u8; 1024] = [0; 1024];
+    fn get_bg_tile_map(&self) -> [u8; BG_TILEMAP_SIZE] {
+        let mut tile_map: [u8; BG_TILEMAP_SIZE] = [0; BG_TILEMAP_SIZE];
         let tile_map_base: u16 = if self.get_bg_tile_map_area() {
             TILE_MAP_1_START
         } else {
             TILE_MAP_0_START
         };
-        debug!("Tile Map Base: {:#X}", tile_map_base);
-        for i in 0..1024 {
+        for i in 0..BG_TILEMAP_SIZE {
             tile_map[i] = self.vram_read((tile_map_base as usize + i) as u16);
         }
         tile_map
-    }
-
-    fn get_bg_tile_map_for_scanline(&self, scanline: u8) -> [u8; 32] {
-        let tile_map_base: u16 = if self.get_bg_tile_map_area() {
-            TILE_MAP_1_START
-        } else {
-            TILE_MAP_0_START
-        };
-        debug!(
-            "Tile Map Base for scanline {}: {:#X}",
-            scanline, tile_map_base
-        );
-
-        let row = ((scanline as u16 + self.scroll_y as u16) / 8) % 32; // Adjust for scroll_y
-        let start_address = tile_map_base + row * 32;
-
-        let mut tile_row: [u8; 32] = [0; 32];
-        for i in 0..32 {
-            tile_row[i] = self.vram_read(start_address + i as u16);
-        }
-        tile_row
-    }
-
-    fn get_window_tile_map_for_scanline(&self, scanline: u8) -> [u8; 32] {
-        // First check if window is enabled and the scanline is within window area
-        if !self.window_enabled() || scanline < self.lcd.window_y {
-            return [0; 32]; // Return empty array if window not visible on this scanline
-        }
-
-        let tile_map_base: u16 = if self.lcdc & 0x40 != 0 { // LCDC bit 6
-            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
-        } else {
-            0x9800 // Window Tile Map at 0x9800-0x9BFF
-        };
-
-        debug!(
-        "Window Tile Map Base for scanline {}: {:#X}",
-        scanline, tile_map_base
-    );
-
-        // Calculate which row of the window we're drawing
-        // Window is positioned relative to WY register
-        let window_row = (scanline as u16 - self.lcd.window_y as u16) / 8;
-
-        // Unlike background, window doesn't wrap, but we'll cap at 32 rows max
-        if window_row >= 32 {
-            return [0; 32]; // Beyond the window's vertical limit
-        }
-
-        let start_address = tile_map_base + window_row * 32;
-
-        let mut tile_row = [0; 32];
-        for (i, tile) in tile_row.iter_mut().enumerate() {
-            *tile = self.vram_read(start_address + i as u16);
-        }
-
-        tile_row
-    }
-
-    pub fn populate_background_buffer(&mut self) {
-        let tile_set = self.get_tile_set();
-        let tile_map = self.get_bg_tile_map();
-
-        for (index, tile_item) in tile_map.iter().enumerate() {
-            let tile = tile_set[*tile_item as usize];
-            let mfb_tile = self.convert_tile_to_sdl_format(tile);
-
-            for (x, pixel) in mfb_tile.iter().enumerate() {
-                let h_offset = (x % 8) + ((index % 32) * 8);
-                let v_offset = (x / 8) + ((index / 32) * 8) * main_display::WIDTH;
-                self.background_buffer[h_offset + v_offset] = *pixel;
-            }
-        }
-    }
-    pub fn convert_tile_to_sdl_format(&mut self, tile_data: [u8; 16]) -> Vec<u32> {
-        let mut sdl_tile: Vec<u32> = vec![main_display::RED; 64];
-        for x in (0..tile_data.len()).step_by(2) {
-            let lsb = tile_data[x];
-            let msb = tile_data[x + 1];
-            for bit in 0..8 {
-                let bit_lsb = lsb & (1 << bit) != 0;
-                let bit_msb = msb & (1 << bit) != 0;
-                let pair = ((bit_lsb as u8) << 1) | (bit_msb as u8);
-                let bgp_palette = self.convert_pixel_to_bgb_palette(pair);
-                let pixel_color = main_display::get_gb_colour(bgp_palette);
-                //debug!("SDL Pixel: {:#X}", pixel_color);
-                sdl_tile[(x / 2 * 8) + (7 - bit) as usize] = pixel_color;
-            }
-        }
-        sdl_tile
-    }
-    fn convert_pixel_to_bgb_palette(&self, pixel: u8) -> u8 {
-        let palette = self.lcd.bg_palette;
-        match pixel {
-            0b00 => palette & 0b0000_0011,
-            0b01 => (palette & 0b0000_1100) >> 2,
-            0b10 => (palette & 0b0011_0000) >> 4,
-            0b11 => (palette & 0b1100_0000) >> 6,
-            _ => palette & 0b0000_0011,
-        }
-    }
-
-    /*
-    Returns the framebuffer for the Gameboy's visible viewport
-     */
-    pub fn get_tile_index(&self, map_x: usize, map_y: usize) -> u8 {
-        const TILE_MAP_WIDTH: usize = 32; // 32 tiles per row in the tile map
-                                          // Determine which tile map is being used based on the LCDC register
-        let tile_map_base: u16 = if self.get_bg_tile_map_area() {
-            TILE_MAP_1_START
-        } else {
-            TILE_MAP_0_START
-        };
-
-        // Calculate the position in the tile map
-        let tile_map_offset = map_y * TILE_MAP_WIDTH + map_x;
-        let tile_map_address = tile_map_base + tile_map_offset as u16;
-
-        // Read the tile index from memory (assumes you have a method to read from VRAM)
-        self.vram_read(tile_map_address)
     }
 
     fn get_bg_tile_map_area(&self) -> bool {
@@ -956,25 +396,23 @@ impl Ppu {
 
     fn get_tile_data_base(&self) -> u16 {
         if self.lcdc & 0x10 != 0 {
-            0x8000 // Unsigned region
+            UNSIGNED_TILE_START
         } else {
-            0x8800 // Signed region
+            SIGNED_TILE_START
         }
     }
 
-    // Get the tile data for a given tile index
+    /* Get the tile data for a given tile index */
     pub fn get_tile_data(&self, tile_index: u8) -> TileData {
-        const TILE_SIZE_BYTES: usize = 16; // 16 bytes per tile (2 bytes per row for 8 rows)
         let tile_data_base: u16 = self.get_tile_data_base();
 
-        let tile_address = if tile_data_base == 0x8800 {
-            // For signed indexing, adjust the base to start from 0x9000 for index 0
+        let tile_address = if tile_data_base == SIGNED_TILE_START {
             let adjusted_index = if tile_index < 128 {
                 tile_index + 128 // Map 0-127 to 128-255
             } else {
                 tile_index - 128 // Map 128-255 to 0-127
             };
-            0x8800 + (adjusted_index as u16 * TILE_SIZE_BYTES as u16)
+            SIGNED_TILE_START + (adjusted_index as u16 * TILE_SIZE_BYTES as u16)
         } else {
             // Unsigned indexing
             tile_data_base + (tile_index as u16 * TILE_SIZE_BYTES as u16)
@@ -986,25 +424,32 @@ impl Ppu {
             tile_data[i] = self.vram_read(tile_address + i as u16);
         }
 
-        TileData::new(&tile_data, 8) // Always 8 pixels tall for background/window tiles
+        TileData::new(&tile_data, TILE_WIDTH)
     }
 
     pub fn get_sprite_data(&self, sprite: &Sprite) -> TileData {
-        let is_tall = (self.lcdc & 0x04) != 0; // LCDC bit 2: 0 = 8x8, 1 = 8x16
-        let sprite_size = if is_tall { 32 } else { 16 }; // 32 bytes for 8x16, 16 bytes for 8x8
-        let height = if is_tall { 16 } else { 8 };
+        let is_tall = (self.lcdc & LYC_COINCIDENCE_FLAG) != 0; // LCDC bit 2: 0 = 8x8, 1 = 8x16
+        let sprite_size = if is_tall {
+            TILE_SIZE_SIXTEEN
+        } else {
+            TILE_SIZE_EIGHT
+        };
+        let height = if is_tall {
+            TILE_HEIGHT_SIXTEEN
+        } else {
+            TILE_HEIGHT_EIGHT
+        };
 
         let mut sprite_tile_data = vec![0u8; sprite_size];
 
-        // For 8x16 sprites, tile_number points to the first tile, second tile follows immediately
-        // Note: For 8x16 sprites, the LSB of tile_number is ignored (effectively tile_number & 0xFE)
         let tile_number = if is_tall {
             sprite.tile_number & 0xFE // Clear only bit 0
         } else {
             sprite.tile_number
         };
-        // Sprite tiles always start at 0x8000, using unsigned indices
-        let sprite_tile_address = 0x8000 + (tile_number as u16 * 16); // Each tile is 16 bytes
+
+        let sprite_tile_address =
+            UNSIGNED_TILE_START + (tile_number as u16 * TILE_SIZE_EIGHT as u16);
 
         for i in 0..sprite_size {
             sprite_tile_data[i] = self.vram_read(sprite_tile_address + i as u16);
@@ -1013,10 +458,8 @@ impl Ppu {
         TileData::new(&sprite_tile_data, height)
     }
 
-    fn render_background_scanline(&mut self, line: &mut [u32; 160]) {
+    fn render_background_scanline(&mut self, line: &mut [u32; X_RES]) {
         if self.is_background_enabled() {
-            //let ly = self.ly as usize;
-            //let mut line = [LIGHTEST_GREEN; 160];
             let tile_map = self.get_bg_tile_map();
             for x in 0..160 {
                 let global_x = (x + self.scroll_x as usize) % 256;
@@ -1032,8 +475,6 @@ impl Ppu {
                 let pixel = tile.get_pixel(row, col);
                 line[x] = self.lcd.get_bg_color(pixel);
             }
-
-            //self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
         }
     }
 
@@ -1047,12 +488,12 @@ impl Ppu {
         let sprite_data = self.get_sprites();
 
         // Collect sprites that intersect with current scanline (max 10)
-        let mut sprites_to_render = Vec::with_capacity(10);
+        let mut sprites_to_render = Vec::with_capacity(MAX_SPRITES_PER_LINE);
         for sprite in sprite_data.iter() {
-            let screen_y = sprite.y as isize - 16;
+            let screen_y = sprite.y as isize - TILE_SIZE_BYTES as isize;
             if screen_y <= current_scanline && (screen_y + sprite_height) > current_scanline {
-                sprites_to_render.push(*sprite);
-                if sprites_to_render.len() >= 10 {
+                sprites_to_render.push(sprite);
+                if sprites_to_render.len() >= MAX_SPRITES_PER_LINE {
                     break;
                 }
             }
@@ -1060,42 +501,50 @@ impl Ppu {
 
         // Process each pixel in the scanline
         for x in 0..160 {
-            let mut best_sprite: Option<(Sprite, u32)> = None; // (sprite, color)
+            let mut best_sprite: Option<(&Sprite, u32)> = None; // (sprite, color)
 
             // Check all sprites for this x position to find the highest priority one
             for sprite in &sprites_to_render {
-                let screen_x = sprite.x as isize - 8;
+                let screen_x = sprite.x as isize - TILE_WIDTH as isize;
                 let sprite_x_pos = x as isize - screen_x;
 
                 if sprite_x_pos < 0 || sprite_x_pos >= 8 {
                     continue;
                 }
 
-                let screen_y = sprite.y as isize - 16;
+                let screen_y = sprite.y as isize - TILE_SIZE_BYTES as isize;
                 let mut sprite_row = current_scanline - screen_y;
                 let mut sprite_col = sprite_x_pos;
 
                 // Apply flips
-                if sprite.flags.y_flip {
+                if sprite.flags.contains(OAMFlags::Y_FLIP) {
                     sprite_row = (sprite_height - 1) - sprite_row;
                 }
-                if sprite.flags.x_flip {
+
+                if sprite.flags.contains(OAMFlags::X_FLIP) {
                     sprite_col = 7 - sprite_col;
                 }
 
                 let sprite_tile_data = self.get_sprite_data(sprite);
-                let sprite_pixel = sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
+                let sprite_pixel =
+                    sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
 
                 // Skip transparent pixels
                 if sprite_pixel == 0 {
                     continue;
                 }
 
-                let sprite_palette_index = if sprite.flags.dmg_palette { 1 } else { 0 };
-                let sprite_color = self.lcd.get_sprite_color(sprite_palette_index, sprite_pixel);
+                let sprite_palette_index = if sprite.flags.contains(OAMFlags::DMG_PALETTE) {
+                    1
+                } else {
+                    0
+                };
+                let sprite_color = self
+                    .lcd
+                    .get_sprite_color(sprite_palette_index, sprite_pixel);
 
                 // Determine if this sprite should be drawn based on priority
-                let should_draw = if sprite.flags.priority {
+                let should_draw = if sprite.flags.contains(OAMFlags::PRIORITY) {
                     // Behind background - only draw if background is transparent
                     line[x] == LIGHTEST_GREEN
                 } else {
@@ -1114,7 +563,7 @@ impl Ppu {
                     };
 
                     if has_higher_priority {
-                        best_sprite = Some((*sprite, sprite_color));
+                        best_sprite = Some((sprite, sprite_color));
                     }
                 }
             }
@@ -1126,7 +575,6 @@ impl Ppu {
         }
     }
     fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
-
         let window_x = self.lcd.window_x.saturating_sub(7);
 
         // Early return if window is not visible
@@ -1153,12 +601,9 @@ impl Ppu {
 
         // Render window pixels for this scanline
         for screen_x in window_x..160 {
-
             // Calculate the offset into the window tile map
-            let tile_map_offset = (
-                ((screen_x as u16 - window_x as u16) / 8) +
-                    (w_tile_y * 32)
-            ) as u16;
+            let tile_map_offset =
+                ((screen_x as u16 - window_x as u16) / TILE_WIDTH as u16) + (w_tile_y * 32);
 
             // Get the tile ID from the window tile map
             let mut tile_id = self.vram_read(tile_map_base + tile_map_offset);
@@ -1170,9 +615,9 @@ impl Ppu {
 
             // Calculate base address for tile data
             let base_address: u16 = if data_area_is_8800 {
-                0x8800
+                SIGNED_TILE_START
             } else {
-                0x8000
+                UNSIGNED_TILE_START
             };
 
             // Calculate address of this specific row of the tile
@@ -1196,27 +641,7 @@ impl Ppu {
 
             line[screen_x as usize] = colour;
         }
-
     }
-
-    // Helper function to get window tile map address
-    fn get_window_tile_map_addr(&self) -> u16 {
-        if self.lcdc & 0x40 != 0 { // LCDC bit 6
-            0x9C00 // Window Tile Map at 0x9C00-0x9FFF
-        } else {
-            0x9800 // Window Tile Map at 0x9800-0x9BFF
-        }
-    }
-
-    // Helper function to get background/window tile data area
-    fn get_bgw_data_area(&self) -> u16 {
-        if self.lcdc & 0x10 != 0 { // LCDC bit 4
-            0x8000 // Tile data at 0x8000-0x8FFF (unsigned)
-        } else {
-            0x8800 // Tile data at 0x8800-0x97FF (signed)
-        }
-    }
-
     fn render_scanline(&mut self) {
         let ly = self.ly as usize;
         let mut line = [LIGHTEST_GREEN; 160];
@@ -1226,7 +651,6 @@ impl Ppu {
         self.render_sprite_scanline(&mut line);
 
         self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
-
     }
 
     /*
@@ -1237,20 +661,29 @@ impl Ppu {
     SPRITE DISPLAY START
     */
     fn get_sprites(&self) -> Vec<Sprite> {
-        let mut sprites: Vec<Sprite> = Vec::new();
+        let mut sprites: Vec<Sprite> = Vec::with_capacity(40);
 
         for i in 0..40 {
-            let offset = (i * 4) as u16;  // Make the intent clear
+            let offset = (i * 4) as u16;
             let y = self.oam_read(offset);
             let x = self.oam_read(offset + 1);
             let tile_number = self.oam_read(offset + 2);
-            let flags = OAMFlags::from(self.oam_read(offset + 3));
+            let flags_byte = self.oam_read(offset + 3);
 
-            sprites.push(Sprite { y, x, tile_number, flags });
+            // Use from_bits_truncate to safely convert u8 -> OAMFlags
+            let flags = OAMFlags::from_bits_truncate(flags_byte);
+
+            sprites.push(Sprite {
+                y,
+                x,
+                tile_number,
+                flags,
+            });
         }
 
         sprites
     }
+
     /*
     SPRITE DISPLAY END
     */
@@ -1258,22 +691,24 @@ impl Ppu {
 
 // Struct to represent the tile data
 pub struct TileData {
-    data: Vec<u8>,    // Use Vec to allow variable size
-    height: usize,    // 8 or 16 pixels
-    width: usize,     // Typically 8 pixels for Gameboy
+    data: Vec<u8>,
+    height: usize, // 8 or 16 pixels
+    width: usize,
 }
 
-
 impl TileData {
-    // Constructor for TileData
     pub fn new(data: &[u8], height: usize) -> Self {
         assert!(height == 8 || height == 16, "Sprite height must be 8 or 16");
-        assert_eq!(data.len(), height * 2, "Data size must match height (2 bytes per row)");
+        assert_eq!(
+            data.len(),
+            height * 2,
+            "Data size must match height (2 bytes per row)"
+        );
 
         TileData {
             data: data.to_vec(),
             height,
-            width: 8
+            width: 8,
         }
     }
 
@@ -1282,76 +717,13 @@ impl TileData {
         assert!(row < self.height, "Row out of bounds");
         assert!(col < self.width, "Column out of bounds");
 
-        // Each row is represented by 2 bytes (bitplanes)
         let plane1 = self.data[row * 2];
         let plane2 = self.data[row * 2 + 1];
 
-        // Extract the relevant bit for this column
-        let bit_position = 7 - col; // Pixels are stored MSB first
+        let bit_position = 7 - col;
         let low_bit = (plane1 >> bit_position) & 0x01;
         let high_bit = (plane2 >> bit_position) & 0x01;
 
-        // Combine the two bits to get the pixel value (0-3)
         (high_bit << 1) | low_bit
     }
-
-    pub fn height(&self) -> usize {
-        self.height
-    }
 }
-
-/*fn calculate_fps(&mut self) {
-        let end = self.display.borrow().get_ticks();
-        let frame_time = end - self.previous_frame_time;
-
-        if frame_time < TARGET_FRAME_TIME {
-            self.display.borrow().delay(TARGET_FRAME_TIME - frame_time);
-        }
-
-        if end - self.start_time >= 1000 {
-            debug!("FPS: {}", self.frame_count);
-            self.start_time = end;
-            self.frame_count = 0;
-        }
-
-        self.frame_count += 1;
-        self.previous_frame_time = self.display.borrow().get_ticks();
-    }
-
-}*/
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{memory_bus, rom};
-
-    #[test]
-    fn test_hblank_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 0;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-
-        ppu.step(&mut cpu, 203);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    #[test]
-    fn test_vblank_cycles() {
-        let rom = rom::ROM::new(vec![0; 0x8000]);
-        let memory_bus = Rc::new(RefCell::new(memory_bus::MemoryBus::new(None, &rom)));
-        let mut cpu = crate::CPU::CPU::new(Rc::clone(&memory_bus));
-        let mut ppu = Ppu::new();
-        ppu.mode = 1;
-        ppu.step(&mut cpu, 1);
-        assert_eq!(ppu.cycles, 1);
-        ppu.step(&mut cpu, 455);
-        assert_eq!(ppu.cycles, 0);
-    }
-
-    }
-}
-*/

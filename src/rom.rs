@@ -1,20 +1,11 @@
 use std::fmt;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use log::{debug};
+use log::{debug, info};
 
-use crate::constants;
-
-use constants::*;
-
-pub const HEADER_ENTRY_POINT: u16 = 0x100;
-pub const HEADER_NINTENDO_LOGO_START: u16 = 0x104;
-pub const HEADER_NINTENDO_LOGO_END: u16 = 0x133;
 pub const HEADER_START: u16 = 0x0134;
 const TITLE_START: u16 = 0x0134;
 const TITLE_END: u16 = 0x0143;
-const MANUFACTURER_CODE_START: u16 = 0x013F;
-const MANUFACTURER_CODE_END: u16 = 0x0142;
 const CGB_FLAG: u16 = 0x0143;
 pub const LICENSEE_CODE_START: u16 = 0x144;
 pub const LICENSEE_CODE_END: u16 = 0x146;
@@ -27,8 +18,6 @@ const OLD_LICENSEE_CODE: u16 = 0x014B;
 const MASK_ROM_VERSION: u16 = 0x014C;
 const HEADER_CHECKSUM: u16 = 0x014D;
 const GLOBAL_CHECKSUM_START: u16 = 0x014E;
-const GLOBAL_CHECKSUM_END: u16 = 0x0150;
-
 
 pub struct ROM {
     pub title: String,
@@ -63,20 +52,16 @@ impl ROMBanks {
 impl ROM {
     pub fn new(rom_file_path: String, rom: Vec<u8>) -> ROM {
         let title = String::from_utf8(rom[TITLE_START as usize..TITLE_END as usize].to_vec()).unwrap();
-        /*let manufacturer_code = u16::from_str_radix(
-            &String::from_utf8_lossy(&rom[MANUFACTURER_CODE_START as usize..MANUFACTURER_CODE_END as usize]),
-            16,
-        ).expect("Failed to parse license code as hexadecimal");*/
         let licensee_code = u16::from_str_radix(
             &String::from_utf8_lossy(&rom[LICENSEE_CODE_START as usize..LICENSEE_CODE_END as usize]),
             16,
         ).unwrap_or(0);
         let global_checksum = u16::from_le_bytes([rom[GLOBAL_CHECKSUM_START as usize], rom[GLOBAL_CHECKSUM_START as usize + 1]]);
+        let rom :ROM =
         ROM {
-            title: title,
-            //manufacturer_code: manufacturer_code,
+            title,
             cgb_flag: rom[CGB_FLAG as usize],
-            licensee_code: licensee_code,
+            licensee_code,
             sgb_flag: rom[SGB_FLAG as usize],
             cartridge_type: rom[CARTRIDGE_TYPE as usize],
             rom_size: rom[ROM_SIZE as usize],
@@ -85,10 +70,12 @@ impl ROM {
             old_licensee_code: rom[OLD_LICENSEE_CODE as usize],
             mask_rom_version: rom[MASK_ROM_VERSION as usize],
             header_checksum: rom[HEADER_CHECKSUM as usize],
-            global_checksum: global_checksum,
-            rom: rom,
+            global_checksum,
+            rom,
             rom_file_path,
-        }
+        };
+        info!("Loaded ROM:\n{}", rom);
+        rom
     }
 
     fn calculate_header_checksum(&self) -> u8 {

@@ -26,10 +26,14 @@ const UNSIGNED_TILE_START: u16 = 0x8000;
 const SIGNED_TILE_START: u16 = 0x8800;
 const LYC_COINCIDENCE_FLAG: u8 = 0x04;
 const BG_TILEMAP_SIZE: usize = 1024;
+const VRAM_SIZE: usize = 0x2000; // 8KB VRAM
+const OAM_SIZE: usize = 0xA0; // 160 bytes OAM
+const SIGNED_TILE_OFFSET: u8 = 128;
+const BG_MAP_SIZE_PIXELS: usize = 256;
 
 pub struct Ppu {
-    oam_ram: [u8; 0xA0],
-    pub vram: [u8; 0x2000],
+    oam_ram: [u8; OAM_SIZE],
+    pub vram: [u8; VRAM_SIZE],
     pub mode: u8,
     line_ticks: u16,
     pub current_frame: u32,
@@ -144,8 +148,8 @@ impl fmt::Display for OAMFlags {
 impl Ppu {
     pub fn new() -> Ppu {
         Ppu {
-            oam_ram: [0; 0xA0],
-            vram: [0x0000; 0x2000],
+            oam_ram: [0; OAM_SIZE],
+            vram: [0x0000; VRAM_SIZE],
             mode: OAM_MODE,
             line_ticks: 0,
             current_frame: 0,
@@ -296,7 +300,7 @@ impl Ppu {
     }
 
     fn update_stat_interrupts(&mut self) {
-        self.stat = (self.stat & 0b11111100) | self.mode;
+        self.stat = (self.stat & 0b11111100) | self.mode; // Clear mode bits and set current mode
 
         let enabled = |flag: StatInterrupt| (self.stat & flag as u8) != 0;
 
@@ -407,10 +411,10 @@ impl Ppu {
         let tile_data_base: u16 = self.get_tile_data_base();
 
         let tile_address = if tile_data_base == SIGNED_TILE_START {
-            let adjusted_index = if tile_index < 128 {
-                tile_index + 128 // Map 0-127 to 128-255
+            let adjusted_index = if tile_index < SIGNED_TILE_OFFSET {
+                tile_index + SIGNED_TILE_OFFSET // Map 0-127 to 128-255
             } else {
-                tile_index - 128 // Map 128-255 to 0-127
+                tile_index - SIGNED_TILE_OFFSET // Map 128-255 to 0-127
             };
             SIGNED_TILE_START + (adjusted_index as u16 * TILE_SIZE_BYTES as u16)
         } else {
@@ -461,24 +465,24 @@ impl Ppu {
     fn render_background_scanline(&mut self, line: &mut [u32; X_RES]) {
         if self.is_background_enabled() {
             let tile_map = self.get_bg_tile_map();
-            for x in 0..160 {
-                let global_x = (x + self.scroll_x as usize) % 256;
-                let global_y = (self.ly as usize + self.scroll_y as usize) % 256;
+            for x in 0..X_RES {
+                let global_x = (x + self.scroll_x as usize) % BG_MAP_SIZE_PIXELS;
+                let global_y = (self.ly as usize + self.scroll_y as usize) % BG_MAP_SIZE_PIXELS;
 
-                let tile_x = global_x / 8;
-                let tile_y = global_y / 8;
+                let tile_x = global_x / TILE_WIDTH;
+                let tile_y = global_y / TILE_HEIGHT_EIGHT;
                 let tile_index = tile_map[tile_y * 32 + tile_x];
                 let tile = self.get_tile_data(tile_index);
 
-                let row = global_y % 8;
-                let col = global_x % 8;
+                let row = global_y % TILE_WIDTH;
+                let col = global_x % TILE_HEIGHT_EIGHT;
                 let pixel = tile.get_pixel(row, col);
                 line[x] = self.lcd.get_bg_color(pixel);
             }
         }
     }
 
-    fn render_sprite_scanline(&mut self, line: &mut [u32; 160]) {
+    fn render_sprite_scanline(&mut self, line: &mut [u32; X_RES]) {
         if !self.sprites_enabled() {
             return;
         }
@@ -500,7 +504,7 @@ impl Ppu {
         }
 
         // Process each pixel in the scanline
-        for x in 0..160 {
+        for x in 0..X_RES {
             let mut best_sprite: Option<(&Sprite, u32)> = None; // (sprite, color)
 
             // Check all sprites for this x position to find the highest priority one
@@ -574,7 +578,7 @@ impl Ppu {
             }
         }
     }
-    fn render_window_scanline(&mut self, line: &mut [u32; 160]) {
+    fn render_window_scanline(&mut self, line: &mut [u32; X_RES]) {
         let window_x = self.lcd.window_x.saturating_sub(7);
 
         // Early return if window is not visible
@@ -584,7 +588,7 @@ impl Ppu {
 
         // Calculate window line (Y position within the window)
         let window_line = self.window_line_counter;
-        let w_tile_y = (window_line / 8) as u16; // Which tile row in the window we're on
+        let w_tile_y = (window_line / TILE_HEIGHT_EIGHT as u8) as u16; // Which tile row in the window we're on
 
         // Get window tile map base address (LCDC bit 6)
         let tile_map_base: u16 = if self.lcdc & 0x40 != 0 {
@@ -597,10 +601,10 @@ impl Ppu {
         let data_area_is_8800 = self.lcdc & 0x10 == 0;
 
         // Calculate tile row line we're rendering (0-7)
-        let tile_line = window_line % 8;
+        let tile_line = window_line % TILE_HEIGHT_EIGHT as u8;
 
         // Render window pixels for this scanline
-        for screen_x in window_x..160 {
+        for screen_x in window_x..X_RES as u8 {
             // Calculate the offset into the window tile map
             let tile_map_offset =
                 ((screen_x as u16 - window_x as u16) / TILE_WIDTH as u16) + (w_tile_y * 32);
@@ -610,7 +614,7 @@ impl Ppu {
 
             // Adjust tile ID for 0x8800 addressing mode
             if data_area_is_8800 {
-                tile_id = tile_id.wrapping_add(128);
+                tile_id = tile_id.wrapping_add(SIGNED_TILE_OFFSET);
             }
 
             // Calculate base address for tile data
@@ -628,7 +632,7 @@ impl Ppu {
             let tile_high = self.vram_read(tile_address + 1);
 
             // Calculate which pixel of the tile we need (0-7)
-            let pixel_x = (screen_x as u16 - window_x as u16) % 8;
+            let pixel_x = (screen_x as u16 - window_x as u16) % TILE_WIDTH as u16;
 
             // Get the color bits
             let pixel_bit_position = 7 - (pixel_x as u8);
@@ -644,13 +648,13 @@ impl Ppu {
     }
     fn render_scanline(&mut self) {
         let ly = self.ly as usize;
-        let mut line = [LIGHTEST_GREEN; 160];
+        let mut line = [LIGHTEST_GREEN; X_RES];
 
         self.render_background_scanline(&mut line);
         self.render_window_scanline(&mut line);
         self.render_sprite_scanline(&mut line);
 
-        self.framebuffer[ly * 160..(ly + 1) * 160].copy_from_slice(&line);
+        self.framebuffer[ly * X_RES..(ly + 1) * X_RES].copy_from_slice(&line);
     }
 
     /*
@@ -698,7 +702,7 @@ pub struct TileData {
 
 impl TileData {
     pub fn new(data: &[u8], height: usize) -> Self {
-        assert!(height == 8 || height == 16, "Sprite height must be 8 or 16");
+        assert!(height == TILE_HEIGHT_EIGHT || height == TILE_HEIGHT_SIXTEEN, "Sprite height must be 8 or 16");
         assert_eq!(
             data.len(),
             height * 2,

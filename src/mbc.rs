@@ -1,6 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use log::{debug, info};
+use log::debug;
 
 pub trait MBC {
     fn read_byte(&self, address: u16) -> u8;
@@ -34,12 +34,6 @@ impl MBCType {
         }
     }
 
-    pub fn has_battery(&self, cart_type: u8) -> bool {
-        match cart_type {
-            0x03 | 0x06 | 0x09 | 0x0D | 0x0F | 0x10 | 0x13 | 0x1B | 0x1E | 0xFF => true,
-            _ => false
-        }
-    }
 }
 
 pub fn get_rom_size_in_bytes(rom_size: u8) -> usize {

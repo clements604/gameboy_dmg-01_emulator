@@ -19,35 +19,46 @@ mod mbc2;
 mod mbc3;
 mod mbc5;
 
+use std::io::Write;
+use std::sync::Mutex;
+
 use log::{debug, error, info};
 use crate::rom::ROM;
 
 use std::fs::File;
-use std::io::Read;
+use std::io::prelude::*;
+use std::io::{self, Read};
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::time::{Duration, Instant};
 use sdl2::keyboard::Keycode;
+use crate::timer::{Timer};
 
 use crate::interupts::Interrupt::JOYPAD;
-use crate::joypad::Buttons;
+use crate::joypad::Button;
 use crate::main_display::MainDisplay;
 use crate::memory_bus::MemoryBus;
 
 struct Emulator {
+    ticks: u64,
     cpu: cpu::CPU,
 
-    memory_bus: MemoryBus,
+    memory_bus: memory_bus::MemoryBus,
 
     main_display: MainDisplay,
 
     previous_frame: u32,
+    previous_ly: u8,
 
     last_time: Instant, // Used for FPS calculation
     frame_count: u32, // Used for FPS calculation
     input_check_counter: u32, // Counter for input checking
 
     // Frame rate cap variables
-    target_frame_time: Duration,
+    target_frame_time: std::time::Duration,
     last_frame_time: Instant,
+
+    previous_keys: Vec<Keycode>,
     running: bool,
     last_save_time: Instant,
 }
@@ -63,7 +74,7 @@ impl Emulator {
                 false
             },
         };
-
+        
 
         let main_display = MainDisplay::new();
 
@@ -79,16 +90,19 @@ impl Emulator {
         }
 
         Emulator {
+            ticks: 0,
             cpu,
             memory_bus: MemoryBus::new(boot_rom, &rom),
             main_display,
             previous_frame: 0,
+            previous_ly: 0,
             last_time: Instant::now(),
             frame_count: 0,
             input_check_counter: 0,
             // Set target frame time to ~16.67ms (60 FPS)
-            target_frame_time: Duration::from_micros(16742),
+            target_frame_time: std::time::Duration::from_micros(16742),
             last_frame_time: Instant::now(),
+            previous_keys: Vec::new(),
             running: true,
             last_save_time: Instant::now(),
         }
@@ -109,7 +123,7 @@ impl Emulator {
                     },
                     None => {},
                 }
-
+                
             }
         }
 
@@ -125,37 +139,50 @@ impl Emulator {
             let previous_joypad_state = u8::from(joypad);
 
             // Reset all buttons to released state
-            joypad.pressed = Buttons::empty();
+            for button in [
+                Button::A,
+                Button::B,
+                Button::Start,
+                Button::Select,
+                Button::Up,
+                Button::Down,
+                Button::Left,
+                Button::Right,
+            ] {
+                joypad.button_released(button);
+            }
+
+            let mut pressed = false;
 
             // Apply current keys
             for key in current_keys {
                 match key {
-                    Keycode::Up => joypad.button_pressed(Buttons::UP),
-                    Keycode::Down => joypad.button_pressed(Buttons::DOWN),
-                    Keycode::Left => joypad.button_pressed(Buttons::LEFT),
-                    Keycode::Right => joypad.button_pressed(Buttons::RIGHT),
-                    Keycode::A => joypad.button_pressed(Buttons::A),
-                    Keycode::B => joypad.button_pressed(Buttons::B),
-                    Keycode::Return => joypad.button_pressed(Buttons::START),
-                    Keycode::Backspace => joypad.button_pressed(Buttons::SELECT),
+                    Keycode::Up => joypad.button_pressed(Button::Up),
+                    Keycode::Down => joypad.button_pressed(Button::Down),
+                    Keycode::Left => joypad.button_pressed(Button::Left),
+                    Keycode::Right => joypad.button_pressed(Button::Right),
+                    Keycode::A => joypad.button_pressed(Button::A),
+                    Keycode::B => joypad.button_pressed(Button::B),
+                    Keycode::Return => joypad.button_pressed(Button::Start),
+                    Keycode::Backspace => joypad.button_pressed(Button::Select),
                     _ => (),
                 }
+                pressed = true;
             }
 
-            // Restore the selection bits
+            // Restore the selection bits after updating button states
             joypad.select_buttons = select_buttons;
             joypad.select_dpad = select_dpad;
 
             // Trigger interrupt if state changed
             let new_joypad_state = u8::from(joypad);
-            // Only generate interrupt on transition from not-pressed to pressed (1→0)
-            if previous_joypad_state != new_joypad_state {
+            let just_pressed = (previous_joypad_state & 0x0F) & !(new_joypad_state & 0x0F);
+            if pressed {
                 self.memory_bus.trigger_interrupt(JOYPAD);
             }
 
             self.memory_bus.dmg_io.joypad = joypad;
         }
-
 
         self.input_check_counter = (self.input_check_counter + 1) % 32;
 
@@ -212,35 +239,36 @@ impl Emulator {
         }
 
         if self.last_save_time.elapsed() > Duration::from_secs(5) {
-            match self.memory_bus.mbc.as_mut().unwrap().save_ram() {
-                Ok(_) => {
-                    debug!("SRAM saved successfully");
-                },
-                Err(e) => {
-                    error!("Failed to save SRAM: {}", e);
-                },
-            };
+            self.memory_bus.mbc.as_mut().unwrap().save_ram();
             self.last_save_time = Instant::now();
         }
     }
 
+    // This method is no longer needed as input handling is moved to the cycle method
+    // But we'll keep an empty implementation for now to avoid breaking code
+    fn handle_input(&mut self) {
+        // Input handling is now done in the cycle method
+    }
 }
 
 fn main() {
+    // Open the log file
+    let file = File::create("output.log").unwrap();
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
+        //.target(env_logger::Target::Pipe(Box::new(file)))
         .filter_level(log::LevelFilter::Info)
         .is_test(false)
         .try_init();
 
     //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    let boot_rom = None;
+    let boot_rom = Option::None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
-    let rom = load_rom(String::from("roms/Super Mario Land.gb"));
+    //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
     let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
     ));
@@ -310,7 +338,7 @@ fn main() {
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
 
     let mut emulator = Emulator::new(boot_rom, &rom);
-
+    
     // Main loop - no need for separate input handling now
     while emulator.running {
         emulator.cycle();
@@ -318,13 +346,37 @@ fn main() {
 }
 
 fn load_rom(file_path: String) -> ROM {
+    debug!("Loading ROM: {}", &file_path);
     let mut file = File::open(&file_path).expect("ROM file not found");
     let mut buffer: Vec<u8> = Vec::new();
 
+    // Read the file into a buffer
     file.read_to_end(&mut buffer).expect("Error reading file");
+    debug!(
+            "ROM file size: {} bytes / {} kilobytes",
+            buffer.len(),
+            buffer.len() / 1024
+        );
 
     let rom = ROM::new(file_path, buffer);
+    debug!("{}", rom);
     rom.validate_header_checksum().unwrap(); // Panics if the header checksum is invalid
 
     rom
+}
+
+fn load_boot_rom(file_path: String) -> Vec<u8> {
+    debug!("Loading boot ROM: {}", file_path);
+    let mut file = File::open(file_path).expect("Boot ROM file not found");
+    let mut buffer: Vec<u8> = Vec::new();
+
+    // Read the file into a buffer
+    file.read_to_end(&mut buffer).expect("Error reading file");
+    debug!(
+        "Boot ROM file size: {} bytes / {} kilobytes",
+        buffer.len(),
+        buffer.len() / 1024
+    );
+
+    buffer
 }

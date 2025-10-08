@@ -242,6 +242,16 @@ fn main() {
         .add_filter("Gameboy ROM Files", &["gb"])
         .pick_file();
     info!("ROM file selected: {:?}", rom_file);
+
+    let rom = match rom_file {
+        Some(path) => {
+            load_rom(path.to_str().unwrap().to_string())
+        },
+        None => {
+            error!("No ROM file selected, exiting...");
+            return;
+        },
+    };
     
     //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
     let boot_rom = None;
@@ -318,16 +328,7 @@ fn main() {
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_reload.gb"));
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_write_reloading.gb")); //TODO failed
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
-
-    let rom = match rom_file {
-        Some(path) => {
-            load_rom(path.to_str().unwrap().to_string())
-        },
-        None => {
-            error!("No ROM file selected, exiting...");
-            return;
-        },
-    };
+    
     let mut emulator = Emulator::new(boot_rom, &rom);
     
     // Main loop - no need for separate input handling now

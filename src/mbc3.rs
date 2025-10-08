@@ -239,7 +239,6 @@ impl MBC3 {
             rom_banks,
             sram,
             rtc,
-
             rom_bank: 1,  // Default to bank 1
             ram_bank: 0,
             ram_enabled: false,
@@ -264,11 +263,8 @@ impl MBC3 {
     fn is_rtc_register(&self, bank: usize) -> bool {
         self.has_rtc && bank >= 0x08 && bank <= 0x0C
     }
-
-    // NOTE: This function is kept for reference but is not used directly due to borrowing issues
-    // Instead, the logic is inlined where needed
-    #[allow(dead_code)]
-    fn ram_bank_to_rtc_register(&self, bank: usize) -> usize {
+    
+    fn ram_bank_to_rtc_register(&self, bank: &usize) -> usize {
         match bank {
             0x08 => RTC_SECONDS_INDEX,
             0x09 => RTC_MINUTES_INDEX,
@@ -321,15 +317,7 @@ impl MBC for MBC3 {
                     if self.is_rtc_register(bank) {
                         // Read from RTC register
                         if let Some(rtc) = &self.rtc {
-                            // Convert bank to RTC register index inline instead of calling a method
-                            let rtc_reg = match bank {
-                                0x08 => RTC_SECONDS_INDEX,
-                                0x09 => RTC_MINUTES_INDEX,
-                                0x0A => RTC_HOURS_INDEX,
-                                0x0B => RTC_DAYS_LOW,
-                                0x0C => RTC_DAYS_HIGH,
-                                _ => 0 // Should never happen if is_rtc_register check is done first
-                            };
+                            let rtc_reg = self.ram_bank_to_rtc_register(&bank);
                             rtc.read_latched(rtc_reg)
                         } else {
                             error!("Attempted to read from RTC register but RTC is not available");
@@ -365,30 +353,22 @@ impl MBC for MBC3 {
             0x0000..=0x1FFF => {
                 // RAM and Timer Enable (0x0A enables, anything else disables)
                 self.ram_enabled = (value & 0x0F) == 0x0A;
-                debug!("MBC3 RAM/Timer enable set to: {}", self.ram_enabled);
             },
             0x2000..=0x3FFF => {
                 // ROM Bank Number (7 bits)
                 let bank_num = (value & 0x7F) as usize;
                 // For MBC3, bank 0 can be selected (unlike MBC1)
                 self.rom_bank = bank_num;
-                debug!("MBC3 ROM bank set to: {:02X}", self.rom_bank);
             },
             0x4000..=0x5FFF => {
                 // RAM Bank Number or RTC Register Select
                 self.ram_bank = value as usize;
-                if self.is_rtc_register(self.ram_bank) {
-                    debug!("MBC3 RTC register selected: {:02X}", self.ram_bank);
-                } else {
-                    debug!("MBC3 RAM bank selected: {:02X}", self.ram_bank);
-                }
             },
             0x6000..=0x7FFF => {
                 // Latch Clock Data
                 // When write changes from non-zero to zero, latch the RTC data
                 if let Some(rtc) = &mut self.rtc {
                     rtc.update_latch_state(value);
-                    debug!("MBC3 RTC latch state updated: {:02X}", value);
                 }
             },
             0xA000..=0xBFFF => {
@@ -397,16 +377,8 @@ impl MBC for MBC3 {
                     let bank = self.ram_bank;
                     if self.is_rtc_register(bank) {
                         // Write to RTC register
+                        let rtc_reg = self.ram_bank_to_rtc_register(&bank);
                         if let Some(rtc) = &mut self.rtc {
-                            // Convert bank to RTC register index inline instead of calling a method
-                            let rtc_reg = match bank {
-                                0x08 => RTC_SECONDS_INDEX,
-                                0x09 => RTC_MINUTES_INDEX,
-                                0x0A => RTC_HOURS_INDEX,
-                                0x0B => RTC_DAYS_LOW,
-                                0x0C => RTC_DAYS_HIGH,
-                                _ => 0 // Should never happen if is_rtc_register check is done first
-                            };
                             rtc.write_register(rtc_reg, value);
                         }
                     } else if self.has_ram {
@@ -414,12 +386,6 @@ impl MBC for MBC3 {
                         if let Some(sram) = &mut self.sram {
                             let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
                             sram.write(ram_addr, value);
-
-                            // If this is battery-backed RAM, debug log
-                            if self.has_battery {
-                                debug!("Battery-backed MBC3 RAM write at bank {} addr {:04X} = {:02X}", 
-                                      self.ram_bank, address, value);
-                            }
                         }
                     }
                 }

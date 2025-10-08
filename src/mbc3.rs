@@ -312,7 +312,6 @@ impl MBC for MBC3 {
             },
             0xA000..=0xBFFF => {
                 if self.is_ram_enabled() {
-                    // Extract ram_bank first to avoid borrowing issues
                     let bank = self.get_ram_bank();
                     if self.is_rtc_register(bank) {
                         // Read from RTC register

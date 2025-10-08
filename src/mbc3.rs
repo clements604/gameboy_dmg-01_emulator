@@ -311,9 +311,9 @@ impl MBC for MBC3 {
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled {
+                if self.is_ram_enabled() {
                     // Extract ram_bank first to avoid borrowing issues
-                    let bank = self.ram_bank;
+                    let bank = self.get_ram_bank();
                     if self.is_rtc_register(bank) {
                         // Read from RTC register
                         if let Some(rtc) = &self.rtc {
@@ -326,7 +326,7 @@ impl MBC for MBC3 {
                     } else if self.has_ram {
                         // Read from RAM if it exists
                         if let Some(sram) = &self.sram {
-                            let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
+                            let ram_addr = self.get_ram_bank() * 0x2000 + (address - 0xA000) as usize;
                             sram.read(ram_addr)
                         } else {
                             error!("Attempted to read from RAM but RAM is not available");
@@ -372,9 +372,9 @@ impl MBC for MBC3 {
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled {
+                if self.is_ram_enabled() {
                     // Extract ram_bank first to avoid borrowing issues
-                    let bank = self.ram_bank;
+                    let bank = self.get_ram_bank();
                     if self.is_rtc_register(bank) {
                         // Write to RTC register
                         let rtc_reg = self.ram_bank_to_rtc_register(&bank);
@@ -384,7 +384,7 @@ impl MBC for MBC3 {
                     } else if self.has_ram {
                         // Write to RAM
                         if let Some(sram) = &mut self.sram {
-                            let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
+                            let ram_addr = bank * 0x2000 + (address - 0xA000) as usize;
                             sram.write(ram_addr, value);
                         }
                     }

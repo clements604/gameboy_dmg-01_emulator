@@ -17,9 +17,7 @@ pub enum MBCType {
     MBC1,
     MBC2,
     MBC3,
-    MBC4,
     MBC5,
-    Other(u8), // Unsupported types such as "POCKET CAMERA"
 }
 
 impl MBCType {
@@ -30,10 +28,9 @@ impl MBCType {
             0x05 | 0x06 => MBCType::MBC2,
             0x0F | 0x10 | 0x11 | 0x12 | 0x13 => MBCType::MBC3,
             0x19 | 0x1A | 0x1B | 0x1C | 0x1D | 0x1E => MBCType::MBC5,
-            _ => MBCType::Other(value),
+            _ => { panic!("Unsupported MBC type: {:#X}", value) }
         }
     }
-
 }
 
 pub fn get_rom_size_in_bytes(rom_size: u8) -> usize {

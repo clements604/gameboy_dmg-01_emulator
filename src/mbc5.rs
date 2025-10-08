@@ -82,7 +82,7 @@ impl MBC for MBC5 {
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled && self.has_ram {
+                if self.is_ram_enabled() && self.has_ram {
                     // Read from RAM
                     if let Some(sram) = &self.sram {
                         let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
@@ -134,7 +134,7 @@ impl MBC for MBC5 {
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled && self.has_ram {
+                if self.is_ram_enabled() && self.has_ram {
                     // Write to RAM
                     if let Some(sram) = &mut self.sram {
                         let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;

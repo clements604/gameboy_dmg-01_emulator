@@ -108,7 +108,7 @@ impl MBC for MBC1 {
                 }
             },
             0xA000..=0xBFFF => { // External RAM
-                if self.ram_enabled && self.has_ram {
+                if self.is_ram_enabled() && self.has_ram {
                     let bank = self.get_active_ram_bank();
                     let ram_address = bank * 0x2000 + (address - 0xA000) as usize;
 
@@ -161,7 +161,7 @@ impl MBC for MBC1 {
                 debug!("Banking mode set to: {:?}", self.banking_mode);
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled && self.has_ram {
+                if self.is_ram_enabled() && self.has_ram {
                     let bank = self.get_active_ram_bank();
                     let addr = bank * 0x2000 + (address - 0xA000) as usize;
 

@@ -64,7 +64,7 @@ impl MBC for MBC0 {
                     true
                 }
                 else {
-                    self.ram_enabled
+                    self.is_ram_enabled()
                 };
 
                 if implicit_ram_enabled && self.has_ram {
@@ -103,7 +103,7 @@ impl MBC for MBC0 {
                     true
                 }
                 else {
-                    self.ram_enabled
+                    self.is_ram_enabled()
                 };
                 if implicit_ram_enabled && self.has_ram {
                     let ram_addr = (address - 0xA000) as usize;

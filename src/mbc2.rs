@@ -74,7 +74,7 @@ impl MBC for MBC2 {
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled {
+                if self.is_ram_enabled() {
                     let ram_addr = (address & MBC2_RAM_ADDR_MASK) as usize;
                     
                     if ram_addr < MBC2_RAM_SIZE {
@@ -116,7 +116,7 @@ impl MBC for MBC2 {
                 debug!("Write to ROM area 4000-7FFF ignored in MBC2: {:04X} = {:02X}", address, value);
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled {
+                if self.is_ram_enabled() {
                     let ram_addr = (address & MBC2_RAM_ADDR_MASK) as usize;
 
                     if ram_addr < MBC2_RAM_SIZE {

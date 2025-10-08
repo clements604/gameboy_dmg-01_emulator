@@ -19,13 +19,14 @@ mod mbc2;
 mod mbc3;
 mod mbc5;
 
-use log::{debug, error};
+use log::{debug, error, info};
 use crate::rom::ROM;
 
 use std::fs::File;
 use std::io::Read;
 use std::time::{Duration, Instant};
 use sdl2::keyboard::Keycode;
+use rfd::FileDialog;
 
 use crate::interrupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
@@ -225,7 +226,7 @@ impl Emulator {
             self.last_save_time = Instant::now();
         }
     }
-    
+
 }
 
 fn main() {
@@ -237,6 +238,11 @@ fn main() {
         .is_test(false)
         .try_init();
 
+    let rom_file = FileDialog::new()
+        .add_filter("Gameboy ROM Files", &["gb"])
+        .pick_file();
+    info!("ROM file selected: {:?}", rom_file);
+    
     //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
     let boot_rom = None;
 
@@ -245,9 +251,9 @@ fn main() {
     //let rom = load_rom(String::from("roms/Alleyway.gb"));
     //let rom = load_rom(String::from("roms/Legend of Zelda - Links Awakening.gb"));
     //let rom = load_rom(String::from("roms/Super Mario Land.gb"));
-    let rom = load_rom(String::from(
+    /*let rom = load_rom(String::from(
         "roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb",
-    ));
+    ));*/
 
     /*
      * CPU instructions
@@ -313,6 +319,15 @@ fn main() {
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_write_reloading.gb")); //TODO failed
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
 
+    let rom = match rom_file {
+        Some(path) => {
+            load_rom(path.to_str().unwrap().to_string())
+        },
+        None => {
+            error!("No ROM file selected, exiting...");
+            return;
+        },
+    };
     let mut emulator = Emulator::new(boot_rom, &rom);
     
     // Main loop - no need for separate input handling now

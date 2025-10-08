@@ -17,7 +17,7 @@ pub struct MainDisplay {
 }
 
 impl MainDisplay {
-    pub fn new() -> MainDisplay {
+    pub fn new(scale_factor: u32) -> MainDisplay {
 
         let mut current_key_states = HashMap::new();
 
@@ -38,13 +38,12 @@ impl MainDisplay {
         let video_subsystem = sdl_context.video().unwrap_or_else(|e| {
             panic!("Video subsystem initialization failed: {}", e);
         });
-
-        let scale = 2;
+        
         let window = video_subsystem
             .window(
                 "Gameboy DMG Emulator - ESC to exit",
-                (SCREEN_WIDTH as u32) * scale,
-                (SCREEN_HEIGHT as u32) * scale,
+                (SCREEN_WIDTH as u32) * scale_factor,
+                (SCREEN_HEIGHT as u32) * scale_factor,
             )
             .position_centered()
             .build()

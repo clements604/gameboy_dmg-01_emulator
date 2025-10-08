@@ -1,24 +1,21 @@
-use log::{debug, error, info};
-use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks, SRAM};
+use log::{debug, error};
+use crate::mbc::{MBC, get_ram_size_in_bytes, SRAM};
 use crate::rom::ROMBanks;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::SystemTime;
 use std::path::{Path, PathBuf};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io;
 
-const MBC3_MAX_ROM_BANKS: usize = 128; // 2MB
+const MBC3_MAX_ROM_BANKS: usize = 128;
 const RTC_REG_COUNT: usize = 5;
+const RTC_SECONDS_INDEX: usize = 0;
+const RTC_MINUTES_INDEX: usize = 1;
+const RTC_HOURS_INDEX: usize = 2;
+const RTC_DAYS_LOW: usize = 3;   // https://gbdev.io/pandocs/MBC3.html#the-day-counter
+const RTC_DAYS_HIGH: usize = 4;  // https://gbdev.io/pandocs/MBC3.html#the-day-counter
+const RTC_HALT_BIT: u8 = 0x40;   // https://gbdev.io/pandocs/MBC3.html#clock-counter-registers
+const RTC_DAY_CARRY_BIT: u8 = 0x80; // https://gbdev.io/pandocs/MBC3.html#clock-counter-registers
 
-// RTC Register indices
-const RTC_SECONDS: usize = 0;    // 0-59
-const RTC_MINUTES: usize = 1;    // 0-59
-const RTC_HOURS: usize = 2;      // 0-23
-const RTC_DAYS_LOW: usize = 3;   // Lower 8 bits of day counter (0-255)
-const RTC_DAYS_HIGH: usize = 4;  // Upper 1 bit of day counter + flags
-const RTC_HALT_BIT: u8 = 0x40;   // Bit 6, RTC halt flag
-const RTC_DAY_CARRY_BIT: u8 = 0x80; // Bit 7, day counter carry flag
-
-/// Represents the Real-Time Clock data for MBC3
 pub struct RtcData {
     registers: [u8; RTC_REG_COUNT],
     latch_registers: [u8; RTC_REG_COUNT],
@@ -41,7 +38,7 @@ impl RtcData {
 
         // Try to load existing RTC data
         rtc.load().unwrap_or_else(|e| {
-            debug!("Could not load RTC data: {}", e);
+            error!("Could not load RTC data: {}", e);
         });
 
         rtc
@@ -75,12 +72,8 @@ impl RtcData {
     /// Save RTC data to file
     pub fn save(&mut self) -> Result<(), io::Error> {
         if self.dirty {
-            // Update RTC before saving
             self.update();
-
-            // Write to file
             fs::write(&self.save_path, &self.registers)?;
-
             self.dirty = false;
             debug!("Saved RTC data to {:?}", self.save_path);
         }
@@ -100,9 +93,9 @@ impl RtcData {
                     self.base_time = SystemTime::now();
 
                     // Extract current RTC values
-                    let mut secs = self.registers[RTC_SECONDS] as u64;
-                    let mut mins = self.registers[RTC_MINUTES] as u64;
-                    let mut hours = self.registers[RTC_HOURS] as u64;
+                    let mut secs = self.registers[RTC_SECONDS_INDEX] as u64;
+                    let mut mins = self.registers[RTC_MINUTES_INDEX] as u64;
+                    let mut hours = self.registers[RTC_HOURS_INDEX] as u64;
                     let mut days = ((self.registers[RTC_DAYS_HIGH] & 0x01) as u64) << 8 |
                         self.registers[RTC_DAYS_LOW] as u64;
 
@@ -133,9 +126,9 @@ impl RtcData {
                     }
 
                     // Update registers
-                    self.registers[RTC_SECONDS] = secs as u8;
-                    self.registers[RTC_MINUTES] = mins as u8;
-                    self.registers[RTC_HOURS] = hours as u8;
+                    self.registers[RTC_SECONDS_INDEX] = secs as u8;
+                    self.registers[RTC_MINUTES_INDEX] = mins as u8;
+                    self.registers[RTC_HOURS_INDEX] = hours as u8;
                     self.registers[RTC_DAYS_LOW] = (days & 0xFF) as u8;
                     self.registers[RTC_DAYS_HIGH] = (self.registers[RTC_DAYS_HIGH] & 0xFE) |
                         (((days >> 8) & 0x01) as u8);
@@ -169,9 +162,9 @@ impl RtcData {
 
             // Apply value to the register with validation
             match reg_index {
-                RTC_SECONDS => self.registers[reg_index] = value & 0x3F,  // 0-59
-                RTC_MINUTES => self.registers[reg_index] = value & 0x3F,  // 0-59
-                RTC_HOURS => self.registers[reg_index] = value & 0x1F,    // 0-23
+                RTC_SECONDS_INDEX => self.registers[reg_index] = value & 0x3F,  // 0-59
+                RTC_MINUTES_INDEX => self.registers[reg_index] = value & 0x3F,  // 0-59
+                RTC_HOURS_INDEX => self.registers[reg_index] = value & 0x1F,    // 0-23
                 RTC_DAYS_LOW => self.registers[reg_index] = value,        // 0-255
                 RTC_DAYS_HIGH => {
                     // Preserve day carry flag if set
@@ -207,17 +200,12 @@ impl RtcData {
         self.latch_state = new_latch;
     }
 
-    /// Check if RTC data is dirty and needs saving
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
 }
 
 pub struct MBC3 {
     rom_banks: ROMBanks,
     sram: Option<SRAM>,
     rtc: Option<RtcData>,
-
     rom_bank: usize,
     ram_bank: usize,
     ram_enabled: bool,
@@ -225,7 +213,6 @@ pub struct MBC3 {
     has_battery: bool,
     has_rtc: bool,
     rom_bank_count: usize,
-    ram_bank_count: usize,
 }
 
 impl MBC3 {
@@ -233,7 +220,6 @@ impl MBC3 {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         let has_ram = ram_size > 0;
         let rom_bank_count = std::cmp::min(MBC3_MAX_ROM_BANKS, rom_banks.data.len());
-        let ram_bank_count = get_ram_banks(ram_size);
 
         // Create SRAM only if there is RAM
         let sram = if has_ram {
@@ -253,7 +239,6 @@ impl MBC3 {
             rom_banks,
             sram,
             rtc,
-
             rom_bank: 1,  // Default to bank 1
             ram_bank: 0,
             ram_enabled: false,
@@ -261,7 +246,6 @@ impl MBC3 {
             has_battery,
             has_rtc,
             rom_bank_count,
-            ram_bank_count,
         }
     }
 
@@ -279,15 +263,12 @@ impl MBC3 {
     fn is_rtc_register(&self, bank: usize) -> bool {
         self.has_rtc && bank >= 0x08 && bank <= 0x0C
     }
-
-    // NOTE: This function is kept for reference but is not used directly due to borrowing issues
-    // Instead, the logic is inlined where needed
-    #[allow(dead_code)]
-    fn ram_bank_to_rtc_register(&self, bank: usize) -> usize {
+    
+    fn ram_bank_to_rtc_register(&self, bank: &usize) -> usize {
         match bank {
-            0x08 => RTC_SECONDS,
-            0x09 => RTC_MINUTES,
-            0x0A => RTC_HOURS,
+            0x08 => RTC_SECONDS_INDEX,
+            0x09 => RTC_MINUTES_INDEX,
+            0x0A => RTC_HOURS_INDEX,
             0x0B => RTC_DAYS_LOW,
             0x0C => RTC_DAYS_HIGH,
             _ => 0 // Should never happen if is_rtc_register check is done first
@@ -330,21 +311,12 @@ impl MBC for MBC3 {
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled {
-                    // Extract ram_bank first to avoid borrowing issues
-                    let bank = self.ram_bank;
+                if self.is_ram_enabled() {
+                    let bank = self.get_ram_bank();
                     if self.is_rtc_register(bank) {
                         // Read from RTC register
                         if let Some(rtc) = &self.rtc {
-                            // Convert bank to RTC register index inline instead of calling a method
-                            let rtc_reg = match bank {
-                                0x08 => RTC_SECONDS,
-                                0x09 => RTC_MINUTES,
-                                0x0A => RTC_HOURS,
-                                0x0B => RTC_DAYS_LOW,
-                                0x0C => RTC_DAYS_HIGH,
-                                _ => 0 // Should never happen if is_rtc_register check is done first
-                            };
+                            let rtc_reg = self.ram_bank_to_rtc_register(&bank);
                             rtc.read_latched(rtc_reg)
                         } else {
                             error!("Attempted to read from RTC register but RTC is not available");
@@ -353,7 +325,7 @@ impl MBC for MBC3 {
                     } else if self.has_ram {
                         // Read from RAM if it exists
                         if let Some(sram) = &self.sram {
-                            let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                            let ram_addr = self.get_ram_bank() * 0x2000 + (address - 0xA000) as usize;
                             sram.read(ram_addr)
                         } else {
                             error!("Attempted to read from RAM but RAM is not available");
@@ -380,72 +352,41 @@ impl MBC for MBC3 {
             0x0000..=0x1FFF => {
                 // RAM and Timer Enable (0x0A enables, anything else disables)
                 self.ram_enabled = (value & 0x0F) == 0x0A;
-                debug!("MBC3 RAM/Timer enable set to: {}", self.ram_enabled);
             },
             0x2000..=0x3FFF => {
                 // ROM Bank Number (7 bits)
                 let bank_num = (value & 0x7F) as usize;
                 // For MBC3, bank 0 can be selected (unlike MBC1)
                 self.rom_bank = bank_num;
-                debug!("MBC3 ROM bank set to: {:02X}", self.rom_bank);
             },
             0x4000..=0x5FFF => {
                 // RAM Bank Number or RTC Register Select
                 self.ram_bank = value as usize;
-                if self.is_rtc_register(self.ram_bank) {
-                    debug!("MBC3 RTC register selected: {:02X}", self.ram_bank);
-                } else {
-                    debug!("MBC3 RAM bank selected: {:02X}", self.ram_bank);
-                }
             },
             0x6000..=0x7FFF => {
                 // Latch Clock Data
                 // When write changes from non-zero to zero, latch the RTC data
                 if let Some(rtc) = &mut self.rtc {
                     rtc.update_latch_state(value);
-                    debug!("MBC3 RTC latch state updated: {:02X}", value);
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled {
+                if self.is_ram_enabled() {
                     // Extract ram_bank first to avoid borrowing issues
-                    let bank = self.ram_bank;
+                    let bank = self.get_ram_bank();
                     if self.is_rtc_register(bank) {
                         // Write to RTC register
+                        let rtc_reg = self.ram_bank_to_rtc_register(&bank);
                         if let Some(rtc) = &mut self.rtc {
-                            // Convert bank to RTC register index inline instead of calling a method
-                            let rtc_reg = match bank {
-                                0x08 => RTC_SECONDS,
-                                0x09 => RTC_MINUTES,
-                                0x0A => RTC_HOURS,
-                                0x0B => RTC_DAYS_LOW,
-                                0x0C => RTC_DAYS_HIGH,
-                                _ => 0 // Should never happen if is_rtc_register check is done first
-                            };
                             rtc.write_register(rtc_reg, value);
-                            debug!("MBC3 RTC register {:02X} write: {:02X}", self.ram_bank, value);
-                        } else {
-                            debug!("Attempted to write to RTC register but RTC is not available");
                         }
                     } else if self.has_ram {
                         // Write to RAM
                         if let Some(sram) = &mut self.sram {
-                            let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                            let ram_addr = bank * 0x2000 + (address - 0xA000) as usize;
                             sram.write(ram_addr, value);
-
-                            // If this is battery-backed RAM, debug log
-                            if self.has_battery {
-                                debug!("Battery-backed MBC3 RAM write at bank {} addr {:04X} = {:02X}", 
-                                      self.ram_bank, address, value);
-                            }
-                        } else {
-                            debug!("Attempted to write to RAM but RAM is not available");
                         }
-                    } else {
-                        debug!("Attempted to write to RAM/RTC but neither is available");
                     }
-                } else {
-                    debug!("Attempted to write to disabled RAM/RTC: {:04X} = {:02X}", address, value);
                 }
             },
             _ => {

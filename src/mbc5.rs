@@ -1,16 +1,14 @@
 use std::io;
 use std::path::Path;
-use log::{debug, error, info};
-use crate::mbc::{MBC, get_ram_size_in_bytes, get_ram_banks, SRAM};
+use log::{debug, error};
+use crate::mbc::{MBC, get_ram_size_in_bytes, SRAM};
 use crate::rom::ROMBanks;
 
 const MBC5_MAX_ROM_BANKS: usize = 512; // 8MB
-const MBC5_MAX_RAM_BANKS: usize = 16;  // 128KB
 
 pub struct MBC5 {
     rom_banks: ROMBanks,
     sram: Option<SRAM>,
-
     rom_bank: usize,
     ram_bank: usize,
     ram_enabled: bool,
@@ -18,7 +16,6 @@ pub struct MBC5 {
     has_battery: bool,
     has_rumble: bool,
     rom_bank_count: usize,
-    ram_bank_count: usize,
 }
 
 impl MBC5 {
@@ -26,7 +23,6 @@ impl MBC5 {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         let has_ram = ram_size > 0;
         let rom_bank_count = std::cmp::min(MBC5_MAX_ROM_BANKS, rom_banks.data.len());
-        let ram_bank_count = get_ram_banks(ram_size);
 
         // Create SRAM only if there is RAM
         let sram = if has_ram {
@@ -45,12 +41,10 @@ impl MBC5 {
             has_battery,
             has_rumble,
             rom_bank_count,
-            ram_bank_count,
         }
     }
 
     fn get_active_rom_bank(&self) -> usize {
-        // MBC5 simply uses the full 9 bits for bank number, with no special cases
         self.rom_bank % self.rom_bank_count
     }
 }
@@ -69,7 +63,6 @@ impl MBC for MBC5 {
                     }
                 } else {
                     panic!("ROM bank 0 not available");
-                    //0xFF
                 }
             },
             0x4000..=0x7FFF => {
@@ -86,14 +79,13 @@ impl MBC for MBC5 {
                     }
                 } else {
                     panic!("ROM bank {} not available (total banks: {})", bank, self.rom_banks.data.len());
-                    //0xFF
                 }
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled && self.has_ram {
+                if self.is_ram_enabled() && self.has_ram {
                     // Read from RAM
                     if let Some(sram) = &self.sram {
-                        let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                        let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
                         sram.read(ram_addr)
                     } else {
                         error!("SRAM is None when trying to read from it");
@@ -116,45 +108,36 @@ impl MBC for MBC5 {
             0x0000..=0x1FFF => {
                 // RAM Enable (any value with bit 0 set enables, other values disable)
                 self.ram_enabled = (value & 0x0F) == 0x0A;
-                debug!("MBC5 RAM enable set to: {}", self.ram_enabled);
             },
             0x2000..=0x2FFF => {
                 // ROM Bank Number (lower 8 bits)
                 // MBC5 uses a 9-bit bank number for up to 512 ROM banks
                 let low_bits = value as usize;
                 self.rom_bank = (self.rom_bank & 0x100) | low_bits;
-                debug!("MBC5 ROM bank low bits set to: {:02X}, effective bank: {:03X}", 
-                       low_bits, self.get_active_rom_bank());
             },
             0x3000..=0x3FFF => {
                 // ROM Bank Number (9th bit)
                 let high_bit = ((value & 0x01) as usize) << 8;
                 self.rom_bank = (self.rom_bank & 0xFF) | high_bit;
-                debug!("MBC5 ROM bank high bit set to: {}, effective bank: {:03X}", 
-                       value & 0x01, self.get_active_rom_bank());
             },
             0x4000..=0x5FFF => {
                 // RAM Bank Number (4 bits)
                 // For rumble carts, bit 3 controls rumble motor (0=off, 1=on)
                 if self.has_rumble {
                     let rumble_on = (value & 0x08) != 0;
-                    // In a real implementation, this would trigger rumble hardware
-                    debug!("MBC5 Rumble motor state: {}", rumble_on);
-
+                    debug!("MBC5 Rumble state: {}", rumble_on);
                     // Use only bits 0-2 for RAM bank selection
                     self.ram_bank = (value & 0x07) as usize;
                 } else {
                     // Use bits 0-3 for RAM bank selection (up to 16 banks)
                     self.ram_bank = (value & 0x0F) as usize;
                 }
-
-                debug!("MBC5 RAM bank selected: {:02X}", self.ram_bank);
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled && self.has_ram {
+                if self.is_ram_enabled() && self.has_ram {
                     // Write to RAM
                     if let Some(sram) = &mut self.sram {
-                        let ram_addr = self.ram_bank as usize * 0x2000 + (address - 0xA000) as usize;
+                        let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
                         sram.write(ram_addr, value);
 
                         // Log if this is battery-backed RAM
@@ -162,11 +145,7 @@ impl MBC for MBC5 {
                             debug!("Battery-backed MBC5 RAM write at bank {} addr {:04X} = {:02X}", 
                                   self.ram_bank, address, value);
                         }
-                    } else {
-                        error!("SRAM is None when trying to write to it");
                     }
-                } else {
-                    debug!("Attempted to write to disabled RAM: {:04X} = {:02X}", address, value);
                 }
             },
             _ => {
@@ -193,7 +172,6 @@ impl MBC for MBC5 {
         if self.has_battery && self.has_ram {
             if let Some(sram) = &mut self.sram {
                 sram.save();
-                debug!("MBC5 RAM saved successfully");
             } else {
                 error!("SRAM is None when trying to save it");
             }

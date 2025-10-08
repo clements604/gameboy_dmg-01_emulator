@@ -1,12 +1,18 @@
 use std::process::exit;
 use log::{debug, info, error};
-pub struct rom_debug {
+
+/**
+ * Integrates with Blargg's ROM Debugging system.
+ */
+#[allow(dead_code)]
+pub struct RomDebug {
     message: Vec<char>,
 }
 
-impl rom_debug {
-    pub fn new() -> rom_debug {
-        rom_debug {
+#[allow(dead_code)]
+impl RomDebug {
+    pub fn new() -> RomDebug {
+        RomDebug {
             message: Vec::new(),
         }
     }

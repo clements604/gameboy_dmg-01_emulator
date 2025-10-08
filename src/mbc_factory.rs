@@ -1,5 +1,5 @@
 use std::path::Path;
-use log::{debug, error, info};
+use log::debug;
 use crate::mbc::{MBC, MBCType};
 use crate::mbc0::MBC0;
 use crate::mbc1::MBC1;
@@ -34,36 +34,32 @@ pub fn create_mbc(rom: &ROM) -> Box<dyn MBC> {
 
     match mbc_type {
         MBCType::None => {
-            info!("Creating MBC0 (No MBC) controller");
+            debug!("Creating MBC0 (No MBC) controller");
             Box::new(MBC0::new(rom_banks, rom.ram_size, has_battery))
         },
         MBCType::MBC1 => {
-            info!("Creating MBC1 controller");
+            debug!("Creating MBC1 controller");
             Box::new(MBC1::new(rom_banks, rom.rom_size, rom.ram_size, has_battery, Path::new(&rom.rom_file_path)))
         },
         MBCType::MBC2 => {
-            info!("Creating MBC2 controller");
+            debug!("Creating MBC2 controller");
             Box::new(MBC2::new(rom_banks, has_battery, Path::new(&rom.rom_file_path)))
         },
         MBCType::MBC3 => {
             if has_rtc {
-                info!("Creating MBC3 controller with Real Time Clock");
+                debug!("Creating MBC3 controller with Real Time Clock");
             } else {
-                info!("Creating MBC3 controller");
+                debug!("Creating MBC3 controller");
             }
             Box::new(MBC3::new(rom_banks, rom.ram_size, has_battery, has_rtc, Path::new(&rom.rom_file_path)))
         },
         MBCType::MBC5 => {
             if has_rumble {
-                info!("Creating MBC5 controller with Rumble");
+                debug!("Creating MBC5 controller with Rumble");
             } else {
-                info!("Creating MBC5 controller");
+                debug!("Creating MBC5 controller");
             }
             Box::new(MBC5::new(rom_banks, rom.ram_size, has_battery, has_rumble, Path::new(&rom.rom_file_path)))
-        },
-        _ => {
-            panic!("Unsupported MBC type: {:?}", mbc_type);
-            Box::new(MBC0::new(rom_banks, rom.ram_size, has_battery))
         }
     }
 }

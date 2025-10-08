@@ -31,6 +31,7 @@ impl MBC1 {
     pub fn new(rom_banks: ROMBanks, rom_size: u8, ram_size: u8, has_battery: bool, rom_path: &Path) -> Self {
         let ram_size_bytes = get_ram_size_in_bytes(ram_size);
         let has_ram = ram_size > 0;
+        info!("MBC1 has_ram: {}, ram_size_bytes: {}, has_battery: {}", has_ram, ram_size_bytes, has_battery);
         let rom_bank_count = get_rom_banks(rom_size);
         let ram_bank_count = get_ram_banks(ram_size);
 
@@ -44,7 +45,7 @@ impl MBC1 {
         MBC1 {
             rom_banks,
             sram,
-            rom_bank: 1,  // Default to bank 1
+            rom_bank: 1,
             ram_bank: 0,
             ram_enabled: false,
             has_ram,
@@ -69,7 +70,18 @@ impl MBC1 {
         if self.banking_mode == BankingMode::RAM {
             self.ram_bank & (self.ram_bank_count - 1)
         } else {
-            0 // Always use bank 0 in ROM mode
+            0
+        }
+    }
+
+    fn get_bank_0(&self) -> usize {
+        // In Mode 1 (RAM/Advanced), the upper 2 bits affect bank 0 for ROMs > 512KB
+        if self.banking_mode == BankingMode::RAM {
+            // Extract bits 5-6 from rom_bank and shift them to the correct position
+            let upper_bits = (self.rom_bank & 0x60) >> 5;
+            (upper_bits << 5) & (self.rom_bank_count - 1)
+        } else {
+            0
         }
     }
 }
@@ -77,22 +89,22 @@ impl MBC1 {
 impl MBC for MBC1 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => { // ROM bank 0
-                if let Some(rom_bank) = self.rom_banks.data.get(0) {
+            0x0000..=0x3FFF => {
+                let bank = self.get_bank_0();
+                if let Some(rom_bank) = self.rom_banks.data.get(bank) {
                     if let Some(&value) = rom_bank.get(address as usize) {
                         value
                     }
                     else {
-                        error!("Error reading for ROM bank 0 at address 0x{:X}", address);
+                        error!("Error reading for ROM bank {} at address 0x{:X}", bank, address);
                         0xFF
                     }
                 }
                 else {
-                    panic!("ROM bank 0 not available")
-                    //0xFF
+                    panic!("ROM bank {} not available", bank)
                 }
             },
-            0x4000..=0x7FFF => { // ROM bank 1–N (in the case of MBC0 this is always 1)
+            0x4000..=0x7FFF => {
                 let bank_addr = (address - 0x4000) as usize;
 
                 if let Some(rom_bank) = self.rom_banks.data.get(self.get_selected_rom_bank()) {
@@ -106,12 +118,10 @@ impl MBC for MBC1 {
                 }
                 else {
                     panic!("ROM bank 1 not available")
-                    //0xFF
                 }
             },
             0xA000..=0xBFFF => { // External RAM
-                if self.ram_enabled && self.has_ram {
-                    // Calculate the active RAM bank first before borrowing self.sram
+                if self.is_ram_enabled() {
                     let bank = self.get_active_ram_bank();
                     let ram_address = bank * 0x2000 + (address - 0xA000) as usize;
 
@@ -135,31 +145,24 @@ impl MBC for MBC1 {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        debug!("write_byte called for address 0x{:X} with value 0x{:02X}", address, value);
         match address {
             0x0000..=0x1FFF => {
                 self.ram_enabled = (value & 0x0F) == 0x0A;
-                debug!("RAM enable set to: {}", self.ram_enabled);
             },
             0x2000..=0x3FFF => {
                 let lower_bits = (value & 0x1F) as usize;
                 let bank_num = if lower_bits == 0 { 1 } else { lower_bits };
-
                 self.rom_bank = (self.rom_bank & 0x60) | bank_num;
-                debug!("ROM bank lower bits set to: {:02X}, effective bank: {:02X}", 
-                       bank_num, self.get_selected_rom_bank());
             },
             0x4000..=0x5FFF => {
                 let upper_bits = ((value & 0x03) as usize) << 5;
 
-                if self.banking_mode == BankingMode::ROM {
-                    // In ROM mode, these bits select the upper bits of ROM bank
-                    self.rom_bank = (self.rom_bank & 0x1F) | upper_bits;
-                    debug!("ROM bank upper bits set to: {:02X}, effective bank: {:02X}", 
-                           upper_bits >> 5, self.get_selected_rom_bank());
-                } else {
-                    // In RAM mode, these bits select the RAM bank
-                    self.ram_bank = value as usize & 0x03;
+                // These bits always affect ROM bank bits 5-6
+                self.rom_bank = (self.rom_bank & 0x1F) | upper_bits;
+
+                // In RAM banking mode, they also select the RAM bank
+                if self.banking_mode == BankingMode::RAM {
+                    self.ram_bank = (value & 0x03) as usize;
                     debug!("RAM bank set to: {:02X}", self.ram_bank);
                 }
             },
@@ -172,15 +175,13 @@ impl MBC for MBC1 {
                 debug!("Banking mode set to: {:?}", self.banking_mode);
             },
             0xA000..=0xBFFF => {
-                if self.ram_enabled && self.has_ram {
-                    // Calculate the active RAM bank first before borrowing self.sram
+                if self.is_ram_enabled() && self.has_ram {
                     let bank = self.get_active_ram_bank();
                     let addr = bank * 0x2000 + (address - 0xA000) as usize;
 
                     if let Some(sram) = &mut self.sram {
                         sram.write(addr, value);
-
-                        // Log if this is battery-backed RAM
+                        
                         if self.has_battery {
                             debug!("Battery-backed MBC1 RAM write at bank {} addr {:04X} = {:02X}", 
                                   bank, address, value);
@@ -217,10 +218,7 @@ impl MBC for MBC1 {
                 sram.save();
                 debug!("MBC1 RAM saved successfully");
             }
-        } else {
-            debug!("Not saving MBC1 RAM - no battery or no RAM");
         }
-
         Ok(())
     }
 

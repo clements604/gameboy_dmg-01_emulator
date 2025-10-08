@@ -1,7 +1,6 @@
-use std::{fs, io};
+use std::io;
 use std::path::{Path, PathBuf};
-use log::{debug, error, info};
-use crate::constants::*;
+use log::debug;
 
 pub trait MBC {
     fn read_byte(&self, address: u16) -> u8;
@@ -18,9 +17,7 @@ pub enum MBCType {
     MBC1,
     MBC2,
     MBC3,
-    MBC4,
     MBC5,
-    Other(u8), // Unsupported types such as "POCKET CAMERA"
 }
 
 impl MBCType {
@@ -31,14 +28,7 @@ impl MBCType {
             0x05 | 0x06 => MBCType::MBC2,
             0x0F | 0x10 | 0x11 | 0x12 | 0x13 => MBCType::MBC3,
             0x19 | 0x1A | 0x1B | 0x1C | 0x1D | 0x1E => MBCType::MBC5,
-            _ => MBCType::Other(value),
-        }
-    }
-
-    pub fn has_battery(&self, cart_type: u8) -> bool {
-        match cart_type {
-            0x03 | 0x06 | 0x09 | 0x0D | 0x0F | 0x10 | 0x13 | 0x1B | 0x1E | 0xFF => true,
-            _ => false
+            _ => { panic!("Unsupported MBC type: {:#X}", value) }
         }
     }
 }
@@ -121,14 +111,12 @@ impl SRAM {
         self.dirty = true;
     }
     
-    pub fn save(&mut self) -> Result<(), io::Error> {
+    pub fn save(&mut self) {
         if self.dirty {
-            // Write to file
-            std::fs::write(&self.save_file_path, &self.data).unwrap();
+            std::fs::write(&self.save_file_path, &self.data).expect("Failed to save SRAM data");
             self.dirty = false;
-            info!("Saved RAM data to {:?}", &self.save_file_path);
+            debug!("Saved RAM data to {:?}", &self.save_file_path);
         }
-        Ok(())
     }
     
 }

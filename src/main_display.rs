@@ -3,34 +3,17 @@ use log::error;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::{Canvas, TextureCreator};
-use sdl2::video::{Window, WindowContext};
-use std::ops::Index;
-use std::time::Duration;
-use crate::display::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use sdl2::render::Canvas;
+use sdl2::video::Window;
 
-const FPS: usize = 60;
-pub(crate) const TILE_SIZE: usize = 8;
-const BYTES_PER_TILE: usize = 16; // 2 bytes per row * 8 rows
-const TOTAL_TILES: usize = 1024; // Total tiles for a 32x32 tile map
-pub const WIDTH: usize = TILE_SIZE * 32; // 32 tiles wide
-pub const HEIGHT: usize = TILE_SIZE * 32; // 32 tiles high
-pub const VIEWPORT_WIDTH: usize = TILE_SIZE * 20; // 20 tiles wide
-pub const VIEWPORT_HEIGHT: usize = TILE_SIZE * 18; // 18 tiles high
-const DARKEST_GREEN: u32 = 0xFF0F380F;
-const DARK_GREEN: u32 = 0xFF306230;
-const LIGHT_GREEN: u32 = 0xFF8BAC0F;
-pub(crate) const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
-pub(crate) const RED: u32 = 0xFFFF0000;
+pub const SCREEN_WIDTH: usize = 160;
+pub const SCREEN_HEIGHT: usize = 144;
 
 pub struct MainDisplay {
     pub canvas: Canvas<Window>,
     pub event_pump: sdl2::EventPump,
-    scale: u32,
-    keys_to_check: [Keycode; 8],
-    current_keys: Vec<Keycode>,  // Currently pressed keys
-    key_state_changed: bool,     // Flag for optimization
+    current_keys: Vec<Keycode>,
+    key_state_changed: bool,
 }
 
 impl MainDisplay {
@@ -84,23 +67,9 @@ impl MainDisplay {
             panic!("Event pump creation failed: {}", e);
         });
 
-        let keys_to_check = [
-            Keycode::A,      // A button
-            Keycode::B,      // B button
-            Keycode::Return, // Start
-            Keycode::Space,  // Select
-            Keycode::Up,     // Up
-            Keycode::Down,   // Down
-            Keycode::Left,   // Left
-            Keycode::Right,  // Right
-        ];
-
         MainDisplay {
             canvas,
             event_pump,
-
-            scale,
-            keys_to_check,
             current_keys: Vec::new(),
             key_state_changed: false,
         }
@@ -124,12 +93,8 @@ impl MainDisplay {
                 }
             }
         }
-
-        // Present the rendered frame
+        
         self.canvas.present();
-
-        // Cap the frame rate
-        //::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / FPS as u32)); // FIXME was 1_000_000_000u32 / FPS
     }
 
     pub fn process_events(&mut self) -> bool {
@@ -167,16 +132,11 @@ impl MainDisplay {
 
         running
     }
-
-    // Simplified get_pressed_keys
+    
     pub fn get_pressed_keys(&self) -> &Vec<Keycode> {
         &self.current_keys
     }
 
-    // Check if key state changed
-    pub fn has_key_state_changed(&self) -> bool {
-        self.key_state_changed
-    }
 }
 
 pub fn get_sdl_colour(color_u32: u32) -> Color {
@@ -186,40 +146,4 @@ pub fn get_sdl_colour(color_u32: u32) -> Color {
     let b = (color_u32 & 0xFF) as u8;
 
     Color::RGB(r, g, b)
-}
-
-// Replacement for the minifb get_mififb_colour function
-pub fn get_gb_colour(palette: u8) -> u32 {
-    match palette {
-        0b00 => LIGHTEST_GREEN,
-        0b01 => LIGHT_GREEN,
-        0b10 => DARK_GREEN,
-        0b11 => DARKEST_GREEN,
-        _ => RED,
-    }
-}
-
-// Helper function to convert palette index to SDL2 Color
-pub fn get_palette_colour(palette: u8) -> Color {
-    match palette {
-        0b00 => sdl_from_u32(LIGHTEST_GREEN),
-        0b01 => sdl_from_u32(LIGHT_GREEN),
-        0b10 => sdl_from_u32(DARK_GREEN),
-        0b11 => sdl_from_u32(DARKEST_GREEN),
-        _ => Color::RGB(255, 0, 0), // RED
-    }
-}
-
-// Helper function to convert u32 to SDL2 Color
-fn sdl_from_u32(color_u32: u32) -> Color {
-    let r = ((color_u32 >> 16) & 0xFF) as u8;
-    let g = ((color_u32 >> 8) & 0xFF) as u8;
-    let b = (color_u32 & 0xFF) as u8;
-    Color::RGB(r, g, b)
-}
-
-// Helper function to convert SDL2 Color to u32
-pub fn sdl_to_u32(color: Color) -> u32 {
-    let (r, g, b) = color.rgb();
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }

@@ -1,4 +1,4 @@
-use crate::interupts::Interrupt;
+use crate::interrupts::Interrupt;
 use crate::lcd::LCD;
 use crate::lcd::LIGHTEST_GREEN;
 use bitflags::bitflags;

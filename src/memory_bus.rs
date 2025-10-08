@@ -2,7 +2,7 @@ use crate::rom::{ROM, ROMBanks};
 use log::debug;
 use crate::dma::Dma;
 use crate::dmg_io::IO;
-use crate::interupts::{Interrupt, InterruptFlags};
+use crate::interrupts::{Interrupt, InterruptFlags};
 use crate::mbc::MBC;
 use crate::mbc_factory;
 
@@ -188,7 +188,6 @@ impl MemoryBus {
                         self.boot_rom_enabled = false;
                     },
                     0xFF46 => {
-                        debug!("DMA transfer start: {:#X}", value);
                         self.dma.dma_start(value);
                     },
                     _ => {

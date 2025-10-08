@@ -1,4 +1,4 @@
-use crate::interupts::*;
+use crate::interrupts::*;
 use crate::memory_bus;
 use bitflags::bitflags;
 use log::error;

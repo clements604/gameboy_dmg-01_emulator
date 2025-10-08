@@ -60,9 +60,6 @@ pub fn create_mbc(rom: &ROM) -> Box<dyn MBC> {
                 debug!("Creating MBC5 controller");
             }
             Box::new(MBC5::new(rom_banks, rom.ram_size, has_battery, has_rumble, Path::new(&rom.rom_file_path)))
-        },
-        _ => {
-            panic!("Unsupported MBC type: {:?}", mbc_type);
         }
     }
 }

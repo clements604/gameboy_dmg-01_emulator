@@ -1,5 +1,5 @@
 use crate::joypad;
-use crate::interupts::Interrupt;
+use crate::interrupts::Interrupt;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE};
 use crate::ppu::Ppu;
 use crate::timer::Timer;

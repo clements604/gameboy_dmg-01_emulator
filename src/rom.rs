@@ -98,29 +98,16 @@ impl ROM {
     }
 
     pub fn load_rom_to_banks(&self) -> ROMBanks {
-        debug!("Loading ROM into banks");
-        debug!("ROM size: {}", self.rom.len());
         let mut rom_banks: ROMBanks = ROMBanks::new();
         let mut rom_offset: usize = 0; // The current offset in the ROM
 
         while rom_offset < self.rom.len() {
-            debug!("Offset: {}", rom_offset);
             let end = std::cmp::min(rom_offset + 0x4000, self.rom.len());
             rom_banks.data.push(self.rom[rom_offset..end].to_vec());
             rom_offset += 0x4000;
         }
-
-        debug!("Total banks: {}", rom_banks.data.len());
-        debug!("ROM size: {}", self.rom.len());
-        debug!("Offset: {}", rom_offset);
-        debug!("Size of first bank: {}", rom_banks.data[0].len());
-        if rom_banks.data.len() > 0 {
-            debug!("Size of last bank: {}", rom_banks.data[rom_banks.data.len() - 1].len());
-        }
-
         rom_banks
     }
-    
 }
 
 impl fmt::Display for ROM {

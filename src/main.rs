@@ -52,8 +52,6 @@ struct Emulator {
     last_frame_time: Instant,
     running: bool,
     last_save_time: Instant,
-    
-    emulator_config: EmulatorConfig,
 }
 
 impl Emulator {
@@ -85,7 +83,6 @@ impl Emulator {
             last_frame_time: Instant::now(),
             running: true,
             last_save_time: Instant::now(),
-            emulator_config,
         }
     }
 
@@ -232,6 +229,16 @@ fn main() {
         .is_test(false)
         .try_init();
 
+    let emulaor_config = EmulatorConfig::new();
+    let boot_rom = match emulaor_config.boot_rom {
+        Some(ref path) => {
+            Some(load_boot_rom(path.to_string()))
+        },
+        None => {
+            None
+        },
+    };
+
     let rom_file = FileDialog::new()
         .add_filter("Gameboy ROM Files", &["gb"])
         .pick_file();
@@ -247,15 +254,6 @@ fn main() {
         },
     };
     
-    let emulaor_config = EmulatorConfig::new();
-    let boot_rom = match emulaor_config.boot_rom {
-        Some(ref path) => {
-            Some(load_boot_rom(path.clone()))
-        },
-        None => {
-            None
-        },
-    };
     //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
     //let boot_rom = None;
 

@@ -1,0 +1,4 @@
+{
+  "boot_rom": "/home/josh/Documents/rust/gameboy-emulator/roms/boot/dmg0_boot.bin",
+  "scale_factor": 3
+}

@@ -18,6 +18,7 @@ mod mbc_factory;
 mod mbc2;
 mod mbc3;
 mod mbc5;
+mod emulaor_config;
 
 use log::{debug, error, info};
 use crate::rom::ROM;
@@ -27,7 +28,7 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 use sdl2::keyboard::Keycode;
 use rfd::FileDialog;
-
+use crate::emulaor_config::EmulatorConfig;
 use crate::interrupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
 use crate::main_display::MainDisplay;
@@ -54,30 +55,11 @@ struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
-
-        let boot_rom_enabled = match boot_rom {
-            Some(_) => {
-                true
-            },
-            None => {
-                false
-            },
-        };
-        
-
-        let main_display = MainDisplay::new();
+    pub fn new(emulator_config: EmulatorConfig, boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
 
         let mut cpu = cpu::CPU::new();
-
-        match boot_rom_enabled {
-            true => {
-                cpu.pc = 0x0000
-            },
-            false => {
-                cpu.pc = 0x0100
-            },
-        }
+        cpu.pc = if boot_rom.is_some() { 0x0000 } else { 0x0100 };
+        let main_display = MainDisplay::new(emulator_config.scale_factor);
 
         Emulator {
             cpu,
@@ -102,7 +84,7 @@ impl Emulator {
                     Some(mbc) => {
                         if ! mbc.dirty_sram() {
                             self.running = false;
-                            return;
+                            std::process::exit(0);
                         }
                         else {
                             error!("Emulator requested to stop but save SRAM is dirty, not stopping to prevent data loss");
@@ -238,6 +220,16 @@ fn main() {
         .is_test(false)
         .try_init();
 
+    let emulaor_config = EmulatorConfig::new();
+    let boot_rom = match emulaor_config.boot_rom {
+        Some(ref path) => {
+            Some(load_boot_rom(path.to_string()))
+        },
+        None => {
+            None
+        },
+    };
+
     let rom_file = FileDialog::new()
         .add_filter("Gameboy ROM Files", &["gb"])
         .pick_file();
@@ -249,12 +241,12 @@ fn main() {
         },
         None => {
             error!("No ROM file selected, exiting...");
-            return;
+            std::process::exit(1);
         },
     };
-    
+
     //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
-    let boot_rom = None;
+    //let boot_rom = None;
 
     //let rom = load_rom(String::from("roms/Tetris.gb"));
     //let rom = load_rom(String::from("roms/Dr. Mario.gb"));
@@ -329,7 +321,7 @@ fn main() {
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tima_write_reloading.gb")); //TODO failed
     //let rom = load_rom(String::from("/home/josh/Documents/rust/gameboy-emulator/roms/test/mooney/mts-20240127-1204-74ae166/acceptance/timer/tma_write_reloading.gb"));
     
-    let mut emulator = Emulator::new(boot_rom, &rom);
+    let mut emulator = Emulator::new(emulaor_config, boot_rom, &rom);
     
     // Main loop - no need for separate input handling now
     while emulator.running {
@@ -357,7 +349,10 @@ fn load_rom(file_path: String) -> ROM {
 }
 
 fn load_boot_rom(file_path: String) -> Vec<u8> {
-    let mut file = File::open(file_path).expect("Boot ROM file not found");
+    let mut file = File::open(file_path).unwrap_or_else(|_| {
+        error!("Boot ROM file not found");
+        std::process::exit(1);
+    });
     let mut buffer: Vec<u8> = Vec::new();
     // Read the file into a buffer
     file.read_to_end(&mut buffer).expect("Error reading file");

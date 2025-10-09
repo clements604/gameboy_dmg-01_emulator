@@ -58,16 +58,7 @@ impl Emulator {
     pub fn new(emulator_config: EmulatorConfig, boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
 
         let mut cpu = cpu::CPU::new();
-
-        match boot_rom {
-            Some(_) => {
-                cpu.pc = 0x0000;
-            },
-            None => {
-                cpu.pc = 0x0100;
-            },
-        };
-        
+        cpu.pc = if boot_rom.is_some() { 0x0000 } else { 0x0100 };
         let main_display = MainDisplay::new(emulator_config.scale_factor);
 
         Emulator {
@@ -253,7 +244,7 @@ fn main() {
             std::process::exit(1);
         },
     };
-    
+
     //let boot_rom = Some(load_boot_rom(String::from("roms/boot/dmg0_boot.bin")));
     //let boot_rom = None;
 

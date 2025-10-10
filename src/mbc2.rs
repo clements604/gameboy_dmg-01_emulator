@@ -47,7 +47,7 @@ impl MBC for MBC2 {
         match address {
             0x0000..=0x3FFF => {
                 // Fixed ROM bank 0
-                if let Some(bank) = self.rom_banks.data.get(0) {
+                /*if let Some(bank) = self.rom_banks.data.get(0) {
                     if let Some(&value) = bank.get(address as usize) {
                         value
                     } else {
@@ -56,13 +56,14 @@ impl MBC for MBC2 {
                     }
                 } else {
                     panic!("ROM bank 0 not available")
-                }
+                }*/
+                self.get_value_from_bank(0, address, &self.rom_banks.data)
             },
             0x4000..=0x7FFF => {
                 let bank = self.get_selected_rom_bank();
-                let bank_addr = (address - 0x4000) as usize;
+                let bank_addr = address - 0x4000;
 
-                if let Some(bank_data) = self.rom_banks.data.get(bank) {
+                /*if let Some(bank_data) = self.rom_banks.data.get(bank) {
                     if let Some(&value) = bank_data.get(bank_addr) {
                         value
                     } else {
@@ -71,7 +72,8 @@ impl MBC for MBC2 {
                     }
                 } else {
                     panic!("ROM bank {} not available (total banks: {})", bank, self.rom_banks.data.len());
-                }
+                }*/
+                self.get_value_from_bank(bank, bank_addr, &self.rom_banks.data)
             },
             0xA000..=0xBFFF => {
                 if self.is_ram_enabled() {
@@ -152,9 +154,9 @@ impl MBC for MBC2 {
     fn save_ram(&mut self) -> Result<(), io::Error> {
         if self.has_battery {
             if let Some(sram) = &mut self.sram {
-                sram.save();
                 debug!("MBC2 RAM saved successfully");
-            }
+                return sram.save();
+            }   
         }
         Ok(())
     }

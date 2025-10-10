@@ -1,6 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use log::debug;
+use log::{debug, error};
 
 pub trait MBC {
     fn read_byte(&self, address: u16) -> u8;
@@ -10,6 +10,20 @@ pub trait MBC {
     fn is_ram_enabled(&self) -> bool;
     fn save_ram(&mut self) -> Result<(), io::Error>;
     fn dirty_sram(&self) -> bool;
+
+    fn get_value_from_bank(&self, bank: usize, address: u16, data: &Vec<Vec<u8>>) -> u8 {
+        if let Some(bank) = data.get(bank) {
+            if let Some(&value) = bank.get(address as usize) {
+                value
+            } else {
+                error!("Attempted to read beyond ROM bank 0 boundaries at {:04X}", address);
+                0xFF
+            }
+        } else {
+            error!("ROM bank {} not available", bank);
+            0xFF
+        }
+    }
 }
 #[derive(Debug, Clone, Copy)]
 pub enum MBCType {
@@ -111,12 +125,13 @@ impl SRAM {
         self.dirty = true;
     }
     
-    pub fn save(&mut self) {
+    pub fn save(&mut self) -> Result<(), io::Error> {
         if self.dirty {
-            std::fs::write(&self.save_file_path, &self.data).expect("Failed to save SRAM data");
             self.dirty = false;
             debug!("Saved RAM data to {:?}", &self.save_file_path);
+            return std::fs::write(&self.save_file_path, &self.data);
         }
+        Ok(())
     }
-    
+
 }

@@ -91,7 +91,7 @@ impl MBC for MBC1 {
         match address {
             0x0000..=0x3FFF => {
                 let bank = self.get_bank_0();
-                if let Some(rom_bank) = self.rom_banks.data.get(bank) {
+                /*if let Some(rom_bank) = self.rom_banks.data.get(bank) {
                     if let Some(&value) = rom_bank.get(address as usize) {
                         value
                     }
@@ -102,12 +102,13 @@ impl MBC for MBC1 {
                 }
                 else {
                     panic!("ROM bank {} not available", bank)
-                }
+                }*/
+                self.get_value_from_bank(bank, address, &self.rom_banks.data)
             },
             0x4000..=0x7FFF => {
-                let bank_addr = (address - 0x4000) as usize;
+                let bank_addr = address - 0x4000;
 
-                if let Some(rom_bank) = self.rom_banks.data.get(self.get_selected_rom_bank()) {
+                /*if let Some(rom_bank) = self.rom_banks.data.get(self.get_selected_rom_bank()) {
                     if let Some(&value) = rom_bank.get(bank_addr) {
                         value
                     }
@@ -118,7 +119,8 @@ impl MBC for MBC1 {
                 }
                 else {
                     panic!("ROM bank 1 not available")
-                }
+                }*/
+                self.get_value_from_bank(self.get_selected_rom_bank(), bank_addr, &self.rom_banks.data)
             },
             0xA000..=0xBFFF => { // External RAM
                 if self.is_ram_enabled() {
@@ -215,8 +217,8 @@ impl MBC for MBC1 {
         // Only save if this cartridge has battery-backed RAM
         if self.has_battery && self.has_ram {
             if let Some(sram) = &mut self.sram {
-                sram.save();
                 debug!("MBC1 RAM saved successfully");
+                return sram.save();
             }
         }
         Ok(())

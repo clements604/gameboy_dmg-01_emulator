@@ -52,3 +52,6 @@ scratchpad/
 
 # Logging
 *.log
+# Misc fies
+TODO.txt
+config.json

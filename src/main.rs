@@ -52,6 +52,8 @@ struct Emulator {
     last_frame_time: Instant,
     running: bool,
     last_save_time: Instant,
+
+    key_bindings: std::collections::HashMap<String, Keycode>,
 }
 
 impl Emulator {
@@ -59,7 +61,7 @@ impl Emulator {
 
         let mut cpu = cpu::CPU::new();
         cpu.pc = if boot_rom.is_some() { 0x0000 } else { 0x0100 };
-        let main_display = MainDisplay::new(emulator_config.scale_factor);
+        let main_display = MainDisplay::new(emulator_config.scale_factor, &emulator_config.key_bindings);
 
         Emulator {
             cpu,
@@ -74,6 +76,8 @@ impl Emulator {
             last_frame_time: Instant::now(),
             running: true,
             last_save_time: Instant::now(),
+
+            key_bindings: emulator_config.key_bindings,
         }
     }
 
@@ -121,20 +125,24 @@ impl Emulator {
 
             let mut pressed = false;
 
-            // Apply current keys
+            let button_mappings = [
+                ("up", Button::Up),
+                ("down", Button::Down),
+                ("left", Button::Left),
+                ("right", Button::Right),
+                ("a", Button::A),
+                ("b", Button::B),
+                ("start", Button::Start),
+                ("select", Button::Select),
+            ];
+
             for key in current_keys {
-                match key {
-                    Keycode::Up => joypad.button_pressed(Button::Up),
-                    Keycode::Down => joypad.button_pressed(Button::Down),
-                    Keycode::Left => joypad.button_pressed(Button::Left),
-                    Keycode::Right => joypad.button_pressed(Button::Right),
-                    Keycode::A => joypad.button_pressed(Button::A),
-                    Keycode::B => joypad.button_pressed(Button::B),
-                    Keycode::Return => joypad.button_pressed(Button::Start),
-                    Keycode::Backspace => joypad.button_pressed(Button::Select),
-                    _ => (),
+                for (binding_name, button) in &button_mappings {
+                    if Some(key) == self.key_bindings.get(*binding_name) {
+                        joypad.button_pressed(*button);
+                        pressed = true;
+                    }
                 }
-                pressed = true;
             }
 
             // Restore the selection bits after updating button states

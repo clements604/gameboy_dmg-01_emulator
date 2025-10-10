@@ -14,12 +14,14 @@ pub struct MainDisplay {
     pub event_pump: sdl2::EventPump,
     current_keys: Vec<Keycode>,
     key_state_changed: bool,
+    tracked_keys: Vec<Keycode>,
 }
 
 impl MainDisplay {
-    pub fn new(scale_factor: u32) -> MainDisplay {
+    pub fn new(scale_factor: u32, key_bindings: &HashMap<String, Keycode>) -> MainDisplay {
 
         let mut current_key_states = HashMap::new();
+        let tracked_keys: Vec<Keycode> = key_bindings.values().copied().collect();
 
         // Initialize keys we care about
         current_key_states.insert(Keycode::Up, false);
@@ -71,6 +73,7 @@ impl MainDisplay {
             event_pump,
             current_keys: Vec::new(),
             key_state_changed: false,
+            tracked_keys,
         }
     }
 
@@ -114,14 +117,13 @@ impl MainDisplay {
         let mut new_keys = Vec::new();
 
         // Check each key we care about
-        if keyboard_state.is_scancode_pressed(Scancode::Up) { new_keys.push(Keycode::Up); }
-        if keyboard_state.is_scancode_pressed(Scancode::Down) { new_keys.push(Keycode::Down); }
-        if keyboard_state.is_scancode_pressed(Scancode::Left) { new_keys.push(Keycode::Left); }
-        if keyboard_state.is_scancode_pressed(Scancode::Right) { new_keys.push(Keycode::Right); }
-        if keyboard_state.is_scancode_pressed(Scancode::A) { new_keys.push(Keycode::A); }
-        if keyboard_state.is_scancode_pressed(Scancode::B) { new_keys.push(Keycode::B); }
-        if keyboard_state.is_scancode_pressed(Scancode::Return) { new_keys.push(Keycode::Return); }
-        if keyboard_state.is_scancode_pressed(Scancode::Backspace) { new_keys.push(Keycode::Backspace); }
+        for keycode in &self.tracked_keys {
+            if let Some(scancode) = Scancode::from_keycode(*keycode) {
+                if keyboard_state.is_scancode_pressed(scancode) {
+                    new_keys.push(*keycode);
+                }
+            }
+        }
 
         // Check if key state has changed
         self.key_state_changed = new_keys != self.current_keys;

@@ -73,11 +73,10 @@ impl RtcData {
     pub fn save(&mut self) -> Result<(), io::Error> {
         if self.dirty {
             self.update();
-            fs::write(&self.save_path, &self.registers)?;
-            self.dirty = false;
             debug!("Saved RTC data to {:?}", self.save_path);
+            self.dirty = false;
+            return fs::write(&self.save_path, &self.registers);
         }
-
         Ok(())
     }
 
@@ -274,6 +273,7 @@ impl MBC3 {
             _ => 0 // Should never happen if is_rtc_register check is done first
         }
     }
+
 }
 
 impl MBC for MBC3 {
@@ -292,13 +292,14 @@ impl MBC for MBC3 {
                     panic!("ROM bank 0 not available");
                     //0xFF
                 }
+                //self.get_value_from_bank(0, address, &self.rom_banks.data)
             },
             0x4000..=0x7FFF => {
                 // Switchable ROM bank
                 let bank = self.get_active_rom_bank();
-                let bank_addr = (address - 0x4000) as usize;
+                let bank_addr = address - 0x4000;
 
-                if let Some(bank_data) = self.rom_banks.data.get(bank) {
+                /*if let Some(bank_data) = self.rom_banks.data.get(bank) {
                     if let Some(&value) = bank_data.get(bank_addr) {
                         value
                     } else {
@@ -308,7 +309,8 @@ impl MBC for MBC3 {
                 } else {
                     panic!("ROM bank {} not available (total banks: {})", bank, self.rom_banks.data.len());
                     //0xFF
-                }
+                }*/
+                self.get_value_from_bank(bank, bank_addr, &self.rom_banks.data)
             },
             0xA000..=0xBFFF => {
                 if self.is_ram_enabled() {
@@ -394,7 +396,7 @@ impl MBC for MBC3 {
             }
         }
     }
-
+    
     fn get_rom_bank(&self) -> usize {
         self.get_active_rom_bank()
     }
@@ -416,17 +418,28 @@ impl MBC for MBC3 {
         // Save RAM if it exists and has battery
         if self.has_battery {
             if let Some(sram) = &mut self.sram {
-                sram.save();
+                match sram.save() {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("Error saving SRAM: {}", e);
+                        return Err(e);
+                    }
+                }
             }
         }
 
         // Save RTC if it exists
         if self.has_rtc {
             if let Some(rtc) = &mut self.rtc {
-                rtc.save()?;
+                match rtc.save() {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("Error saving RTC data: {}", e);
+                        return Err(e);
+                    }
+                }
             }
         }
-
         Ok(())
     }
 

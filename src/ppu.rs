@@ -474,8 +474,8 @@ impl Ppu {
                 let tile_index = tile_map[tile_y * 32 + tile_x];
                 let tile = self.get_tile_data(tile_index);
 
-                let row = global_y % TILE_WIDTH;
-                let col = global_x % TILE_HEIGHT_EIGHT;
+                let row = global_y % TILE_HEIGHT_EIGHT;
+                let col = global_x % TILE_WIDTH;
                 let pixel = tile.get_pixel(row, col);
                 line[x] = self.lcd.get_bg_color(pixel);
             }

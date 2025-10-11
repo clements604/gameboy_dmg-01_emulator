@@ -326,7 +326,6 @@ impl Ppu {
             0xFF43 => self.scroll_x,
             0xFF44 => self.ly,
             0xFF45 => self.ly_compare,
-            0xFF47 => self.lcd.bg_palette,
             0xFF47..=0xFF4B => self.lcd.read(address),
             _ => {
                 debug!("Invalid LCD address: {:#X}", address);

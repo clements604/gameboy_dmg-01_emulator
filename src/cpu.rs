@@ -1,9 +1,11 @@
-use crate::interrupts::*;
-use crate::memory_bus;
+use std::fmt;
+
 use bitflags::bitflags;
 use log::error;
 use memory_bus::MemoryBus;
-use std::fmt;
+
+use crate::interrupts::*;
+use crate::memory_bus;
 
 struct Registers {
     a: u8,

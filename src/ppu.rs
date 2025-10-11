@@ -1,9 +1,11 @@
+use std::fmt;
+
+use bitflags::bitflags;
+use log::{debug, error};
+
 use crate::interrupts::Interrupt;
 use crate::lcd::LCD;
 use crate::lcd::LIGHTEST_GREEN;
-use bitflags::bitflags;
-use log::{debug, error};
-use std::fmt;
 
 const TILE_MAP_0_START: u16 = 0x9800;
 const TILE_MAP_1_START: u16 = 0x9C00;

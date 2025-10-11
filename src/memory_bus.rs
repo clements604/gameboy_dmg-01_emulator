@@ -1,10 +1,11 @@
-use crate::rom::{ROM, ROMBanks};
 use log::debug;
+
 use crate::dma::Dma;
 use crate::dmg_io::IO;
 use crate::interrupts::{Interrupt, InterruptFlags};
 use crate::mbc::MBC;
 use crate::mbc_factory;
+use crate::rom::{ROM, ROMBanks};
 
 const BOOT_ROM_START: u16 = 0x0000;
 const BOOT_ROM_END: u16 = 0x00FF;

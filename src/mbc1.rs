@@ -91,35 +91,10 @@ impl MBC for MBC1 {
         match address {
             0x0000..=0x3FFF => {
                 let bank = self.get_bank_0();
-                /*if let Some(rom_bank) = self.rom_banks.data.get(bank) {
-                    if let Some(&value) = rom_bank.get(address as usize) {
-                        value
-                    }
-                    else {
-                        error!("Error reading for ROM bank {} at address 0x{:X}", bank, address);
-                        0xFF
-                    }
-                }
-                else {
-                    panic!("ROM bank {} not available", bank)
-                }*/
                 self.get_value_from_bank(bank, address, &self.rom_banks.data)
             },
             0x4000..=0x7FFF => {
                 let bank_addr = address - 0x4000;
-
-                /*if let Some(rom_bank) = self.rom_banks.data.get(self.get_selected_rom_bank()) {
-                    if let Some(&value) = rom_bank.get(bank_addr) {
-                        value
-                    }
-                    else {
-                        error!("Error reading for ROM bank 1 at address 0x{:X}", address);
-                        0xFF
-                    }
-                }
-                else {
-                    panic!("ROM bank 1 not available")
-                }*/
                 self.get_value_from_bank(self.get_selected_rom_bank(), bank_addr, &self.rom_banks.data)
             },
             0xA000..=0xBFFF => { // External RAM

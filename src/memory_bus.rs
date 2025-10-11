@@ -1,7 +1,7 @@
 use log::debug;
 
 use crate::dma::Dma;
-use crate::dmg_io::IO;
+use crate::io::IO;
 use crate::interrupts::{Interrupt, InterruptFlags};
 use crate::mbc::MBC;
 use crate::mbc_factory;

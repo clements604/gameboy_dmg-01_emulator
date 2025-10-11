@@ -1,6 +1,8 @@
 use std::io;
 use std::path::Path;
+
 use log::{debug, error};
+
 use crate::mbc::{MBC, get_ram_size_in_bytes, SRAM};
 use crate::rom::ROMBanks;
 

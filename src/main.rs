@@ -1,5 +1,4 @@
 mod cpu;
-mod constants;
 mod rom;
 mod memory_bus;
 mod ppu;
@@ -34,7 +33,7 @@ use crate::emulator::Emulator;
 fn main() {
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .is_test(false)
         .try_init();
 

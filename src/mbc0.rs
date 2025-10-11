@@ -30,34 +30,11 @@ impl MBC for MBC0 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             0x0000..=0x3FFF => { // ROM bank 0
-                if let Some(rom_bank) = self.rom_banks.data.get(0) {
-                    if let Some(&value) = rom_bank.get(address as usize) {
-                        value
-                    }
-                    else {
-                        error!("Error reading for ROM bank 0 at address 0x{:X}", address);
-                        0xFF
-                    }
-                }
-                else {
-                    panic!("ROM bank 0 not available")
-                }
+                self.get_value_from_bank(0, address, &self.rom_banks.data)
             },
             0x4000..=0x7FFF => { // ROM bank 1–N (in the case of MBC0 this is always 1)
-                let bank_addr = (address - 0x4000) as usize;
-                if let Some(rom_bank) = self.rom_banks.data.get(1) {
-                    if let Some(&value) = rom_bank.get(bank_addr) {
-                        value
-                    }
-                    else {
-                        error!("Error reading for ROM bank 1 at address 0x{:X}", address);
-                        0xFF
-                    }
-                }
-                else {
-                    panic!("ROM bank 1 not available")
-                    //0xFF
-                }
+                let bank_addr = address - 0x4000;
+                self.get_value_from_bank(1, bank_addr, &self.rom_banks.data)
             },
             0xA000..=0xBFFF => { // External RAM
                 let implicit_ram_enabled = if self.has_battery {

@@ -1,6 +1,6 @@
-use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
 use std::path::Path;
+use serde::{Deserialize, Deserializer, Serialize};
 use log::error;
 use sdl2::keyboard::Keycode;
 use std::collections::HashMap;

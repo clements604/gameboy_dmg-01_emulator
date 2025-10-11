@@ -1,6 +1,7 @@
 use std::fmt;
-use lazy_static::lazy_static;
 use std::collections::HashMap;
+
+use lazy_static::lazy_static;
 use log::{debug, info};
 
 pub const HEADER_START: u16 = 0x0134;

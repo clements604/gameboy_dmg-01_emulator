@@ -3,7 +3,7 @@ mod rom;
 mod memory_bus;
 mod ppu;
 mod rom_debug;
-mod dmg_io;
+mod io;
 mod interrupts;
 mod dma;
 mod lcd;
@@ -29,6 +29,9 @@ use rfd::FileDialog;
 use crate::rom::ROM;
 use crate::emulator_config::EmulatorConfig;
 use crate::emulator::Emulator;
+
+const KILOBYTES_CONVERSION: usize = 1024;
+const BOOT_ROM_SIZE: usize = 256;
 
 fn main() {
     let _ = env_logger::builder()
@@ -78,7 +81,7 @@ fn load_rom(file_path: String) -> ROM {
     debug!(
             "ROM file size: {} bytes / {} kilobytes",
             buffer.len(),
-            buffer.len() / 1024
+            buffer.len() / KILOBYTES_CONVERSION
         );
 
     let rom = ROM::new(file_path, buffer);
@@ -95,5 +98,13 @@ fn load_boot_rom(file_path: String) -> Vec<u8> {
     let mut buffer: Vec<u8> = Vec::new();
     // Read the file into a buffer
     file.read_to_end(&mut buffer).expect("Error reading file");
+
+
+    if buffer.len() != BOOT_ROM_SIZE {
+        error!("Invalid boot ROM size: expected {} bytes, got {} bytes", 
+            BOOT_ROM_SIZE, buffer.len());
+        std::process::exit(1);
+    }
+    
     buffer
 }

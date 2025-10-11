@@ -1,11 +1,26 @@
 use log::error;
 
+// Address constants
+const BG_PALETTE_ADDR: u16 = 0xFF47;
+const OBJ_PALETTE0_ADDR: u16 = 0xFF48;
+const OBJ_PALETTE1_ADDR: u16 = 0xFF49;
+const WINDOW_Y_ADDR: u16 = 0xFF4A;
+const WINDOW_X_ADDR: u16 = 0xFF4B;
+
+// Palette constants
+const PALETTE_MASK: u8 = 0x03;
+const DEFAULT_BG_PALETTE: u8 = 0xFC;
+const DEFAULT_OBJ_PALETTE: u8 = 0xFF;
+
+// Bit shift constants
+const PALETTE_SHIFT_2: u8 = 2;
+const PALETTE_SHIFT_4: u8 = 4;
+const PALETTE_SHIFT_6: u8 = 6;
+
+// Colour constants (ARGB format)
 pub const DARKEST_GREEN: u32 = 0xFF142C38;
-//const DARK_GREEN: u32 = 0xFF306230;
 const DARK_GREEN: u32 = 0xFF548C70;
-//const LIGHT_GREEN: u32 = 0xFF8BAC0F;
 const LIGHT_GREEN: u32 = 0xFFACD490;
-//pub const LIGHTEST_GREEN: u32 = 0xFF9BBC0F;
 pub const LIGHTEST_GREEN: u32 = 0xFFE8FCCC;
 pub const DEFAULT_COLOURS: [u32; 4] = [
     LIGHTEST_GREEN, // This would be the colour for palette 00
@@ -37,8 +52,8 @@ impl LCD {
         }
         
         LCD {
-            bg_palette: 0xFC,
-            obj_palette: [0xFF; 2],
+            bg_palette: DEFAULT_BG_PALETTE,
+            obj_palette: [DEFAULT_OBJ_PALETTE; 2],
             window_x: 0,
             window_y: 0,
             bg_colours,
@@ -48,30 +63,30 @@ impl LCD {
     }
     pub fn read(&self, address: u16) -> u8 {
         match address {
-            0xFF47 => self.bg_palette,
-            0xFF48 => self.obj_palette[0],
-            0xFF49 => self.obj_palette[1],
-            0xFF4A => self.window_y,
-            0xFF4B => self.window_x,
+            BG_PALETTE_ADDR => self.bg_palette,
+            OBJ_PALETTE0_ADDR => self.obj_palette[0],
+            OBJ_PALETTE1_ADDR => self.obj_palette[1],
+            WINDOW_Y_ADDR => self.window_y,
+            WINDOW_X_ADDR => self.window_x,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
-            0xFF47 => {
+            BG_PALETTE_ADDR => {
                 self.bg_palette = value;
                 self.update_palette(value, 0);  // Update bg_colours
             },
-            0xFF48 => {
+            OBJ_PALETTE0_ADDR => {
                 self.obj_palette[0] = value;
                 self.update_palette(value, 1);  // Update sp1_colours
             },
-            0xFF49 => {
+            OBJ_PALETTE1_ADDR => {
                 self.obj_palette[1] = value;
                 self.update_palette(value, 2);  // Update sp2_colours
             },
-            0xFF4A => self.window_y = value,
-            0xFF4B => self.window_x = value,
+            WINDOW_Y_ADDR => self.window_y = value,
+            WINDOW_X_ADDR => self.window_x = value,
             _ => panic!("Invalid LCD address: {:#X}", address),
         }
     }
@@ -83,18 +98,18 @@ impl LCD {
             2 => palette_colours = self.sp2_colours,
             _ => {error!("Invalid palette: {}", palette);}
         }
-        palette_colours[0] = DEFAULT_COLOURS[(palette_data & 0x03) as usize];
-        palette_colours[1] = DEFAULT_COLOURS[((palette_data >> 2) & 0x03) as usize];
-        palette_colours[2] = DEFAULT_COLOURS[((palette_data >> 4) & 0x03) as usize];
-        palette_colours[3] = DEFAULT_COLOURS[((palette_data >> 6) & 0x03) as usize];
+        palette_colours[0] = DEFAULT_COLOURS[(palette_data & PALETTE_MASK) as usize];
+        palette_colours[1] = DEFAULT_COLOURS[((palette_data >> PALETTE_SHIFT_2) & PALETTE_MASK) as usize];
+        palette_colours[2] = DEFAULT_COLOURS[((palette_data >> PALETTE_SHIFT_4) & PALETTE_MASK) as usize];
+        palette_colours[3] = DEFAULT_COLOURS[((palette_data >> PALETTE_SHIFT_6) & PALETTE_MASK) as usize];
     }
 
     pub fn get_bg_colour(&self, pixel: u8) -> u32 {
         let colour_index = match pixel {
-            0 => self.bg_palette & 0x03,
-            1 => (self.bg_palette >> 2) & 0x03,
-            2 => (self.bg_palette >> 4) & 0x03,
-            3 => (self.bg_palette >> 6) & 0x03,
+            0 => self.bg_palette & PALETTE_MASK,
+            1 => (self.bg_palette >> PALETTE_SHIFT_2) & PALETTE_MASK,
+            2 => (self.bg_palette >> PALETTE_SHIFT_4) & PALETTE_MASK,
+            3 => (self.bg_palette >> PALETTE_SHIFT_6) & PALETTE_MASK,
             _ => unreachable!(),
         };
 
@@ -107,10 +122,10 @@ impl LCD {
 
         let palette = if palette_index == 0 { self.obj_palette[0] } else { self.obj_palette[1] };
         let colour_index = match pixel {
-            0 => palette & 0x03,
-            1 => (palette >> 2) & 0x03,
-            2 => (palette >> 4) & 0x03,
-            3 => (palette >> 6) & 0x03,
+            0 => palette & PALETTE_MASK,
+            1 => (palette >> PALETTE_SHIFT_2) & PALETTE_MASK,
+            2 => (palette >> PALETTE_SHIFT_4) & PALETTE_MASK,
+            3 => (palette >> PALETTE_SHIFT_6) & PALETTE_MASK,
             _ => unreachable!(),
         };
 

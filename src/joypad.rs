@@ -1,5 +1,10 @@
 use bitflags::bitflags;
 
+const BUTTON_SELECT_BIT: u8 = 5;
+const DPAD_SELECT_BIT: u8 = 4;
+const NO_BUTTONS_PRESSED: u8 = 0b1100_0000;
+const ALL_BUTTONS_PRESSED: u8 = 0b1111;
+
 bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub struct JoypadFlags: u8 {
@@ -97,25 +102,25 @@ impl Joypad {
     }
 
     pub fn set_selection(&mut self, byte: u8) {
-        self.select_buttons = byte & (1 << 5) == 0;
-        self.select_dpad = byte & (1 << 4) == 0;
+        self.select_buttons = byte & (1 << BUTTON_SELECT_BIT) == 0;
+        self.select_dpad = byte & (1 << DPAD_SELECT_BIT) == 0;
     }
 }
 
 impl From<Joypad> for u8 {
     fn from(joypad: Joypad) -> u8 {
-        let mut result = 0b1100_0000;
+        let mut result = NO_BUTTONS_PRESSED;
 
         if !joypad.select_buttons {
-            result &= !(1 << 5);
+            result &= !(1 << BUTTON_SELECT_BIT);
         } else {
-            result |= 1 << 5;
+            result |= 1 << BUTTON_SELECT_BIT;
         }
 
         if !joypad.select_dpad {
-            result &= !(1 << 4);
+            result &= !(1 << DPAD_SELECT_BIT);
         } else {
-            result |= 1 << 4;
+            result |= 1 << DPAD_SELECT_BIT;
         }
 
         if !joypad.select_dpad {
@@ -123,7 +128,7 @@ impl From<Joypad> for u8 {
         } else if !joypad.select_buttons {
             result |= joypad.dpad.bits();
         } else {
-            result |= 0b1111;
+            result |= ALL_BUTTONS_PRESSED;
         }
 
         result
@@ -133,8 +138,8 @@ impl From<Joypad> for u8 {
 impl From<u8> for Joypad {
     fn from(byte: u8) -> Joypad {
         let mut joypad = Joypad::new();
-        joypad.select_buttons = byte & (1 << 5) == 0;
-        joypad.select_dpad = byte & (1 << 4) == 0;
+        joypad.select_buttons = byte & (1 << BUTTON_SELECT_BIT) == 0;
+        joypad.select_dpad = byte & (1 << DPAD_SELECT_BIT) == 0;
         joypad
     }
 }

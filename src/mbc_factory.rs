@@ -8,24 +8,40 @@ use crate::mbc3::MBC3;
 use crate::mbc5::MBC5;
 use crate::rom::ROM;
 
+const CART_TYPE_ROM_RAM_BATT: u8 = 0x03;
+const CART_TYPE_MBC1_RAM_BATT: u8 = 0x06;
+const CART_TYPE_MMM01_RAM_BATT: u8 = 0x09;
+const CART_TYPE_MBC3_RAM_BATT: u8 = 0x0D;
+const CART_TYPE_MBC3_TIMER_BATT: u8 = 0x0F;
+const CART_TYPE_MBC3_TIMER_RAM_BATT: u8 = 0x10;
+const CART_TYPE_MBC4_RAM_BATT: u8 = 0x13;
+const CART_TYPE_MBC5_RAM_BATT: u8 = 0x1B;
+const CART_TYPE_MBC5_RUMBLE_RAM_BATT: u8 = 0x1E;
+const CART_TYPE_HUC1_RAM_BATT: u8 = 0xFF;
+const CART_TYPE_MBC5_RUMBLE: u8 = 0x1C;
+const CART_TYPE_MBC5_RUMBLE_RAM: u8 = 0x1D;
+
 pub fn create_mbc(rom: &ROM) -> Box<dyn MBC> {
     // Determine MBC type from cartridge type
     let mbc_type = MBCType::from_byte(rom.cartridge_type);
 
     // Check if the cartridge has battery-backed RAM
     let has_battery = match rom.cartridge_type {
-        0x03 | 0x06 | 0x09 | 0x0D | 0x0F | 0x10 | 0x13 | 0x1B | 0x1E | 0xFF => true,
+        CART_TYPE_ROM_RAM_BATT | CART_TYPE_MBC1_RAM_BATT | CART_TYPE_MMM01_RAM_BATT |
+        CART_TYPE_MBC3_RAM_BATT | CART_TYPE_MBC3_TIMER_BATT | CART_TYPE_MBC3_TIMER_RAM_BATT |
+        CART_TYPE_MBC4_RAM_BATT | CART_TYPE_MBC5_RAM_BATT | CART_TYPE_MBC5_RUMBLE_RAM_BATT |
+        CART_TYPE_HUC1_RAM_BATT => true,
         _ => false
     };
 
     // Check if the cartridge has RTC (Real Time Clock)
     let has_rtc = match rom.cartridge_type {
-        0x0F | 0x10 => true,
+        CART_TYPE_MBC3_TIMER_BATT | CART_TYPE_MBC3_TIMER_RAM_BATT => true,
         _ => false
     };
 
     let has_rumble = match rom.cartridge_type {
-        0x1C | 0x1D | 0x1E => true,
+        CART_TYPE_MBC5_RUMBLE | CART_TYPE_MBC5_RUMBLE_RAM | CART_TYPE_MBC5_RUMBLE_RAM_BATT => true,
         _ => false
     };
     

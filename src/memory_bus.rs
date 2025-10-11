@@ -41,6 +41,10 @@ const HRAM_END: u16 = 0xFFFE;
 const HRAM_SIZE: usize = ((HRAM_END - HRAM_START) + 1) as usize;
 pub const INTERRUPT_ENABLE_REGISTER: u16 = 0xFFFF;
 const ROM_BANK_SELECT_START: u16 = 0x2000;
+const IF_REGISTER: u16 = 0xFF0F;
+const BOOT_ROM_DISABLE: u16 = 0xFF50;
+const DMA_TRANSFER: u16 = 0xFF46;
+const BITS_PER_BYTE: usize = 8;
 
 pub struct MemoryBus {
     boot_rom: Vec<u8>,
@@ -136,7 +140,7 @@ impl MemoryBus {
             },
             UNUSED_START..=UNUSED_END => 0xFF,
             IO_REGISTERS_START..=IO_REGISTERS_END => {
-                if address ==  0xFF0F {
+                if address ==  IF_REGISTER {
                     return self.interrupt_flags;
                 }
                 self.dmg_io.read(address)
@@ -181,14 +185,14 @@ impl MemoryBus {
             UNUSED_START..=UNUSED_END => debug!("Write to unused memory"),
             IO_REGISTERS_START..=IO_REGISTERS_END => {
                 match address {
-                    0xFF0F => {
+                    IF_REGISTER => {
                         self.interrupt_flags = value;
                     },
-                    0xFF50 => {
+                    BOOT_ROM_DISABLE => {
                         debug!("Boot ROM disable");
                         self.boot_rom_enabled = false;
                     },
-                    0xFF46 => {
+                    DMA_TRANSFER => {
                         self.dma.dma_start(value);
                     },
                     _ => {
@@ -222,7 +226,7 @@ impl MemoryBus {
     
     pub fn write_short(&mut self, address: u16, value: u16) {
         let lsb = value as u8;
-        let msb = (value >> 8) as u8;
+        let msb = (value >> BITS_PER_BYTE) as u8;
         self.write_byte(address, lsb);
         self.write_byte(address.wrapping_add(1), msb);
     }

@@ -9,6 +9,17 @@ use sdl2::video::Window;
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
 
+// Color bit shifts
+const RED_SHIFT: u32 = 16;
+const GREEN_SHIFT: u32 = 8;
+const COLOR_MASK: u32 = 0xFF;
+
+// Window scaling
+const DEFAULT_WINDOW_TITLE: &str = "Gameboy DMG Emulator - ESC to exit";
+
+// RGB color constants
+const BLACK: Color = Color::RGB(0, 0, 0);
+
 pub struct MainDisplay {
     pub canvas: Canvas<Window>,
     pub event_pump: sdl2::EventPump,
@@ -43,7 +54,7 @@ impl MainDisplay {
         
         let window = video_subsystem
             .window(
-                "Gameboy DMG Emulator - ESC to exit",
+                DEFAULT_WINDOW_TITLE,
                 (SCREEN_WIDTH as u32) * scale_factor,
                 (SCREEN_HEIGHT as u32) * scale_factor,
             )
@@ -79,7 +90,7 @@ impl MainDisplay {
 
     pub fn update(&mut self, tiles: Vec<u32>) {
         // Clear the screen
-        self.canvas.set_draw_color(Color::RGB(0, 0, 0));
+        self.canvas.set_draw_color(BLACK);
         self.canvas.clear();
 
         // Render tiles
@@ -142,9 +153,9 @@ impl MainDisplay {
 
 pub fn get_sdl_colour(colour_u32: u32) -> Color {
     // Extract RGB components from the u32 value
-    let r = ((colour_u32 >> 16) & 0xFF) as u8;
-    let g = ((colour_u32 >> 8) & 0xFF) as u8;
-    let b = (colour_u32 & 0xFF) as u8;
+    let r = ((colour_u32 >> RED_SHIFT) & 0xFF) as u8;
+    let g = ((colour_u32 >> GREEN_SHIFT) & 0xFF) as u8;
+    let b = (colour_u32 & COLOR_MASK) as u8;
 
     Color::RGB(r, g, b)
 }

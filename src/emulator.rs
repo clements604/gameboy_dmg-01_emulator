@@ -9,6 +9,14 @@ use crate::rom::ROM;
 use crate::interrupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
 
+const INPUT_CHECK_INTERVAL: u32 = 16;
+const INPUT_PROCESS_INTERVAL: u32 = 2;
+const COUNTER_WRAP: u32 = 32;
+const FPS_60_MICROS: u64 = 16742;
+const AUTOSAVE_INTERVAL_SECS: u64 = 5;
+const BOOT_ROM_START: u16 = 0x0000;
+const CART_ROM_START: u16 = 0x0100;
+
 pub struct Emulator {
     cpu: cpu::CPU,
 
@@ -35,7 +43,7 @@ impl Emulator {
     pub fn new(emulator_config: EmulatorConfig, boot_rom: Option<Vec<u8>>, rom: &ROM) -> Emulator {
 
         let mut cpu = cpu::CPU::new();
-        cpu.pc = if boot_rom.is_some() { 0x0000 } else { 0x0100 };
+        cpu.pc = if boot_rom.is_some() { BOOT_ROM_START } else { CART_ROM_START };
         let main_display = MainDisplay::new(emulator_config.scale_factor, &emulator_config.key_bindings);
 
         Emulator {
@@ -47,7 +55,7 @@ impl Emulator {
             frame_count: 0,
             input_check_counter: 0,
             // Set target frame time to ~16.67ms (60 FPS)
-            target_frame_time: Duration::from_micros(16742),
+            target_frame_time: Duration::from_micros(FPS_60_MICROS),
             last_frame_time: Instant::now(),
             running: true,
             last_save_time: Instant::now(),
@@ -57,7 +65,7 @@ impl Emulator {
     }
 
     pub fn cycle(&mut self) {
-        if self.input_check_counter % 16 == 0 {
+        if self.input_check_counter % INPUT_CHECK_INTERVAL == 0 {
             if !self.main_display.process_events() {
                 match self.memory_bus.mbc.as_mut() {
                     Some(mbc) => {
@@ -76,7 +84,7 @@ impl Emulator {
         }
 
         // Process inputs every 2 cycles for responsiveness
-        if self.input_check_counter % 2 == 0 {
+        if self.input_check_counter % INPUT_PROCESS_INTERVAL == 0 {
             let current_keys = self.main_display.get_pressed_keys();
             let mut joypad = self.memory_bus.dmg_io.joypad;
 
@@ -132,7 +140,7 @@ impl Emulator {
             self.memory_bus.dmg_io.joypad = joypad;
         }
 
-        self.input_check_counter = (self.input_check_counter + 1) % 32;
+        self.input_check_counter = (self.input_check_counter + 1) % COUNTER_WRAP;
 
         let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);
 
@@ -177,7 +185,7 @@ impl Emulator {
             self.last_frame_time = Instant::now();
         }
 
-        if self.last_save_time.elapsed() > Duration::from_secs(5) {
+        if self.last_save_time.elapsed() > Duration::from_secs(AUTOSAVE_INTERVAL_SECS) {
             match self.memory_bus.mbc.as_mut().unwrap().save_ram() {
                 Ok(_) => {},
                 Err(e) => {

@@ -19,6 +19,18 @@ const OLD_LICENSEE_CODE: u16 = 0x014B;
 const MASK_ROM_VERSION: u16 = 0x014C;
 const HEADER_CHECKSUM: u16 = 0x014D;
 const GLOBAL_CHECKSUM_START: u16 = 0x014E;
+const BANK_SIZE: usize = 0x4000;
+
+const CGB_FLAG_SUPPORTED: u8 = 0x80;
+const CGB_FLAG_REQUIRED: u8 = 0xC0;
+
+const SGB_FLAG_NONE: u8 = 0x00;
+const SGB_FLAG_SUPPORTED: u8 = 0x03;
+
+const DESTINATION_JAPAN: u8 = 0x00;
+const DESTINATION_INTERNATIONAL: u8 = 0x01;
+
+const OLD_LICENSEE_USE_NEW: u8 = 0x33;
 
 pub struct ROM {
     pub title: String,
@@ -103,9 +115,9 @@ impl ROM {
         let mut rom_offset: usize = 0; // The current offset in the ROM
 
         while rom_offset < self.rom.len() {
-            let end = std::cmp::min(rom_offset + 0x4000, self.rom.len());
+            let end = std::cmp::min(rom_offset + BANK_SIZE, self.rom.len());
             rom_banks.data.push(self.rom[rom_offset..end].to_vec());
-            rom_offset += 0x4000;
+            rom_offset += BANK_SIZE;
         }
         rom_banks
     }
@@ -117,10 +129,10 @@ impl fmt::Display for ROM {
         writeln!(f, "Title: [{}]", self.title)?;
         //writeln!(f, "Manufacturer: {}", self.manufacturer_code)?;
         match self.cgb_flag {
-            0x80 => {
+            CGB_FLAG_SUPPORTED => {
                 writeln!(f, "CGB Flag: [80 - The game supports CGB enhancements, but is backwards compatible with monochrome Game Boys]")?;
             },
-            0xC0 => {
+            CGB_FLAG_REQUIRED => {
                 writeln!(f, "CGB Flag: [C0 - The game works on CGB only, DMG will just ignore the bit 6 value, same as 0x80]")?;
             },
             _ => {
@@ -128,10 +140,10 @@ impl fmt::Display for ROM {
             }
         }
         match self.sgb_flag {
-            0x00 => {
+            SGB_FLAG_NONE => {
                 writeln!(f, "SGB Flag: [00 - No SGB support]")?;
             },
-            0x03 => {
+            SGB_FLAG_SUPPORTED => {
                 writeln!(f, "SGB Flag: [03 - Game supports SGB functions]")?;
             },
             _ => {
@@ -163,17 +175,17 @@ impl fmt::Display for ROM {
             }
         }
         match self.destination_code {
-            0x00 => {
+            DESTINATION_JAPAN => {
                 writeln!(f, "Destination code: [00 - Japan]")?;
             },
-            0x01 => {
+            DESTINATION_INTERNATIONAL => {
                 writeln!(f, "Destination code: [01 - International]")?;
             },
             _ => {
                 writeln!(f, "Destination code: [{} - Unknown]", self.destination_code)?;
             }
         }
-        if self.old_licensee_code == 0x33 {
+        if self.old_licensee_code == OLD_LICENSEE_USE_NEW {
             // Get the licensee code from the header
            match NEW_LICENSEE_MAP.get(&self.licensee_code) {
                Some(licensee) => {

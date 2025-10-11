@@ -5,6 +5,7 @@ use log::error;
 use sdl2::keyboard::Keycode;
 use std::collections::HashMap;
 
+const DEFAULT_SCALE_FACTOR: u32 = 1;
 const CONFIG_FILE_PATH: &str = "./config.json";
 const UP_KEY: &str = "up";
 const DOWN_KEY: &str = "down";
@@ -45,7 +46,7 @@ impl Default for EmulatorConfig {
         key_bindings.insert(SELECT_KEY.to_string(), Keycode::Backspace);
         Self {
             boot_rom: None,
-            scale_factor: 1,
+            scale_factor: DEFAULT_SCALE_FACTOR,
             key_bindings,
         }
     }

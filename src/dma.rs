@@ -1,3 +1,7 @@
+const DMA_INITIAL_DELAY: u8 = 2;
+const DMA_PAGE_SIZE: u16 = 0x100;
+const DMA_TRANSFER_LENGTH: u8 = 0xA0;
+
 pub struct Dma {
     active: bool,
     dma_byte: u8,
@@ -18,7 +22,7 @@ impl Dma {
     pub(crate) fn dma_start(&mut self, start: u8) {
         self.active = true;
         self.dma_byte = 0;
-        self.dma_delay = 2;
+        self.dma_delay = DMA_INITIAL_DELAY;
         self.dma_value = start;
     }
     pub fn dma_tick(&mut self) -> Option<(u16, u16)> {
@@ -31,11 +35,11 @@ impl Dma {
             return None;
         }
 
-        let src_addr = (self.dma_value as u16 * 0x100) + self.dma_byte as u16;
+        let src_addr = (self.dma_value as u16 * DMA_PAGE_SIZE) + self.dma_byte as u16;
         let dest_addr = self.dma_byte as u16;
         
         self.dma_byte += 1;
-        self.active = self.dma_byte < 0xA0;
+        self.active = self.dma_byte < DMA_TRANSFER_LENGTH;
 
         Some((src_addr, dest_addr))
     }

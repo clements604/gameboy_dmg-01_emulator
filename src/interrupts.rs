@@ -1,3 +1,8 @@
+const VBLANK_FLAG: u8 = 0x01;
+const LCD_STAT_FLAG: u8 = 0x02;
+const TIMER_FLAG: u8 = 0x04;
+const SERIAL_FLAG: u8 = 0x08;
+const JOYPAD_FLAG: u8 = 0x10;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Interrupt {
@@ -31,19 +36,19 @@ impl From<InterruptFlags> for u8 {
     fn from(flag: InterruptFlags) -> u8 {
         let mut result = 0;
         if flag.vblank {
-            result |= 0x01;
+            result |= VBLANK_FLAG;
         }
         if flag.lcd_stat {
-            result |= 0x02;
+            result |= LCD_STAT_FLAG;
         }
         if flag.timer {
-            result |= 0x04;
+            result |= TIMER_FLAG;
         }
         if flag.serial {
-            result |= 0x08;
+            result |= SERIAL_FLAG;
         }
         if flag.joypad {
-            result |= 0x10;
+            result |= JOYPAD_FLAG;
         }
         result
     }
@@ -51,22 +56,22 @@ impl From<InterruptFlags> for u8 {
 impl From<u8> for InterruptFlags {
     fn from(byte: u8) -> Self {
         InterruptFlags {
-            vblank: byte & 0x01 != 0,
-            lcd_stat: byte & 0x02 != 0,
-            timer: byte & 0x04 != 0,
-            serial: byte & 0x08 != 0,
-            joypad: byte & 0x10 != 0,
+            vblank: byte & VBLANK_FLAG != 0,
+            lcd_stat: byte & LCD_STAT_FLAG != 0,
+            timer: byte & TIMER_FLAG != 0,
+            serial: byte & SERIAL_FLAG != 0,
+            joypad: byte & JOYPAD_FLAG != 0,
         }
     }
 }
 impl From<Interrupt> for u8 {
     fn from(interrupt: Interrupt) -> u8 {
         match interrupt {
-            Interrupt::VBLANK => 0x01,
-            Interrupt::LCDSTAT => 0x02,
-            Interrupt::TIMER => 0x04,
-            Interrupt::SERIAL => 0x08,
-            Interrupt::JOYPAD => 0x10,
+            Interrupt::VBLANK => VBLANK_FLAG,
+            Interrupt::LCDSTAT => LCD_STAT_FLAG,
+            Interrupt::TIMER => TIMER_FLAG,
+            Interrupt::SERIAL => SERIAL_FLAG,
+            Interrupt::JOYPAD => JOYPAD_FLAG,
         }
     }
 }

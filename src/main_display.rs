@@ -87,8 +87,8 @@ impl MainDisplay {
             for x in 0..SCREEN_WIDTH {
                 let index = y * SCREEN_WIDTH + x;
                 if index < tiles.len() {
-                    let color = get_sdl_colour(tiles[index]);
-                    self.canvas.set_draw_color(color);
+                    let colour = get_sdl_colour(tiles[index]);
+                    self.canvas.set_draw_color(colour);
                     self.canvas.draw_point((x as i32, y as i32)).unwrap_or_else(|e| {
                         error!("Failed to draw point: {}", e);
                     });
@@ -140,11 +140,11 @@ impl MainDisplay {
 
 }
 
-pub fn get_sdl_colour(color_u32: u32) -> Color {
+pub fn get_sdl_colour(colour_u32: u32) -> Color {
     // Extract RGB components from the u32 value
-    let r = ((color_u32 >> 16) & 0xFF) as u8;
-    let g = ((color_u32 >> 8) & 0xFF) as u8;
-    let b = (color_u32 & 0xFF) as u8;
+    let r = ((colour_u32 >> 16) & 0xFF) as u8;
+    let g = ((colour_u32 >> 8) & 0xFF) as u8;
+    let b = (colour_u32 & 0xFF) as u8;
 
     Color::RGB(r, g, b)
 }

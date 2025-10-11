@@ -17,7 +17,7 @@ mod mbc_factory;
 mod mbc2;
 mod mbc3;
 mod mbc5;
-mod emulaor_config;
+mod emulator_config;
 mod emulator;
 
 use std::fs::File;
@@ -27,7 +27,7 @@ use log::{debug, error, info};
 use rfd::FileDialog;
 
 use crate::rom::ROM;
-use crate::emulaor_config::EmulatorConfig;
+use crate::emulator_config::EmulatorConfig;
 use crate::emulator::Emulator;
 
 fn main() {

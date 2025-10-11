@@ -479,7 +479,7 @@ impl Ppu {
                 let row = global_y % TILE_HEIGHT_EIGHT;
                 let col = global_x % TILE_WIDTH;
                 let pixel = tile.get_pixel(row, col);
-                line[x] = self.lcd.get_bg_color(pixel);
+                line[x] = self.lcd.get_bg_colour(pixel);
             }
         }
     }
@@ -547,7 +547,7 @@ impl Ppu {
                 };
                 let sprite_color = self
                     .lcd
-                    .get_sprite_color(sprite_palette_index, sprite_pixel);
+                    .get_sprite_colour(sprite_palette_index, sprite_pixel);
 
                 // Determine if this sprite should be drawn based on priority
                 let should_draw = if sprite.flags.contains(OAMFlags::PRIORITY) {
@@ -643,7 +643,7 @@ impl Ppu {
             let colour_id = (colour_bit_1 << 1) | colour_bit_0;
 
             // Get the color and render
-            let colour = self.lcd.get_bg_color(colour_id);
+            let colour = self.lcd.get_bg_colour(colour_id);
 
             line[screen_x as usize] = colour;
         }

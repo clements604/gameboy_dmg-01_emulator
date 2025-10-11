@@ -1,7 +1,21 @@
 use std::io;
 use log::{debug, error};
-use crate::mbc::{MBC, get_ram_size_in_bytes};
+use crate::mbc::{
+    MBC,
+    get_ram_size_in_bytes,
+    ROM_BANK0_START,
+    ROM_BANK0_END,
+    ROM_BANK_N_START,
+    ROM_BANK_N_END,
+    RAM_START,
+    RAM_END,
+    INVALID_READ_VALUE
+};
 use crate::rom::ROMBanks;
+
+const RAM_ENABLE_AREA_END: u16 = 0x1FFF;
+const RAM_ENABLE_MASK: u8 = 0x0F;
+const RAM_ENABLE_VALUE: u8 = 0x0A;
 
 pub struct MBC0 {
     rom_banks: ROMBanks,
@@ -29,14 +43,14 @@ impl MBC0 {
 impl MBC for MBC0 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => { // ROM bank 0
+            ROM_BANK0_START..=ROM_BANK0_END => { // ROM bank 0
                 self.get_value_from_bank(0, address, &self.rom_banks.data)
             },
-            0x4000..=0x7FFF => { // ROM bank 1–N (in the case of MBC0 this is always 1)
+            ROM_BANK_N_START..=ROM_BANK_N_END => { // ROM bank 1–N (in the case of MBC0 this is always 1)
                 let bank_addr = address - 0x4000;
                 self.get_value_from_bank(1, bank_addr, &self.rom_banks.data)
             },
-            0xA000..=0xBFFF => { // External RAM
+            RAM_START..=RAM_END => { // External RAM
                 let implicit_ram_enabled = if self.has_battery {
                     true
                 }
@@ -45,37 +59,37 @@ impl MBC for MBC0 {
                 };
 
                 if implicit_ram_enabled && self.has_ram {
-                    let ram_address = (address - 0xA000) as usize;
+                    let ram_address = (address - RAM_START) as usize;
                     if ram_address < self.ram.len() {
                         self.ram[ram_address]
                     }
                     else {
                         error!("Error reading for ram with capacity of {} for address 0x{:X}", self.ram.len(), address);
-                        0xFF
+                        INVALID_READ_VALUE
                     }
                 }
                 else {
                     error!("Attempt to read from ROM RAM when ram is not enabled or does not exist");
-                    0xFF
+                    INVALID_READ_VALUE
                 }
             },
             _ => {
                 error!("Invalid MBC0 address for read: {:04X}", address);
-                0xFF
+                INVALID_READ_VALUE
             }
         }
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
         match address {
-            0x0000..=0x7FFF => {
-                if address <= 0x1FFF && (value & 0x0F) == 0x0A {
+            ROM_BANK0_START..=ROM_BANK_N_END => {
+                if address <= RAM_ENABLE_AREA_END && (value & RAM_ENABLE_MASK) == RAM_ENABLE_VALUE {
                     self.ram_enabled = true;
                 } else {
                     error!("Attempted write to ROM area: {:04X} = {:02X}", address, value);
                 }
             },
-            0xA000..=0xBFFF => {
+            RAM_START..=RAM_END => {
                 let implicit_ram_enabled = if self.has_battery {
                     true
                 }
@@ -83,7 +97,7 @@ impl MBC for MBC0 {
                     self.is_ram_enabled()
                 };
                 if implicit_ram_enabled && self.has_ram {
-                    let ram_addr = (address - 0xA000) as usize;
+                    let ram_addr = (address - RAM_START) as usize;
                     if ram_addr < self.ram.len() {
                         self.ram[ram_addr] = value;
 

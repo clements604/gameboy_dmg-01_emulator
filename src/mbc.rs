@@ -2,6 +2,52 @@ use std::io;
 use std::path::{Path, PathBuf};
 use log::{debug, error};
 
+// Memory sizes (in bytes)
+const KB_16: usize = 16 * 1024;
+const KB_32: usize = 32 * 1024;
+const KB_64: usize = 64 * 1024;
+const KB_128: usize = 128 * 1024;
+const KB_256: usize = 256 * 1024;
+const KB_512: usize = 512 * 1024;
+const MB_1: usize = 1024 * 1024;
+const MB_2: usize = 2 * MB_1;
+const MB_4: usize = 4 * MB_1;
+const MB_8: usize = 8 * MB_1;
+
+// RAM sizes
+const KB_2: usize = 2 * 1024;
+const KB_8: usize = 8 * 1024;
+
+// MBC type codes
+const MBC_NONE: u8 = 0x00;
+const MBC1_ROM: u8 = 0x01;
+const MBC1_ROM_RAM: u8 = 0x02;
+const MBC1_ROM_RAM_BATTERY: u8 = 0x03;
+const MBC2_ROM: u8 = 0x05;
+const MBC2_ROM_BATTERY: u8 = 0x06;
+const MBC3_ROM: u8 = 0x0F;
+const MBC3_ROM_RAM: u8 = 0x10;
+const MBC3_ROM_RAM_BATTERY: u8 = 0x11;
+const MBC3_ROM_TIMER: u8 = 0x12;
+const MBC3_ROM_TIMER_BATTERY: u8 = 0x13;
+const MBC5_ROM: u8 = 0x19;
+const MBC5_ROM_RAM: u8 = 0x1A;
+const MBC5_ROM_RAM_BATTERY: u8 = 0x1B;
+const MBC5_RUMBLE: u8 = 0x1C;
+const MBC5_RUMBLE_RAM: u8 = 0x1D;
+const MBC5_RUMBLE_RAM_BATTERY: u8 = 0x1E;
+
+// Memory region addresses
+pub const ROM_BANK0_START: u16 = 0x0000;
+pub const ROM_BANK0_END: u16 = 0x3FFF;
+pub const ROM_BANK_N_START: u16 = 0x4000;
+pub const ROM_BANK_N_END: u16 = 0x7FFF;
+pub const RAM_START: u16 = 0xA000;
+pub const RAM_END: u16 = 0xBFFF;
+pub const INVALID_READ_VALUE: u8 = 0xFF;
+pub const ROM_BANK_SELECT_START: u16 = 0x2000;
+
+
 pub trait MBC {
     fn read_byte(&self, address: u16) -> u8;
     fn write_byte(&mut self, address: u16, value: u8);
@@ -37,44 +83,44 @@ pub enum MBCType {
 impl MBCType {
     pub fn from_byte(value: u8) -> Self {
         match value {
-            0x00 => MBCType::None,
-            0x01 | 0x02 | 0x03 => MBCType::MBC1,
-            0x05 | 0x06 => MBCType::MBC2,
-            0x0F | 0x10 | 0x11 | 0x12 | 0x13 => MBCType::MBC3,
-            0x19 | 0x1A | 0x1B | 0x1C | 0x1D | 0x1E => MBCType::MBC5,
-            _ => { panic!("Unsupported MBC type: {:#X}", value) }
+            MBC_NONE => MBCType::None,
+            MBC1_ROM | MBC1_ROM_RAM | MBC1_ROM_RAM_BATTERY => MBCType::MBC1,
+            MBC2_ROM | MBC2_ROM_BATTERY => MBCType::MBC2,
+            MBC3_ROM | MBC3_ROM_RAM | MBC3_ROM_RAM_BATTERY | MBC3_ROM_TIMER | MBC3_ROM_TIMER_BATTERY => MBCType::MBC3,
+            MBC5_ROM | MBC5_ROM_RAM | MBC5_ROM_RAM_BATTERY | MBC5_RUMBLE | MBC5_RUMBLE_RAM | MBC5_RUMBLE_RAM_BATTERY => MBCType::MBC5,
+            _ => panic!("Unsupported MBC type: {:#X}", value)
         }
     }
 }
 
 pub fn get_rom_size_in_bytes(rom_size: u8) -> usize {
     match rom_size {
-        0x00 => 32 * 1024,     // 32KB (2 banks)
-        0x01 => 64 * 1024,     // 64KB (4 banks)
-        0x02 => 128 * 1024,    // 128KB (8 banks)
-        0x03 => 256 * 1024,    // 256KB (16 banks)
-        0x04 => 512 * 1024,    // 512KB (32 banks)
-        0x05 => 1024 * 1024,   // 1MB (64 banks)
-        0x06 => 2 * 1024 * 1024, // 2MB (128 banks)
-        0x07 => 4 * 1024 * 1024, // 4MB (256 banks)
-        0x08 => 8 * 1024 * 1024, // 8MB (512 banks)
-        _ => 32 * 1024,        // Default to 32KB
+        0x00 => KB_32,    // 32KB (2 banks)
+        0x01 => KB_64,    // 64KB (4 banks)
+        0x02 => KB_128,   // 128KB (8 banks)
+        0x03 => KB_256,   // 256KB (16 banks)
+        0x04 => KB_512,   // 512KB (32 banks)
+        0x05 => MB_1,     // 1MB (64 banks)
+        0x06 => MB_2,     // 2MB (128 banks)
+        0x07 => MB_4,     // 4MB (256 banks)
+        0x08 => MB_8,     // 8MB (512 banks)
+        _ => KB_32,       // Default to 32KB
     }
 }
 
 pub fn get_rom_banks(rom_size: u8) -> usize {
-    get_rom_size_in_bytes(rom_size) / (16 * 1024)
+    get_rom_size_in_bytes(rom_size) / KB_16
 }
 
 pub fn get_ram_size_in_bytes(ram_size: u8) -> usize {
     match ram_size {
-        0x00 => 0,             // No RAM
-        0x01 => 2 * 1024,      // 2KB
-        0x02 => 8 * 1024,      // 8KB
-        0x03 => 32 * 1024,     // 32KB (4 banks of 8KB)
-        0x04 => 128 * 1024,    // 128KB (16 banks of 8KB)
-        0x05 => 64 * 1024,     // 64KB (8 banks of 8KB)
-        _ => 0,                // Default to no RAM
+        0x00 => 0,        // No RAM
+        0x01 => KB_2,     // 2KB
+        0x02 => KB_8,     // 8KB
+        0x03 => KB_32,    // 32KB (4 banks of 8KB)
+        0x04 => KB_128,   // 128KB (16 banks of 8KB)
+        0x05 => KB_64,    // 64KB (8 banks of 8KB)
+        _ => 0,           // Default to no RAM
     }
 }
 

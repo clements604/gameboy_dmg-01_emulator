@@ -1,7 +1,17 @@
 use std::io;
 use std::path::Path;
 use log::{debug, error};
-use crate::mbc::{MBC, SRAM};
+use crate::mbc::{
+    MBC,
+    SRAM,
+    ROM_BANK0_START,
+    ROM_BANK0_END,
+    ROM_BANK_N_START,
+    ROM_BANK_N_END,
+    RAM_START,
+    RAM_END,
+    INVALID_READ_VALUE
+};
 use crate::rom::ROMBanks;
 
 /*
@@ -10,6 +20,12 @@ use crate::rom::ROMBanks;
 
 const MBC2_RAM_SIZE: usize = 512;
 const MBC2_RAM_ADDR_MASK: u16 = 0x01FF; // Only 9 bits are used for addressing
+// MBC2 specific constants
+const ROM_BANK_BITS_MASK: u8 = 0x0F;
+const RAM_ENABLE_MASK: u8 = 0x0F;
+const RAM_ENABLE_VALUE: u8 = 0x0A;
+const RAM_DATA_MASK: u8 = 0x0F;
+const BANK_SELECT_BIT: u16 = 0x0100;
 
 pub struct MBC2 {
     rom_banks: ROMBanks,
@@ -45,63 +61,63 @@ impl MBC2 {
 impl MBC for MBC2 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => {
+            ROM_BANK0_START..=ROM_BANK0_END => {
                 self.get_value_from_bank(0, address, &self.rom_banks.data)
             },
-            0x4000..=0x7FFF => {
+            ROM_BANK_N_START..=ROM_BANK_N_END => {
                 let bank = self.get_selected_rom_bank();
-                let bank_addr = address - 0x4000;
+                let bank_addr = address - ROM_BANK_N_START;
                 self.get_value_from_bank(bank, bank_addr, &self.rom_banks.data)
             },
-            0xA000..=0xBFFF => {
+            RAM_START..=RAM_END => {
                 if self.is_ram_enabled() {
                     let ram_addr = (address & MBC2_RAM_ADDR_MASK) as usize;
                     
                     if ram_addr < MBC2_RAM_SIZE {
                         if let Some(sram) = &self.sram {
-                            sram.read(ram_addr) & 0x0F
+                            sram.read(ram_addr) & RAM_DATA_MASK
                         } else {
-                            0xFF
+                            INVALID_READ_VALUE
                         }
                     } else {
                         error!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
-                        0xFF
+                        INVALID_READ_VALUE
                     }
                 } else {
-                    0xFF
+                    INVALID_READ_VALUE
                 }
             },
             _ => {
                 error!("Invalid MBC2 address for read: {:04X}", address);
-                0xFF
+                INVALID_READ_VALUE
             }
         }
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
         match address {
-            0x0000..=0x3FFF => {
-                if (address & 0x0100) == 0 {
+            ROM_BANK0_START..=ROM_BANK0_END => {
+                if (address & BANK_SELECT_BIT) == 0 {
                     // RAM Enable (0x0A enables, anything else disables)
-                    self.ram_enabled = (value & 0x0F) == 0x0A;
+                    self.ram_enabled = (value & RAM_ENABLE_MASK) == RAM_ENABLE_VALUE;
                 } else {
                     // ROM Bank Select (lower 4 bits)
                     // If 0 is written, it's treated as 1
-                    let bank_num = (value & 0x0F) as usize;
+                    let bank_num = (value & ROM_BANK_BITS_MASK) as usize;
                     self.rom_bank = if bank_num == 0 { 1 } else { bank_num };
                     debug!("MBC2 ROM bank set to: {:02X}", self.rom_bank);
                 }
             },
-            0x4000..=0x7FFF => {
+            ROM_BANK_N_START..=ROM_BANK_N_END => {
                 debug!("Write to ROM area 4000-7FFF ignored in MBC2: {:04X} = {:02X}", address, value);
             },
-            0xA000..=0xBFFF => {
+            RAM_START..=RAM_END => {
                 if self.is_ram_enabled() {
                     let ram_addr = (address & MBC2_RAM_ADDR_MASK) as usize;
 
                     if ram_addr < MBC2_RAM_SIZE {
                         if let Some(sram) = &mut self.sram {
-                            sram.write(ram_addr, value & 0x0F);
+                            sram.write(ram_addr, value & RAM_DATA_MASK);
                             debug!("Battery-backed MBC2 RAM write at {:04X} = {:02X}", address, value & 0x0F);
                         }
                     } else {

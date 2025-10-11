@@ -3,10 +3,40 @@ use std::path::Path;
 
 use log::{debug, error};
 
-use crate::mbc::{MBC, get_ram_size_in_bytes, SRAM};
+use crate::mbc::{
+    MBC,
+    get_ram_size_in_bytes,
+    SRAM,
+    ROM_BANK0_START,
+    ROM_BANK0_END,
+    ROM_BANK_N_START,
+    ROM_BANK_N_END,
+    RAM_START,
+    RAM_END,
+    INVALID_READ_VALUE,
+    ROM_BANK_SELECT_START
+};
 use crate::rom::ROMBanks;
 
 const MBC5_MAX_ROM_BANKS: usize = 512; // 8MB
+const RAM_ENABLE_AREA_END: u16 = 0x1FFF;
+const RAM_ENABLE_MASK: u8 = 0x0F;
+const RAM_ENABLE_VALUE: u8 = 0x0A;
+const ROM_BANK_BITS_MASK: usize = 0x100;
+const ROM_BANK_HIGH_BIT_MASK: u8 = 0x01;
+const RAM_BANK_MASK: u8 = 0x0F;
+const RUMBLE_BIT_MASK: u8 = 0x08;
+const RAM_BANK_RUMBLE_MASK: u8 = 0x07;
+const BANK_SIZE: usize = 0x2000;
+const ROM_BANK_HIGH_BIT_AREA_START: u16 = 0x3000;
+const ROM_BANK_HIGH_BIT_AREA_END: u16 = 0x3FFF;
+const RAM_BANK_SELECT_END: u16 = 0x5FFF;
+// ROM bank control bitmasks
+const ROM_BANK_LOW_BITS_MASK: usize = 0xFF;
+const ROM_BANK_HIGH_BIT_SHIFT: usize = 8;
+
+// ROM bank selection areas
+const ROM_BANK_LOW_BITS_END: u16 = 0x2FFF;
 
 pub struct MBC5 {
     rom_banks: ROMBanks,
@@ -55,94 +85,68 @@ impl MBC5 {
 impl MBC for MBC5 {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => {
-                // Fixed ROM bank 0
-                /*if let Some(bank) = self.rom_banks.data.get(0) {
-                    if let Some(&value) = bank.get(address as usize) {
-                        value
-                    } else {
-                        error!("Attempted to read beyond ROM bank 0 boundaries at {:04X}", address);
-                        0xFF
-                    }
-                } else {
-                    panic!("ROM bank 0 not available");
-                }*/
+            ROM_BANK0_START..=ROM_BANK_HIGH_BIT_AREA_END => {
                 self.get_value_from_bank(0, address, &self.rom_banks.data)
             },
-            0x4000..=0x7FFF => {
-                // Switchable ROM bank
-                /*let bank = self.get_active_rom_bank();
-                let bank_addr = address - 0x4000;
-
-                if let Some(bank_data) = self.rom_banks.data.get(bank) {
-                    if let Some(&value) = bank_data.get(bank_addr) {
-                        value
-                    } else {
-                        error!("Attempted to read beyond ROM bank boundaries at bank {} addr {:04X}", bank, address);
-                        0xFF
-                    }
-                } else {
-                    panic!("ROM bank {} not available (total banks: {})", bank, self.rom_banks.data.len());
-                }*/
-                self.get_value_from_bank(self.get_active_rom_bank(), address - 0x4000, &self.rom_banks.data)
+            ROM_BANK_N_START..=ROM_BANK_N_END => {
+                self.get_value_from_bank(self.get_active_rom_bank(), address - ROM_BANK_N_START, &self.rom_banks.data)
             },
-            0xA000..=0xBFFF => {
+            RAM_START..=RAM_END => {
                 if self.is_ram_enabled() && self.has_ram {
                     // Read from RAM
                     if let Some(sram) = &self.sram {
-                        let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
+                        let ram_addr = self.ram_bank * BANK_SIZE + (address - RAM_START) as usize;
                         sram.read(ram_addr)
                     } else {
                         error!("SRAM is None when trying to read from it");
-                        0xFF
+                        INVALID_READ_VALUE
                     }
                 } else {
-                    // RAM disabled or doesn't exist, return 0xFF
-                    0xFF
+                    INVALID_READ_VALUE
                 }
             },
             _ => {
                 error!("Invalid MBC5 address for read: {:04X}", address);
-                0xFF
+                INVALID_READ_VALUE
             }
         }
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
         match address {
-            0x0000..=0x1FFF => {
+            ROM_BANK0_START..=RAM_ENABLE_AREA_END => {
                 // RAM Enable (any value with bit 0 set enables, other values disable)
-                self.ram_enabled = (value & 0x0F) == 0x0A;
+                self.ram_enabled = (value & RAM_ENABLE_MASK) == RAM_ENABLE_VALUE;
             },
-            0x2000..=0x2FFF => {
+            ROM_BANK_SELECT_START..=ROM_BANK_LOW_BITS_END => {
                 // ROM Bank Number (lower 8 bits)
                 // MBC5 uses a 9-bit bank number for up to 512 ROM banks
                 let low_bits = value as usize;
-                self.rom_bank = (self.rom_bank & 0x100) | low_bits;
+                self.rom_bank = (self.rom_bank & ROM_BANK_BITS_MASK) | low_bits;
             },
-            0x3000..=0x3FFF => {
+            ROM_BANK_HIGH_BIT_AREA_START..=ROM_BANK0_END => {
                 // ROM Bank Number (9th bit)
-                let high_bit = ((value & 0x01) as usize) << 8;
-                self.rom_bank = (self.rom_bank & 0xFF) | high_bit;
+                let high_bit = ((value & ROM_BANK_HIGH_BIT_MASK) as usize) << ROM_BANK_HIGH_BIT_SHIFT;
+                self.rom_bank = (self.rom_bank & ROM_BANK_LOW_BITS_MASK) | high_bit;
             },
-            0x4000..=0x5FFF => {
+            ROM_BANK_N_START..=RAM_BANK_SELECT_END => {
                 // RAM Bank Number (4 bits)
                 // For rumble carts, bit 3 controls rumble motor (0=off, 1=on)
                 if self.has_rumble {
-                    let rumble_on = (value & 0x08) != 0;
+                    let rumble_on = (value & RUMBLE_BIT_MASK) != 0;
                     debug!("MBC5 Rumble state: {}", rumble_on);
                     // Use only bits 0-2 for RAM bank selection
-                    self.ram_bank = (value & 0x07) as usize;
+                    self.ram_bank = (value & RAM_BANK_RUMBLE_MASK) as usize;
                 } else {
                     // Use bits 0-3 for RAM bank selection (up to 16 banks)
-                    self.ram_bank = (value & 0x0F) as usize;
+                    self.ram_bank = (value & RAM_BANK_MASK) as usize;
                 }
             },
-            0xA000..=0xBFFF => {
+            RAM_START..=RAM_END => {
                 if self.is_ram_enabled() && self.has_ram {
                     // Write to RAM
                     if let Some(sram) = &mut self.sram {
-                        let ram_addr = self.ram_bank * 0x2000 + (address - 0xA000) as usize;
+                        let ram_addr = self.ram_bank * BANK_SIZE + (address - RAM_START) as usize;
                         sram.write(ram_addr, value);
 
                         // Log if this is battery-backed RAM

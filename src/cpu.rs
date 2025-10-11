@@ -7,6 +7,39 @@ use memory_bus::MemoryBus;
 use crate::interrupts::*;
 use crate::memory_bus;
 
+const INITIAL_PC: u16 = 0x0100;
+const INITIAL_SP: u16 = 0xFFFE;
+
+// Interrupt vector addresses
+const VBLANK_VECTOR: u16 = 0x0040;
+const LCDSTAT_VECTOR: u16 = 0x0048;
+const TIMER_VECTOR: u16 = 0x0050;
+const SERIAL_VECTOR: u16 = 0x0058;
+const JOYPAD_VECTOR: u16 = 0x0060;
+
+// Interrupt masks
+const VBLANK_MASK: u8 = 0x01;
+const LCDSTAT_MASK: u8 = 0x02;
+const TIMER_MASK: u8 = 0x04;
+const SERIAL_MASK: u8 = 0x08;
+const JOYPAD_MASK: u8 = 0x10;
+
+// Memory mapped IO addresses
+const DIVIDER_REGISTER: u16 = 0xFF04;
+
+// Initial register values
+const INIT_A: u8 = 0x01;
+const INIT_C: u8 = 0x13;
+const INIT_E: u8 = 0xD8;
+const INIT_H: u8 = 0x01;
+const INIT_L: u8 = 0x4D;
+
+// Bit masks
+const LSB_MASK: u8 = 0x0F;
+const MSB_MASK: u8 = 0xF0;
+const BYTE_MSB: u8 = 0x80;
+const BYTE_LSB: u8 = 0x01;
+
 struct Registers {
     a: u8,
     b: u8,
@@ -43,14 +76,14 @@ impl Registers {
         f.insert(FlagsRegister::HALF_CARRY);
         f.insert(FlagsRegister::CARRY);
         Registers {
-            a: 0x01,
+            a: INIT_A,
             b: 0x0,
-            c: 0x13,
+            c: INIT_C,
             d: 0x0,
-            e: 0xD8,
+            e: INIT_E,
             f,
-            h: 0x01,
-            l: 0x4D
+            h: INIT_H,
+            l: INIT_L
         }
     }
 
@@ -74,7 +107,7 @@ impl Registers {
 
     fn set_af(&mut self, value: u16) {
         self.a = (value >> 8) as u8;
-        self.f = FlagsRegister::from_bits_truncate(value as u8 & 0xF0);
+        self.f = FlagsRegister::from_bits_truncate(value as u8 & MSB_MASK);
     }
 
     fn set_bc(&mut self, value: u16) {
@@ -142,8 +175,8 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             registers: Registers::new(),
-            pc: 0x0100,
-            sp: 0xFFFE,
+            pc: INITIAL_PC,
+            sp: INITIAL_SP,
             halted: false,
             stopped: false,
         }
@@ -193,7 +226,7 @@ impl CPU {
                 }
                 0x07 => {
                     let a = self.registers.a;
-                    let new_carry = (a & 0x80) != 0;
+                    let new_carry = (a & BYTE_MSB) != 0;
                     self.registers.a = (a << 1) | if new_carry { 0x01 } else { 0x00 };
                     self.registers.f.set(FlagsRegister::CARRY, new_carry);
                     self.registers.f.set(FlagsRegister::ZERO, false);
@@ -275,7 +308,7 @@ impl CPU {
                     8
                 }
                 0x17 => {
-                    let carry = self.registers.a & 0x80 != 0;
+                    let carry = self.registers.a & BYTE_MSB != 0;
                     self.registers.a = (self.registers.a << 1)
                         | (if self.registers.f.contains(FlagsRegister::CARRY) {
                         1
@@ -2614,7 +2647,7 @@ impl CPU {
         let result = register.wrapping_add(1);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
-        self.registers.f.set(FlagsRegister::HALF_CARRY, (register & 0x0F) + 1 > 0x0F);
+        self.registers.f.set(FlagsRegister::HALF_CARRY, (register & LSB_MASK) + 1 > LSB_MASK);
         result
     }
 
@@ -2625,7 +2658,7 @@ impl CPU {
         let result = register.wrapping_sub(1);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
-        self.registers.f.set(FlagsRegister::HALF_CARRY, (register & 0x0F) < 1);
+        self.registers.f.set(FlagsRegister::HALF_CARRY, (register & LSB_MASK) < 1);
         result
     }
 
@@ -2638,7 +2671,7 @@ impl CPU {
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
         self.registers
             .f
-            .set(FlagsRegister::HALF_CARRY, (self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+            .set(FlagsRegister::HALF_CARRY, (self.registers.a & LSB_MASK) + (value & LSB_MASK) > LSB_MASK);
         self.registers
             .f
             .set(FlagsRegister::CARRY,(self.registers.a as u16) + (value as u16) > 0xFF);
@@ -2655,7 +2688,7 @@ impl CPU {
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
         self.registers
             .f
-            .set(FlagsRegister::HALF_CARRY,(self.registers.a & 0x0F) + (value & 0x0F) > 0x0F);
+            .set(FlagsRegister::HALF_CARRY,(self.registers.a & LSB_MASK) + (value & LSB_MASK) > LSB_MASK);
         self.registers
             .f
             .set(FlagsRegister::CARRY, (self.registers.a as u16) + (value as u16) > 0xFF);
@@ -2671,7 +2704,7 @@ impl CPU {
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
         self.registers
             .f
-            .set(FlagsRegister::HALF_CARRY, (self.registers.a & 0x0F) < (value & 0x0F));
+            .set(FlagsRegister::HALF_CARRY, (self.registers.a & LSB_MASK) < (value & LSB_MASK));
         self.registers
             .f
             .set(FlagsRegister::CARRY, self.registers.a < value);
@@ -2688,7 +2721,7 @@ impl CPU {
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
         self.registers
             .f
-            .set(FlagsRegister::HALF_CARRY, (self.registers.a & 0x0F) < (value & 0x0F));
+            .set(FlagsRegister::HALF_CARRY, (self.registers.a & LSB_MASK) < (value & LSB_MASK));
         self.registers
             .f
             .set(FlagsRegister::CARRY, self.registers.a < value);
@@ -2753,7 +2786,7 @@ impl CPU {
         let result: u8 = self.registers.a.wrapping_sub(value);
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
-        self.registers.f.set(FlagsRegister::HALF_CARRY, (self.registers.a & 0x0F) < (value & 0x0F));
+        self.registers.f.set(FlagsRegister::HALF_CARRY, (self.registers.a & LSB_MASK) < (value & LSB_MASK));
         self.registers.f.set(FlagsRegister::CARRY, self.registers.a < value);
     }
 
@@ -2781,7 +2814,7 @@ impl CPU {
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
         self.registers.f.set(FlagsRegister::HALF_CARRY,
-            (self.registers.a & 0x0F) + (value & 0x0F) + carry > 0x0F,
+            (self.registers.a & LSB_MASK) + (value & LSB_MASK) + carry > 0x0F,
         );
         self.registers.f.set(FlagsRegister::CARRY,
             (self.registers.a as u16) + (value as u16) + (carry as u16) > 0xFF,
@@ -2827,7 +2860,7 @@ impl CPU {
                 a = a.wrapping_add(0x60);
                 self.registers.f.set(FlagsRegister::CARRY, true);
             }
-            if self.registers.f.contains(FlagsRegister::HALF_CARRY)|| (a & 0x0F) > 0x09 {
+            if self.registers.f.contains(FlagsRegister::HALF_CARRY)|| (a & LSB_MASK) > 0x09 {
                 a = a.wrapping_add(0x06);
             }
         } else {
@@ -2852,7 +2885,7 @@ impl CPU {
         self.registers.f.set(FlagsRegister::ZERO, result == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
         // Check for half carry by comparing lower nibbles before subtraction
-        self.registers.f.set(FlagsRegister::HALF_CARRY, (self.registers.a & 0x0F) < (r & 0x0F) + carry);
+        self.registers.f.set(FlagsRegister::HALF_CARRY, (self.registers.a & LSB_MASK) < (r & LSB_MASK) + carry);
         self.registers.f.set(FlagsRegister::CARRY, (self.registers.a as u16) < (r as u16) + (carry as u16));
         self.registers.a = result;
     }
@@ -2870,7 +2903,7 @@ impl CPU {
         memory_bus.write_byte(address, value);
         self.registers.f.set(FlagsRegister::ZERO, value == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
-        self.registers.f.set(FlagsRegister::HALF_CARRY, (value & 0x0F) == 0x00);
+        self.registers.f.set(FlagsRegister::HALF_CARRY, (value & LSB_MASK) == 0x00);
     }
 
     
@@ -2884,7 +2917,7 @@ impl CPU {
         memory_bus.write_byte(address, value);
         self.registers.f.set(FlagsRegister::ZERO, value == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, true);
-        self.registers.f.set(FlagsRegister::HALF_CARRY, (value & 0x0F) == 0x0F);
+        self.registers.f.set(FlagsRegister::HALF_CARRY, (value & LSB_MASK) == 0x0F);
     }
 
     /*
@@ -2906,7 +2939,7 @@ impl CPU {
         let sp = self.sp as i16;
         let result = sp.wrapping_add(value as i16);
         self.sp = result as u16;
-        let half_carry = ((sp & 0x0F) + (value as i16 & 0x0F)) & 0x10 != 0;
+        let half_carry = ((sp & 0x0F) + (value as i16 & LSB_MASK as i16)) & 0x10 != 0;
         self.registers.f.set(FlagsRegister::HALF_CARRY, half_carry);
         let carry = (sp & 0xFF) + (value as i16 & 0xFF) > 0xFF;
         self.registers.f.set(FlagsRegister::CARRY, carry);
@@ -2964,15 +2997,15 @@ impl CPU {
             let interrupt_enable_register = memory_bus.interrupt_enable_register;
 
             // Check if the interrupt is both flagged and enabled
-            if interrupt_flags.vblank && (interrupt_enable_register & 0x01) != 0 {
+            if interrupt_flags.vblank && (interrupt_enable_register & VBLANK_MASK) != 0 {
                 self.service_interrupt(memory_bus, Interrupt::VBLANK);
-            } else if interrupt_flags.lcd_stat && (interrupt_enable_register & 0x02) != 0 {
+            } else if interrupt_flags.lcd_stat && (interrupt_enable_register & LCDSTAT_MASK) != 0 {
                 self.service_interrupt(memory_bus, Interrupt::LCDSTAT);
-            } else if interrupt_flags.timer && (interrupt_enable_register & 0x04) != 0 {
+            } else if interrupt_flags.timer && (interrupt_enable_register & TIMER_MASK) != 0 {
                 self.service_interrupt(memory_bus, Interrupt::TIMER);
-            } else if interrupt_flags.serial && (interrupt_enable_register & 0x08) != 0 {
+            } else if interrupt_flags.serial && (interrupt_enable_register & SERIAL_MASK) != 0 {
                 self.service_interrupt(memory_bus, Interrupt::SERIAL);
-            } else if interrupt_flags.joypad && (interrupt_enable_register & 0x10) != 0 {
+            } else if interrupt_flags.joypad && (interrupt_enable_register & JOYPAD_MASK) != 0 {
                 self.service_interrupt(memory_bus, Interrupt::JOYPAD);
             }
         }
@@ -2985,11 +3018,11 @@ impl CPU {
         let mut interrupts: InterruptFlags = memory_bus.interrupt_flags.into();
         memory_bus.interrupt_master_enable = false;
         let vector_address = match interrupt {
-            Interrupt::VBLANK => 0x0040,
-            Interrupt::LCDSTAT => 0x0048,
-            Interrupt::TIMER => 0x0050,
-            Interrupt::SERIAL => 0x0058,
-            Interrupt::JOYPAD => 0x0060,
+            Interrupt::VBLANK => VBLANK_VECTOR,
+            Interrupt::LCDSTAT => LCDSTAT_VECTOR,
+            Interrupt::TIMER => TIMER_VECTOR,
+            Interrupt::SERIAL => SERIAL_VECTOR,
+            Interrupt::JOYPAD => JOYPAD_VECTOR,
         };
 
         // Push the current PC to the stack
@@ -3029,7 +3062,7 @@ impl CPU {
         https://gbdev.io/pandocs/Timer_and_Divider_Registers.html
         */
         self.stopped = true;
-        memory_bus.write_byte(0xFF04, 0);
+        memory_bus.write_byte(DIVIDER_REGISTER, 0);
     }
     
     /*
@@ -3053,7 +3086,7 @@ impl CPU {
      * If the most significant bit is set, then set the lest significant bit to 1 and set the carry flag.
      */
     fn op_rlc(&mut self, register: &mut u8) {
-        let carry = *register & 0x80 != 0;
+        let carry = *register & BYTE_MSB != 0;
         *register = (*register << 1) | (if carry { 1 } else { 0 });
         self.registers.f.set(FlagsRegister::ZERO, *register == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
@@ -3068,7 +3101,7 @@ impl CPU {
      * and set the most significant bit to the previous carry value.
      */
     fn op_rrc(&mut self, register: &mut u8) {
-        let carry = *register & 0x01 != 0;
+        let carry = *register & BYTE_LSB != 0;
         *register = (*register >> 1) | (if carry { 0x80 } else { 0 });
         self.registers.f.set(FlagsRegister::ZERO, *register == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
@@ -3084,7 +3117,7 @@ impl CPU {
      */
     fn op_rl(&mut self, register: &mut u8) {
         let carry = self.registers.f.contains(FlagsRegister::CARRY);
-        let new_carry = *register & 0x80 != 0;
+        let new_carry = *register & BYTE_MSB != 0;
         *register = (*register << 1) | (if carry { 1 } else { 0 });
         self.registers.f.set(FlagsRegister::ZERO, *register == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
@@ -3100,7 +3133,7 @@ impl CPU {
      */
     fn op_rr(&mut self, register: &mut u8) {
         let carry = self.registers.f.contains(FlagsRegister::CARRY);
-        let new_carry = *register & 0x01 != 0;
+        let new_carry = *register & BYTE_LSB != 0;
         *register = (*register >> 1) | (if carry { 0x80 } else { 0 });
         self.registers.f.set(FlagsRegister::ZERO, *register == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
@@ -3130,8 +3163,8 @@ impl CPU {
      * The most significant bit (bit 7) remains unchanged to preserve the sign.
      */
     fn op_sra(&mut self, register: &mut u8) {
-        let carry = *register & 0x01 != 0;
-        *register = (*register & 0x80) | (*register >> 1);
+        let carry = *register & BYTE_LSB != 0;
+        *register = (*register & BYTE_MSB) | (*register >> 1);
         self.registers.f.set(FlagsRegister::ZERO, *register == 0);
         self.registers.f.set(FlagsRegister::SUBTRACT, false);
         self.registers.f.set(FlagsRegister::HALF_CARRY, false);

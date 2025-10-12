@@ -5,7 +5,7 @@ use log::error;
 use sdl2::keyboard::Keycode;
 use std::collections::HashMap;
 
-const DEFAULT_SCALE_FACTOR: u32 = 1;
+const DEFAULT_SCALE_FACTOR: u32 = 2;
 const CONFIG_FILE_PATH: &str = "./config.json";
 const UP_KEY: &str = "up";
 const DOWN_KEY: &str = "down";

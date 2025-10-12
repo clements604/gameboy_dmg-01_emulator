@@ -3,7 +3,7 @@ use log::{debug, error};
 use sdl2::keyboard::Keycode;
 use crate::cpu;
 use crate::emulator_config::EmulatorConfig;
-use crate::main_display::MainDisplay;
+use crate::display::MainDisplay;
 use crate::memory_bus::MemoryBus;
 use crate::rom::ROM;
 use crate::interrupts::Interrupt::JOYPAD;

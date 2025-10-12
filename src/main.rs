@@ -9,7 +9,7 @@ mod dma;
 mod lcd;
 mod timer;
 mod joypad;
-mod main_display;
+mod display;
 mod mbc;
 mod mbc0;
 mod mbc1;

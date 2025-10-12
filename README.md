@@ -79,7 +79,7 @@ The default key bindings are:
 - Guide author presentation
   https://www.youtube.com/watch?v=B7seNuQncvU
 
-- Recomended talk from guide author
+- Recommended talk from guide author
   https://www.youtube.com/watch?v=HyzD8pNlpwI
 
 - Useful guide for Javascript implementation

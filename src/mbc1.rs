@@ -1,6 +1,6 @@
 use std::io;
 use std::path::Path;
-use log::{debug, error, info};
+use log::{debug, info};
 use crate::mbc::{
     MBC,
     get_ram_size_in_bytes,
@@ -144,7 +144,7 @@ impl MBC for MBC1 {
                     if let Some(sram) = &self.sram {
                         sram.read(ram_address)
                     } else {
-                        error!("SRAM is None when trying to read from it");
+                        info!("SRAM is None when trying to read from it");
                         INVALID_READ_VALUE
                     }
                 }
@@ -154,7 +154,7 @@ impl MBC for MBC1 {
                 }
             },
             _ => {
-                error!("Invalid MBC1 address for read: {:04X}", address);
+                info!("Invalid MBC1 address for read: {:04X}", address);
                 INVALID_READ_VALUE
             }
         }
@@ -210,7 +210,7 @@ impl MBC for MBC1 {
                 }
             },
             _ => {
-                error!("Invalid MBC1 address for write: {:04X}", address);
+                info!("Invalid MBC1 address for write: {:04X}", address);
             }
         }
     }

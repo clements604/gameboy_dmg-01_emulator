@@ -1,6 +1,6 @@
 use std::io;
 use std::path::Path;
-use log::{debug, error};
+use log::{debug, info};
 use crate::mbc::{
     MBC,
     SRAM,
@@ -80,7 +80,7 @@ impl MBC for MBC2 {
                             INVALID_READ_VALUE
                         }
                     } else {
-                        error!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
+                        info!("Attempted to read from non-existent MBC2 RAM at {:04X}", address);
                         INVALID_READ_VALUE
                     }
                 } else {
@@ -88,7 +88,7 @@ impl MBC for MBC2 {
                 }
             },
             _ => {
-                error!("Invalid MBC2 address for read: {:04X}", address);
+                info!("Invalid MBC2 address for read: {:04X}", address);
                 INVALID_READ_VALUE
             }
         }
@@ -121,14 +121,14 @@ impl MBC for MBC2 {
                             debug!("Battery-backed MBC2 RAM write at {:04X} = {:02X}", address, value & 0x0F);
                         }
                     } else {
-                        error!("Attempted to write to non-existent MBC2 RAM at {:04X}", address);
+                        info!("Attempted to write to non-existent MBC2 RAM at {:04X}", address);
                     }
                 } else {
                     debug!("Attempted to write to disabled MBC2 RAM: {:04X} = {:02X}", address, value);
                 }
             },
             _ => {
-                error!("Invalid MBC2 address for write: {:04X} = {:02X}", address, value);
+                info!("Invalid MBC2 address for write: {:04X} = {:02X}", address, value);
             }
         }
     }

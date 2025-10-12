@@ -1,7 +1,7 @@
 use std::io;
 use std::path::Path;
 
-use log::{debug, error};
+use log::{debug, info};
 
 use crate::mbc::{
     MBC,
@@ -98,7 +98,7 @@ impl MBC for MBC5 {
                         let ram_addr = self.ram_bank * BANK_SIZE + (address - RAM_START) as usize;
                         sram.read(ram_addr)
                     } else {
-                        error!("SRAM is None when trying to read from it");
+                        info!("SRAM is None when trying to read from it");
                         INVALID_READ_VALUE
                     }
                 } else {
@@ -106,7 +106,7 @@ impl MBC for MBC5 {
                 }
             },
             _ => {
-                error!("Invalid MBC5 address for read: {:04X}", address);
+                info!("Invalid MBC5 address for read: {:04X}", address);
                 INVALID_READ_VALUE
             }
         }
@@ -182,7 +182,7 @@ impl MBC for MBC5 {
             if let Some(sram) = &mut self.sram {
                 return sram.save();
             } else {
-                error!("SRAM is None when trying to save it");
+                info!("SRAM is None when trying to save it");
             }
         } else {
             debug!("Not saving MBC5 RAM - no battery or no RAM");

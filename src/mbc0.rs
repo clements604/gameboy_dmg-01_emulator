@@ -1,5 +1,5 @@
 use std::io;
-use log::{debug, error};
+use log::{debug, info};
 use crate::mbc::{
     MBC,
     get_ram_size_in_bytes,
@@ -64,17 +64,17 @@ impl MBC for MBC0 {
                         self.ram[ram_address]
                     }
                     else {
-                        error!("Error reading for ram with capacity of {} for address 0x{:X}", self.ram.len(), address);
+                        info!("Error reading for ram with capacity of {} for address 0x{:X}", self.ram.len(), address);
                         INVALID_READ_VALUE
                     }
                 }
                 else {
-                    error!("Attempt to read from ROM RAM when ram is not enabled or does not exist");
+                    info!("Attempt to read from ROM RAM when ram is not enabled or does not exist");
                     INVALID_READ_VALUE
                 }
             },
             _ => {
-                error!("Invalid MBC0 address for read: {:04X}", address);
+                info!("Invalid MBC0 address for read: {:04X}", address);
                 INVALID_READ_VALUE
             }
         }
@@ -86,7 +86,7 @@ impl MBC for MBC0 {
                 if address <= RAM_ENABLE_AREA_END && (value & RAM_ENABLE_MASK) == RAM_ENABLE_VALUE {
                     self.ram_enabled = true;
                 } else {
-                    error!("Attempted write to ROM area: {:04X} = {:02X}", address, value);
+                    info!("Attempted write to ROM area: {:04X} = {:02X}", address, value);
                 }
             },
             RAM_START..=RAM_END => {
@@ -102,16 +102,16 @@ impl MBC for MBC0 {
                         self.ram[ram_addr] = value;
 
                         if self.has_battery {
-                            error!("battery-backed RAM write not implemented");
+                            info!("battery-backed RAM write not implemented");
                         }
                     }
                 }
                 else {
-                    error!("Attempted write to RAM area: {:04X} value 0x{:02X}", address, value);
+                    info!("Attempted write to RAM area: {:04X} value 0x{:02X}", address, value);
                 }
             },
             _ => {
-                error!("Invalid MBC0 address for write: {:04X}", address);
+                info!("Invalid MBC0 address for write: {:04X}", address);
             }
         }
     }

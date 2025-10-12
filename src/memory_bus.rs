@@ -104,7 +104,7 @@ impl MemoryBus {
 
     pub fn cycle(&mut self, cpu_cycles: u8) {
         // Timer
-        if self.dmg_io.timer.cycle(cpu_cycles) {
+        if self.dmg_io.timer.cycle(1) {
             // If timer overflows, trigger a Timer interrupt
             self.trigger_interrupt(Interrupt::TIMER);
         }

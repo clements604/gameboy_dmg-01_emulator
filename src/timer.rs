@@ -1,3 +1,20 @@
+// Timer frequency-related constants
+const FREQ_4096HZ_BIT: u8 = 9;     // 4096 Hz - bit 9 (falling edge every 1024 cycles)
+const FREQ_262144HZ_BIT: u8 = 3;   // 262144 Hz - bit 3 (falling edge every 16 cycles)
+const FREQ_65536HZ_BIT: u8 = 5;    // 65536 Hz - bit 5 (falling edge every 64 cycles)
+const FREQ_16384HZ_BIT: u8 = 7;    // 16384 Hz - bit 7 (falling edge every 256 cycles)
+
+// TAC register masks
+const TAC_ENABLED_MASK: u8 = 0x04;
+const TAC_FREQUENCY_MASK: u8 = 0x03;
+
+// Timer reload related constants
+const TIMA_RELOAD_DELAY: u8 = 4;    // Cycles to wait before reloading TIMA
+const TMA_WRITE_WINDOW: u8 = 5;     // Window for TMA writes to affect reload
+const TIMA_OVERFLOW_VALUE: u8 = 0x00;
+const CRITICAL_RELOAD_CYCLE: u8 = 2; // Critical cycle during reload
+const DIV_REGISTER_SHIFT: u8 = 8;
+
 pub struct Timer {
     internal_div_counter: u16,
     pub div: u8,
@@ -41,20 +58,20 @@ impl Timer {
 
     pub fn set_tac(&mut self, value: u8) -> bool {
         let old_enabled = self.enabled;
-        let old_frequency = self.tac & 0x03;
+        let old_frequency = self.tac & TAC_FREQUENCY_MASK;
 
         self.tac = value;
-        self.enabled = (value & 0x04) != 0;
+        self.enabled = (value & TAC_ENABLED_MASK) != 0;
 
         let mut interrupt = false;
 
         if old_enabled {
             // Get the bit that was being monitored before the change
             let old_bit_position = match old_frequency {
-                0 => 9,  // 4096 Hz
-                1 => 3,  // 262144 Hz
-                2 => 5,  // 65536 Hz
-                3 => 7,  // 16384 Hz
+                0 => FREQ_4096HZ_BIT,
+                1 => FREQ_262144HZ_BIT,
+                2 => FREQ_65536HZ_BIT,
+                3 => FREQ_16384HZ_BIT,
                 _ => unreachable!(),
             };
 
@@ -81,11 +98,11 @@ impl Timer {
     }
 
     fn get_tima_bit_position(&self) -> u8 {
-        match self.tac & 0x03 {
-            0 => 9,  // 4096 Hz - bit 9 (falling edge every 1024 cycles)
-            1 => 3,  // 262144 Hz - bit 3 (falling edge every 16 cycles)
-            2 => 5,  // 65536 Hz - bit 5 (falling edge every 64 cycles)
-            3 => 7,  // 16384 Hz - bit 7 (falling edge every 256 cycles)
+        match self.tac & TAC_FREQUENCY_MASK {
+            0 => FREQ_4096HZ_BIT,
+            1 => FREQ_262144HZ_BIT,
+            2 => FREQ_65536HZ_BIT,
+            3 => FREQ_16384HZ_BIT,
             _ => unreachable!(),
         }
     }
@@ -93,10 +110,10 @@ impl Timer {
     fn increment_tima(&mut self) -> bool {
         let (new_tima, overflow) = self.tima.overflowing_add(1);
         if overflow {
-            self.tima = 0x00;
-            self.tima_reload_cycles = 4;
+            self.tima = TIMA_OVERFLOW_VALUE;
+            self.tima_reload_cycles = TIMA_RELOAD_DELAY;
             self.tima_reload_value = self.tma;
-            self.tma_write_window = 5;
+            self.tma_write_window = TMA_WRITE_WINDOW;
             true
         } else {
             self.tima = new_tima;
@@ -143,7 +160,7 @@ impl Timer {
 
             // Increment internal counter
             self.internal_div_counter = self.internal_div_counter.wrapping_add(1);
-            self.div = (self.internal_div_counter >> 8) as u8;
+            self.div = (self.internal_div_counter >> DIV_REGISTER_SHIFT) as u8;
             
             if self.enabled {
                 let bit_position = self.get_tima_bit_position();
@@ -162,7 +179,7 @@ impl Timer {
     pub fn write_tima(&mut self, value: u8) {
         if self.tima_reload_cycles > 0 {
 
-            if self.tima_reload_cycles == 2 {
+            if self.tima_reload_cycles == CRITICAL_RELOAD_CYCLE {
                 return;
             } else {
                 self.tima = value;

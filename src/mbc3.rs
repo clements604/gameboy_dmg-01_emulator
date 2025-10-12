@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use std::io;
 
-use log::{debug, error};
+use log::{debug, info};
 
 use crate::mbc::{MBC,
                  get_ram_size_in_bytes,
@@ -64,7 +64,7 @@ impl RtcData {
 
         // Try to load existing RTC data
         rtc.load().unwrap_or_else(|e| {
-            error!("Could not load RTC data: {}", e);
+            info!("Could not load RTC data: {}", e);
         });
 
         rtc
@@ -323,7 +323,7 @@ impl MBC for MBC3 {
                             let rtc_reg = self.ram_bank_to_rtc_register(&bank);
                             rtc.read_latched(rtc_reg)
                         } else {
-                            error!("Attempted to read from RTC register but RTC is not available");
+                            info!("Attempted to read from RTC register but RTC is not available");
                             INVALID_READ_VALUE
                         }
                     } else if self.has_ram {
@@ -332,11 +332,11 @@ impl MBC for MBC3 {
                             let ram_addr = self.get_ram_bank() * BANK_SIZE + (address - RAM_START) as usize;
                             sram.read(ram_addr)
                         } else {
-                            error!("Attempted to read from RAM but RAM is not available");
+                            info!("Attempted to read from RAM but RAM is not available");
                             INVALID_READ_VALUE
                         }
                     } else {
-                        error!("Attempted to read from RAM/RTC but neither is available");
+                        info!("Attempted to read from RAM/RTC but neither is available");
                         INVALID_READ_VALUE
                     }
                 } else {
@@ -345,7 +345,7 @@ impl MBC for MBC3 {
                 }
             },
             _ => {
-                error!("Invalid MBC3 address for read: {:04X}", address);
+                info!("Invalid MBC3 address for read: {:04X}", address);
                 INVALID_READ_VALUE
             }
         }
@@ -394,7 +394,7 @@ impl MBC for MBC3 {
                 }
             },
             _ => {
-                error!("Invalid MBC3 address for write: {:04X} = {:02X}", address, value);
+                info!("Invalid MBC3 address for write: {:04X} = {:02X}", address, value);
             }
         }
     }
@@ -423,7 +423,7 @@ impl MBC for MBC3 {
                 match sram.save() {
                     Ok(_) => {},
                     Err(e) => {
-                        error!("Error saving SRAM: {}", e);
+                        info!("Error saving SRAM: {}", e);
                         return Err(e);
                     }
                 }
@@ -436,7 +436,7 @@ impl MBC for MBC3 {
                 match rtc.save() {
                     Ok(_) => {},
                     Err(e) => {
-                        error!("Error saving RTC data: {}", e);
+                        info!("Error saving RTC data: {}", e);
                         return Err(e);
                     }
                 }

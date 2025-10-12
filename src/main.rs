@@ -28,13 +28,22 @@ const KILOBYTES_CONVERSION: usize = 1024;
 const BOOT_ROM_SIZE: usize = 256;
 
 fn main() {
+    let emulator_config = EmulatorConfig::new();
+    
+    let logging_level = match emulator_config.logging_level.as_str() {
+        "DEBUG" => log::LevelFilter::Debug,
+        "ERROR" => log::LevelFilter::Error,
+        "INFO" => log::LevelFilter::Info,
+        _ => log::LevelFilter::Error,
+    };
+    
     let _ = env_logger::builder()
         .target(env_logger::Target::Stdout)
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(logging_level)
         .is_test(false)
         .try_init();
 
-    let emulator_config = EmulatorConfig::new();
+    
     let boot_rom = match emulator_config.boot_rom {
         Some(ref path) => {
             Some(load_boot_rom(path.to_string()))

@@ -38,6 +38,7 @@ Configuration options:
 - `boot_rom`: Path to the boot ROM file (optional).
 - `scale_factor`: Integer scaling factor for the display (default is 2).
 - `key_bindings`: Object mapping emulator controls to keyboard keys.
+- `logging_level`: Logging verbosity level (e.g., "DEBUG", "INFO", "ERROR").
 
 ### Example configuration:
 ```json
@@ -53,7 +54,8 @@ Configuration options:
     "b": "S",
     "start": "Return",
     "select": "Backspace"
-  }
+  },
+  "logging_level": "DEBUG"
 }
 ```
 

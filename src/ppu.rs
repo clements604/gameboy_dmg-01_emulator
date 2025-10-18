@@ -82,6 +82,7 @@ const OAM_MODE_TICKS: u16 = 80;
 const VRAM_MODE_TICKS: u16 = 172;
 const HBLANK_MODE_TICKS: u16 = 204;
 const LAST_VISIBLE_SCANLINE: u8 = 143;  // Last visible scanline before VBlank
+const BG_MAP_WIDTH: usize = 32;
 
 pub struct Ppu {
     oam_ram: [u8; OAM_SIZE],
@@ -514,22 +515,35 @@ impl Ppu {
     }
 
     fn render_background_scanline(&mut self, line: &mut [u32; X_RES]) {
-        if self.is_background_enabled() {
-            let tile_map = self.get_bg_tile_map();
-            for x in 0..X_RES {
-                let global_x = (x + self.scroll_x as usize) % BG_MAP_SIZE_PIXELS;
-                let global_y = (self.ly as usize + self.scroll_y as usize) % BG_MAP_SIZE_PIXELS;
+        if !self.is_background_enabled() {
+            return;
+        }
 
-                let tile_x = global_x / TILE_WIDTH;
-                let tile_y = global_y / TILE_HEIGHT_EIGHT;
-                let tile_index = tile_map[tile_y * 32 + tile_x];
-                let tile = self.get_tile_data(tile_index);
+        let tile_map = self.get_bg_tile_map();
+        
+        let global_y = (self.ly as usize + self.scroll_y as usize) & (BG_MAP_SIZE_PIXELS - 1);
+        let global_x_start = self.scroll_x as usize;
 
-                let row = global_y % TILE_HEIGHT_EIGHT;
-                let col = global_x % TILE_WIDTH;
+        let tile_y = global_y / TILE_HEIGHT_EIGHT;
+        let row = global_y % TILE_HEIGHT_EIGHT;
+
+        let mut x = 0;
+        while x < X_RES {
+            let global_x = (global_x_start + x) & (BG_MAP_SIZE_PIXELS - 1);
+            let tile_x = global_x / TILE_WIDTH;
+            let col_start = global_x % TILE_WIDTH;
+            
+            let tile_index = tile_map[tile_y * BG_MAP_WIDTH + tile_x];
+            let tile = self.get_tile_data(tile_index);
+            
+            let pixels_in_tile = (TILE_WIDTH - col_start).min(X_RES - x);
+            for col_offset in 0..pixels_in_tile {
+                let col = col_start + col_offset;
                 let pixel = tile.get_pixel(row, col);
-                line[x] = self.lcd.get_bg_colour(pixel);
+                line[x + col_offset] = self.lcd.get_bg_colour(pixel);
             }
+
+            x += pixels_in_tile;
         }
     }
 
@@ -541,8 +555,7 @@ impl Ppu {
         let current_scanline = self.ly as isize;
         let sprite_height = self.sprite_size() as isize;
         let sprite_data = self.get_sprites();
-
-        // Collect sprites that intersect with current scanline (max 10)
+        
         let mut sprites_to_render = Vec::with_capacity(MAX_SPRITES_PER_LINE);
         for sprite in sprite_data.iter() {
             let screen_y = sprite.y as isize - SPRITE_Y_OFFSET;
@@ -553,150 +566,120 @@ impl Ppu {
                 }
             }
         }
+        
+        sprites_to_render.sort_by_key(|s| s.x);
+        
+        let mut pixel_drawn = [false; X_RES];
+        
+        for sprite in sprites_to_render.iter() {
+            let screen_x = sprite.x as isize - SPRITE_X_OFFSET;
+            let screen_y = sprite.y as isize - TILE_SIZE_BYTES as isize;
+            
+            let mut sprite_row = current_scanline - screen_y;
+            if sprite.flags.contains(OAMFlags::Y_FLIP) {
+                sprite_row = (sprite_height - 1) - sprite_row;
+            }
 
-        // Process each pixel in the scanline
-        for x in 0..X_RES {
-            let mut best_sprite: Option<(&Sprite, u32)> = None; // (sprite, color)
+            let sprite_tile_data = self.get_sprite_data(sprite);
+            let sprite_palette_index = if sprite.flags.contains(OAMFlags::DMG_PALETTE) { 1 } else { 0 };
+            
+            let pixels = self.get_sprite_row_pixels(&sprite_tile_data, sprite_row as usize);
 
-            // Check all sprites for this x position to find the highest priority one
-            for sprite in &sprites_to_render {
-                let screen_x = sprite.x as isize - SPRITE_X_OFFSET;
-                let sprite_x_pos = x as isize - screen_x;
+            let behind_bg = sprite.flags.contains(OAMFlags::PRIORITY);
 
-                if sprite_x_pos < 0 || sprite_x_pos >= 8 {
+            for col in 0..TILE_WIDTH as isize {
+                let x = screen_x + col;
+                if x < 0 || x >= X_RES as isize {
                     continue;
                 }
 
-                let screen_y = sprite.y as isize - TILE_SIZE_BYTES as isize;
-                let mut sprite_row = current_scanline - screen_y;
-                let mut sprite_col = sprite_x_pos;
-
-                // Apply flips
-                if sprite.flags.contains(OAMFlags::Y_FLIP) {
-                    sprite_row = (sprite_height - 1) - sprite_row;
-                }
-
-                if sprite.flags.contains(OAMFlags::X_FLIP) {
-                    sprite_col = MAX_PIXEL_INDEX as isize - sprite_col;
-                }
-
-                let sprite_tile_data = self.get_sprite_data(sprite);
-                let sprite_pixel =
-                    sprite_tile_data.get_pixel(sprite_row as usize, sprite_col as usize);
-
-                // Skip transparent pixels
-                if sprite_pixel == 0 {
+                let x_idx = x as usize;
+                
+                if pixel_drawn[x_idx] {
                     continue;
                 }
 
-                let sprite_palette_index = if sprite.flags.contains(OAMFlags::DMG_PALETTE) {
-                    1
+                let sprite_col = if sprite.flags.contains(OAMFlags::X_FLIP) {
+                    MAX_PIXEL_INDEX as usize - col as usize
                 } else {
-                    0
+                    col as usize
                 };
-                let sprite_color = self
-                    .lcd
-                    .get_sprite_colour(sprite_palette_index, sprite_pixel);
 
-                // Determine if this sprite should be drawn based on priority
-                let should_draw = if sprite.flags.contains(OAMFlags::PRIORITY) {
-                    // Behind background - only draw if background is transparent
-                    line[x] == LIGHTEST_GREEN
+                let pixel_value = pixels[sprite_col];
+
+                if pixel_value == 0 {
+                    continue;
+                }
+
+                let should_draw = if behind_bg {
+                    line[x_idx] == LIGHTEST_GREEN
                 } else {
-                    // Above background - always draw
                     true
                 };
 
                 if should_draw {
-                    // Check if this sprite has higher priority than current best
-                    let has_higher_priority = match &best_sprite {
-                        None => true,
-                        Some((best, _)) => {
-                            // X-coordinate priority: smaller X wins
-                            sprite.x < best.x
-                        }
-                    };
-
-                    if has_higher_priority {
-                        best_sprite = Some((sprite, sprite_color));
-                    }
+                    let color = self.lcd.get_sprite_colour(sprite_palette_index, pixel_value);
+                    line[x_idx] = color;
+                    pixel_drawn[x_idx] = true;
                 }
-            }
-
-            // Draw the highest priority sprite (if any)
-            if let Some((_, color)) = best_sprite {
-                line[x] = color;
             }
         }
     }
     fn render_window_scanline(&mut self, line: &mut [u32; X_RES]) {
         let window_x = self.lcd.window_x.saturating_sub(WINDOW_X_OFFSET);
-
-        // Early return if window is not visible
+        
         if !self.window_enabled() || self.ly < self.lcd.window_y || self.lcd.window_x > MAX_WINDOW_X {
             return;
         }
-
-        // Calculate window line (Y position within the window)
+        
         let window_line = self.window_line_counter;
-        let w_tile_y = (window_line / TILE_HEIGHT_EIGHT as u8) as u16; // Which tile row in the window we're on
-
-        // Get window tile map base address (LCDC bit 6)
-        let tile_map_base: u16 = if self.lcdc & LCDC_WINDOW_MAP != 0 {
-            TILE_MAP_1_START // Window Tile Map at 0x9C00-0x9FFF
-        } else {
-            TILE_MAP_0_START // Window Tile Map at 0x9800-0x9BFF
-        };
-
-        // Get addressing mode (LCDC bit 4)
-        let data_area_is_8800 = self.lcdc & LCDC_TILE_DATA_SELECT == 0;
-
-        // Calculate tile row line we're rendering (0-7)
+        let w_tile_y = (window_line / TILE_HEIGHT_EIGHT as u8) as u16;
         let tile_line = window_line % TILE_HEIGHT_EIGHT as u8;
 
-        // Render window pixels for this scanline
-        for screen_x in window_x..X_RES as u8 {
-            // Calculate the offset into the window tile map
-            let tile_map_offset =
-                ((screen_x as u16 - window_x as u16) / TILE_WIDTH as u16) + (w_tile_y * TILES_PER_LINE);
+        let tile_map_base: u16 = if self.lcdc & LCDC_WINDOW_MAP != 0 {
+            TILE_MAP_1_START
+        } else {
+            TILE_MAP_0_START
+        };
 
-            // Get the tile ID from the window tile map
+        let data_area_is_8800 = self.lcdc & LCDC_TILE_DATA_SELECT == 0;
+        let base_address: u16 = if data_area_is_8800 {
+            SIGNED_TILE_START
+        } else {
+            UNSIGNED_TILE_START
+        };
+        
+        let mut screen_x = window_x as usize;
+        while screen_x < X_RES {
+            let window_pixel_x = screen_x - window_x as usize;
+            let tile_map_offset = (window_pixel_x / TILE_WIDTH) as u16 + (w_tile_y * TILES_PER_LINE);
+            
             let mut tile_id = self.vram_read(tile_map_base + tile_map_offset);
-
-            // Adjust tile ID for 0x8800 addressing mode
             if data_area_is_8800 {
                 tile_id = tile_id.wrapping_add(SIGNED_TILE_OFFSET);
             }
 
-            // Calculate base address for tile data
-            let base_address: u16 = if data_area_is_8800 {
-                SIGNED_TILE_START
-            } else {
-                UNSIGNED_TILE_START
-            };
-
-            // Calculate address of this specific row of the tile
             let tile_address = base_address
                 + (tile_id as u16 * TILE_SIZE_BYTES as u16)
                 + (tile_line as u16 * BIT_PLANE_SIZE as u16);
 
-            // Read the pixel data for this row
             let tile_low = self.vram_read(tile_address);
             let tile_high = self.vram_read(tile_address + 1);
+            
+            let pixel_start = window_pixel_x % TILE_WIDTH;
+            let pixels_to_render = (TILE_WIDTH - pixel_start).min(X_RES - screen_x);
 
-            // Calculate which pixel of the tile we need (0-7)
-            let pixel_x = (screen_x as u16 - window_x as u16) % TILE_WIDTH as u16;
+            for pixel_offset in 0..pixels_to_render {
+                let pixel_x = pixel_start + pixel_offset;
+                let pixel_bit_position = MAX_PIXEL_INDEX - pixel_x as u8;
+                let colour_bit_0 = (tile_low >> pixel_bit_position) & COLOR_BIT_MASK;
+                let colour_bit_1 = (tile_high >> pixel_bit_position) & COLOR_BIT_MASK;
+                let colour_id = (colour_bit_1 << COLOR_HIGH_BIT_SHIFT) | colour_bit_0;
 
-            // Get the color bits
-            let pixel_bit_position = MAX_PIXEL_INDEX - (pixel_x as u8);
-            let colour_bit_0 = (tile_low >> pixel_bit_position) & COLOR_BIT_MASK;
-            let colour_bit_1 = (tile_high >> pixel_bit_position) & COLOR_BIT_MASK;
-            let colour_id = (colour_bit_1 << COLOR_HIGH_BIT_SHIFT) | colour_bit_0;
+                line[screen_x + pixel_offset] = self.lcd.get_bg_colour(colour_id);
+            }
 
-            // Get the color and render
-            let colour = self.lcd.get_bg_colour(colour_id);
-
-            line[screen_x as usize] = colour;
+            screen_x += pixels_to_render;
         }
     }
     fn render_scanline(&mut self) {
@@ -741,6 +724,13 @@ impl Ppu {
         sprites
     }
 
+    fn get_sprite_row_pixels(&self, sprite_tile: &TileData, row: usize) -> [u8; 8] {
+        let mut pixels = [0u8; 8];
+        for col in 0..8 {
+            pixels[col] = sprite_tile.get_pixel(row, col);
+        }
+        pixels
+    }
     /*
     SPRITE DISPLAY END
     */

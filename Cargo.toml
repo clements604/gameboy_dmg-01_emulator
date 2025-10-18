@@ -1,6 +1,6 @@
 [package]
 name = "gameboy-emulator"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Joshua Clements"]
 description = "A Game Boy DMG emulator written in Rust"

@@ -21,7 +21,7 @@ use log::{debug, error, info};
 use rfd::FileDialog;
 
 use crate::rom::ROM;
-use crate::emulator_config::EmulatorConfig;
+use crate::emulator_config::{EmulatorConfig, LoggingLevel};
 use crate::emulator::Emulator;
 
 const KILOBYTES_CONVERSION: usize = 1024;
@@ -29,12 +29,11 @@ const BOOT_ROM_SIZE: usize = 256;
 
 fn main() {
     let emulator_config = EmulatorConfig::new();
-    
-    let logging_level = match emulator_config.logging_level.as_str() {
-        "DEBUG" => log::LevelFilter::Debug,
-        "ERROR" => log::LevelFilter::Error,
-        "INFO" => log::LevelFilter::Info,
-        _ => log::LevelFilter::Error,
+
+    let logging_level = match emulator_config.logging_level {
+        LoggingLevel::DEBUG => log::LevelFilter::Debug,
+        LoggingLevel::ERROR => log::LevelFilter::Error,
+        LoggingLevel::INFO => log::LevelFilter::Info,
     };
     
     let _ = env_logger::builder()

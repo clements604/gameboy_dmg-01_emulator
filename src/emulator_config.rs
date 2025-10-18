@@ -15,7 +15,6 @@ const A_KEY: &str = "a";
 const B_KEY: &str = "b";
 const START_KEY: &str = "start";
 const SELECT_KEY: &str = "select";
-const DEFAULT_LOGGING_LEVEL: &str = "ERROR";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EmulatorConfig {
@@ -26,7 +25,7 @@ pub struct EmulatorConfig {
         serialize_with = "serialize_keycode_map"
     )]
     pub key_bindings: HashMap<String, Keycode>,
-    pub logging_level: String,
+    pub logging_level: LoggingLevel,
 }
 
 #[derive(Debug)]
@@ -57,7 +56,7 @@ impl Default for EmulatorConfig {
             boot_rom: None,
             scale_factor: DEFAULT_SCALE_FACTOR,
             key_bindings,
-            logging_level: DEFAULT_LOGGING_LEVEL.to_string(),
+            logging_level: LoggingLevel::ERROR,
         }
     }
 

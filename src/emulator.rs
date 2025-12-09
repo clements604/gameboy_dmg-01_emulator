@@ -1,13 +1,10 @@
 use std::time::{Duration, Instant};
 use log::{debug, error};
-use sdl2::keyboard::Keycode;
 use crate::cpu;
 use crate::emulator_config::EmulatorConfig;
 use crate::display::MainDisplay;
 use crate::memory_bus::MemoryBus;
 use crate::rom::ROM;
-use crate::interrupts::Interrupt::JOYPAD;
-use crate::joypad::Button;
 
 const INPUT_CHECK_INTERVAL: u32 = 16;
 const INPUT_PROCESS_INTERVAL: u32 = 2;
@@ -17,26 +14,23 @@ const AUTOSAVE_INTERVAL_SECS: u64 = 5;
 const BOOT_ROM_START: u16 = 0x0000;
 const CART_ROM_START: u16 = 0x0100;
 
+use std::collections::HashMap;
+use minifb::Key;
+
 pub struct Emulator {
     cpu: cpu::CPU,
-
     memory_bus: MemoryBus,
-
     main_display: MainDisplay,
-
     previous_frame: u32,
-
     last_time: Instant, // Used for FPS calculation
     frame_count: u32, // Used for FPS calculation
     input_check_counter: u32, // Counter for input checking
-
     // Frame rate cap variables
     target_frame_time: Duration,
     last_frame_time: Instant,
     pub(crate) running: bool,
     last_save_time: Instant,
-
-    key_bindings: std::collections::HashMap<String, Keycode>,
+    key_bindings: HashMap<String, Key>,
 }
 
 impl Emulator {
@@ -44,8 +38,8 @@ impl Emulator {
 
         let mut cpu = cpu::CPU::new();
         cpu.pc = if boot_rom.is_some() { BOOT_ROM_START } else { CART_ROM_START };
-        let main_display = MainDisplay::new(emulator_config.scale_factor, &emulator_config.key_bindings);
-
+        let main_display = MainDisplay::new(emulator_config.scale_factor as usize);
+        let key_bindings = emulator_config.key_bindings.clone();
         Emulator {
             cpu,
             memory_bus: MemoryBus::new(boot_rom, &rom),
@@ -59,8 +53,7 @@ impl Emulator {
             last_frame_time: Instant::now(),
             running: true,
             last_save_time: Instant::now(),
-
-            key_bindings: emulator_config.key_bindings,
+            key_bindings,
         }
     }
 
@@ -85,56 +78,26 @@ impl Emulator {
 
         // Process inputs every 2 cycles for responsiveness
         if self.input_check_counter % INPUT_PROCESS_INTERVAL == 0 {
-            let current_keys = self.main_display.get_pressed_keys();
+            let pressed_buttons = self.main_display.get_pressed_buttons(&self.key_bindings);
             let mut joypad = self.memory_bus.dmg_io.joypad;
-
-            // Store the selection bits before modifying the joypad
-            let select_buttons = joypad.select_buttons;
-            let select_dpad = joypad.select_dpad;
 
             // Reset all buttons to released state
             for button in [
-                Button::A,
-                Button::B,
-                Button::Start,
-                Button::Select,
-                Button::Up,
-                Button::Down,
-                Button::Left,
-                Button::Right,
+                crate::joypad::Button::A,
+                crate::joypad::Button::B,
+                crate::joypad::Button::Start,
+                crate::joypad::Button::Select,
+                crate::joypad::Button::Up,
+                crate::joypad::Button::Down,
+                crate::joypad::Button::Left,
+                crate::joypad::Button::Right,
             ] {
                 joypad.button_released(button);
             }
 
-            let mut pressed = false;
-
-            let button_mappings = [
-                ("up", Button::Up),
-                ("down", Button::Down),
-                ("left", Button::Left),
-                ("right", Button::Right),
-                ("a", Button::A),
-                ("b", Button::B),
-                ("start", Button::Start),
-                ("select", Button::Select),
-            ];
-
-            for key in current_keys {
-                for (binding_name, button) in &button_mappings {
-                    if Some(key) == self.key_bindings.get(*binding_name) {
-                        joypad.button_pressed(*button);
-                        pressed = true;
-                    }
-                }
-            }
-
-            // Restore the selection bits after updating button states
-            joypad.select_buttons = select_buttons;
-            joypad.select_dpad = select_dpad;
-
-            // Trigger interrupt if state changed
-            if pressed {
-                self.memory_bus.trigger_interrupt(JOYPAD);
+            // Press currently pressed buttons
+            for button in pressed_buttons {
+                joypad.button_pressed(button);
             }
 
             self.memory_bus.dmg_io.joypad = joypad;
@@ -160,7 +123,7 @@ impl Emulator {
 
         if self.previous_frame != self.memory_bus.dmg_io.ppu.current_frame {
             // Update display with the new frame buffer
-            self.main_display.update(self.memory_bus.dmg_io.ppu.framebuffer.clone());
+            self.main_display.update(&self.memory_bus.dmg_io.ppu.framebuffer);
 
             self.frame_count += 1;  // Increment frame count
 

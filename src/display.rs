@@ -1,161 +1,77 @@
-use std::collections::HashMap;
+use minifb::{Window, WindowOptions, Key};
 use log::error;
-use sdl2::event::Event;
-use sdl2::keyboard::{Keycode, Scancode};
-use sdl2::pixels::Color;
-use sdl2::render::Canvas;
-use sdl2::video::Window;
 
 pub const SCREEN_WIDTH: usize = 160;
 pub const SCREEN_HEIGHT: usize = 144;
-
-// Color bit shifts
 const RED_SHIFT: u32 = 16;
 const GREEN_SHIFT: u32 = 8;
 const COLOR_MASK: u32 = 0xFF;
-
-// Window scaling
 const DEFAULT_WINDOW_TITLE: &str = "Gameboy DMG Emulator - ESC to exit";
 
-// RGB color constants
-const BLACK: Color = Color::RGB(0, 0, 0);
+use std::collections::HashMap;
+use crate::joypad::Button;
 
 pub struct MainDisplay {
-    pub canvas: Canvas<Window>,
-    pub event_pump: sdl2::EventPump,
-    current_keys: Vec<Keycode>,
-    key_state_changed: bool,
-    tracked_keys: Vec<Keycode>,
+    pub window: Window,
+    pub buffer: Vec<u32>,
 }
 
 impl MainDisplay {
-    pub fn new(scale_factor: u32, key_bindings: &HashMap<String, Keycode>) -> MainDisplay {
-
-        let mut current_key_states = HashMap::new();
-        let tracked_keys: Vec<Keycode> = key_bindings.values().copied().collect();
-
-        // Initialize keys we care about
-        current_key_states.insert(Keycode::Up, false);
-        current_key_states.insert(Keycode::Down, false);
-        current_key_states.insert(Keycode::Left, false);
-        current_key_states.insert(Keycode::Right, false);
-        current_key_states.insert(Keycode::A, false);
-        current_key_states.insert(Keycode::B, false);
-        current_key_states.insert(Keycode::Return, false);
-        current_key_states.insert(Keycode::Backspace, false);
-        
-        let sdl_context = sdl2::init().unwrap_or_else(|e| {
-            panic!("SDL initialization failed: {}", e);
-        });
-
-        let video_subsystem = sdl_context.video().unwrap_or_else(|e| {
-            panic!("Video subsystem initialization failed: {}", e);
-        });
-        
-        let window = video_subsystem
-            .window(
-                DEFAULT_WINDOW_TITLE,
-                (SCREEN_WIDTH as u32) * scale_factor,
-                (SCREEN_HEIGHT as u32) * scale_factor,
-            )
-            .position_centered()
-            .build()
-            .unwrap_or_else(|e| {
-                panic!("Window creation failed: {}", e);
-            });
-
-        let mut canvas = window.into_canvas().build().unwrap_or_else(|e| {
-            panic!("Canvas creation failed: {}", e);
-        });
-
-        // Set logical size to maintain correct aspect ratio with scaling
-        canvas
-            .set_logical_size(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32)
-            .unwrap_or_else(|e| {
-                panic!("Setting logical size failed: {}", e);
-            });
-
-        let event_pump = sdl_context.event_pump().unwrap_or_else(|e| {
-            panic!("Event pump creation failed: {}", e);
-        });
-
-        MainDisplay {
-            canvas,
-            event_pump,
-            current_keys: Vec::new(),
-            key_state_changed: false,
-            tracked_keys,
-        }
-    }
-
-    pub fn update(&mut self, tiles: Vec<u32>) {
-        // Clear the screen
-        self.canvas.set_draw_color(BLACK);
-        self.canvas.clear();
-
-        // Render tiles
-        for y in 0..SCREEN_HEIGHT {
-            for x in 0..SCREEN_WIDTH {
-                let index = y * SCREEN_WIDTH + x;
-                if index < tiles.len() {
-                    let colour = get_sdl_colour(tiles[index]);
-                    self.canvas.set_draw_color(colour);
-                    self.canvas.draw_point((x as i32, y as i32)).unwrap_or_else(|e| {
-                        error!("Failed to draw point: {}", e);
-                    });
+    /// Returns a Vec of pressed Game Boy buttons based on the provided key_bindings
+    pub fn get_pressed_buttons(&self, key_bindings: &HashMap<String, Key>) -> Vec<Button> {
+        let mut pressed = Vec::new();
+        let keys = self.window.get_keys();
+        for (name, key) in key_bindings.iter() {
+            if keys.contains(key) {
+                match name.as_str() {
+                    "a" => pressed.push(Button::A),
+                    "b" => pressed.push(Button::B),
+                    "start" => pressed.push(Button::Start),
+                    "select" => pressed.push(Button::Select),
+                    "up" => pressed.push(Button::Up),
+                    "down" => pressed.push(Button::Down),
+                    "left" => pressed.push(Button::Left),
+                    "right" => pressed.push(Button::Right),
+                    _ => {},
                 }
             }
         }
-        
-        self.canvas.present();
+        pressed
+    }
+
+    pub fn new(scale_factor: usize) -> MainDisplay {
+        let width = SCREEN_WIDTH * scale_factor;
+        let height = SCREEN_HEIGHT * scale_factor;
+        let window = Window::new(
+            DEFAULT_WINDOW_TITLE,
+            width,
+            height,
+            WindowOptions {
+                resize: false,
+                scale: minifb::Scale::X1,
+                ..WindowOptions::default()
+            },
+        ).unwrap_or_else(|e| panic!("Window creation failed: {}", e));
+        let buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
+        MainDisplay { window, buffer }
+    }
+
+    pub fn update(&mut self, tiles: &[u32]) {
+        for (i, &pixel) in tiles.iter().enumerate().take(self.buffer.len()) {
+            self.buffer[i] = pixel;
+        }
+        self.window.update_with_buffer(&self.buffer, SCREEN_WIDTH, SCREEN_HEIGHT).unwrap_or_else(|e| {
+            error!("Failed to update window buffer: {}", e);
+        });
     }
 
     pub fn process_events(&mut self) -> bool {
-        false;
-        let mut running = true;
-
-        // Process window events (quit, etc.)
-        for event in self.event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } => running = false,
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => running = false,
-                _ => {}
-            }
-        }
-
-        // Get current keyboard state (more reliable than tracking events)
-        let keyboard_state = self.event_pump.keyboard_state();
-        let mut new_keys = Vec::new();
-
-        // Check each key we care about
-        for keycode in &self.tracked_keys {
-            if let Some(scancode) = Scancode::from_keycode(*keycode) {
-                if keyboard_state.is_scancode_pressed(scancode) {
-                    new_keys.push(*keycode);
-                }
-            }
-        }
-
-        // Check if key state has changed
-        self.key_state_changed = new_keys != self.current_keys;
-
-        // Update current keys
-        self.current_keys = new_keys;
-
-        running
+        self.window.is_open() && !self.window.is_key_down(minifb::Key::Escape)
     }
-    
-    pub fn get_pressed_keys(&self) -> &Vec<Keycode> {
-        &self.current_keys
-    }
-
 }
+// ...existing code...
 
-pub fn get_sdl_colour(colour_u32: u32) -> Color {
-    // Extract RGB components from the u32 value
-    let r = ((colour_u32 >> RED_SHIFT) & 0xFF) as u8;
-    let g = ((colour_u32 >> GREEN_SHIFT) & 0xFF) as u8;
-    let b = (colour_u32 & COLOR_MASK) as u8;
-
-    Color::RGB(r, g, b)
+#[allow(dead_code)]
+pub fn rgb_u32(r: u8, g: u8, b: u8) -> u32 {
+    ((r as u32) << RED_SHIFT) | ((g as u32) << GREEN_SHIFT) | (b as u32)
 }

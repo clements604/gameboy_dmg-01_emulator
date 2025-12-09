@@ -1,31 +1,93 @@
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use log::error;
-use sdl2::keyboard::Keycode;
-use std::collections::HashMap;
 
 const DEFAULT_SCALE_FACTOR: u32 = 2;
 const CONFIG_FILE_PATH: &str = "./config.json";
-const UP_KEY: &str = "up";
-const DOWN_KEY: &str = "down";
-const LEFT_KEY: &str = "left";
-const RIGHT_KEY: &str = "right";
-const A_KEY: &str = "a";
-const B_KEY: &str = "b";
-const START_KEY: &str = "start";
-const SELECT_KEY: &str = "select";
+
+use minifb::Key;
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EmulatorConfig {
     pub boot_rom: Option<String>,
     pub scale_factor: u32,
-    #[serde(
-        deserialize_with = "deserialize_keycode_map",
-        serialize_with = "serialize_keycode_map"
-    )]
-    pub key_bindings: HashMap<String, Keycode>,
+    #[serde(default, deserialize_with = "deserialize_keymap", serialize_with = "serialize_keymap")]
+    pub key_bindings: HashMap<String, Key>,
     pub logging_level: LoggingLevel,
+}
+// Custom (de)serializer for minifb::Key
+use serde::{Deserializer, Serializer};
+fn key_from_str(s: &str) -> Option<Key> {
+    use minifb::Key::*;
+    match s.to_ascii_lowercase().as_str() {
+        "a" => Some(A),
+        "b" => Some(B),
+        "c" => Some(C),
+        "d" => Some(D),
+        "e" => Some(E),
+        "f" => Some(F),
+        "g" => Some(G),
+        "h" => Some(H),
+        "i" => Some(I),
+        "j" => Some(J),
+        "k" => Some(K),
+        "l" => Some(L),
+        "m" => Some(M),
+        "n" => Some(N),
+        "o" => Some(O),
+        "p" => Some(P),
+        "q" => Some(Q),
+        "r" => Some(R),
+        "s" => Some(S),
+        "t" => Some(T),
+        "u" => Some(U),
+        "v" => Some(V),
+        "w" => Some(W),
+        "x" => Some(X),
+        "y" => Some(Y),
+        "z" => Some(Z),
+        "up" => Some(Up),
+        "down" => Some(Down),
+        "left" => Some(Left),
+        "right" => Some(Right),
+        "space" => Some(Space),
+        "return" | "enter" => Some(Enter),
+        "backspace" => Some(Backspace),
+        "escape" => Some(Escape),
+        _ => None,
+    }
+}
+
+fn key_to_str(key: &Key) -> &'static str {
+    use minifb::Key::*;
+    match key {
+        A => "A", B => "B", C => "C", D => "D", E => "E", F => "F", G => "G", H => "H", I => "I", J => "J", K => "K", L => "L", M => "M", N => "N", O => "O", P => "P", Q => "Q", R => "R", S => "S", T => "T", U => "U", V => "V", W => "W", X => "X", Y => "Y", Z => "Z",
+        Up => "Up", Down => "Down", Left => "Left", Right => "Right", Space => "Space", Enter => "Enter", Backspace => "Backspace", Escape => "Escape",
+        _ => "Unknown"
+    }
+}
+
+fn deserialize_keymap<'de, D>(deserializer: D) -> Result<HashMap<String, Key>, D::Error>
+where D: Deserializer<'de> {
+    let raw: HashMap<String, String> = HashMap::deserialize(deserializer)?;
+    let mut out = HashMap::new();
+    for (k, v) in raw {
+        let key = key_from_str(&v).ok_or_else(|| serde::de::Error::custom(format!("Invalid key: {}", v)))?;
+        out.insert(k, key);
+    }
+    Ok(out)
+}
+
+fn serialize_keymap<S>(map: &HashMap<String, Key>, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer {
+    use serde::ser::SerializeMap;
+    let mut m = serializer.serialize_map(Some(map.len()))?;
+    for (k, v) in map {
+        m.serialize_entry(k, key_to_str(v))?;
+    }
+    m.end()
 }
 
 #[derive(Debug)]
@@ -44,14 +106,14 @@ pub enum LoggingLevel {
 impl Default for EmulatorConfig {
     fn default() -> Self {
         let mut key_bindings = HashMap::new();
-        key_bindings.insert(UP_KEY.to_string(), Keycode::Up);
-        key_bindings.insert(DOWN_KEY.to_string(), Keycode::Down);
-        key_bindings.insert(LEFT_KEY.to_string(), Keycode::Left);
-        key_bindings.insert(RIGHT_KEY.to_string(), Keycode::Right);
-        key_bindings.insert(A_KEY.to_string(), Keycode::A);
-        key_bindings.insert(B_KEY.to_string(), Keycode::S);
-        key_bindings.insert(START_KEY.to_string(), Keycode::Return);
-        key_bindings.insert(SELECT_KEY.to_string(), Keycode::Backspace);
+        key_bindings.insert("up".to_string(), Key::Up);
+        key_bindings.insert("down".to_string(), Key::Down);
+        key_bindings.insert("left".to_string(), Key::Left);
+        key_bindings.insert("right".to_string(), Key::Right);
+        key_bindings.insert("a".to_string(), Key::A);
+        key_bindings.insert("b".to_string(), Key::S);
+        key_bindings.insert("start".to_string(), Key::Enter);
+        key_bindings.insert("select".to_string(), Key::Backspace);
         Self {
             boot_rom: None,
             scale_factor: DEFAULT_SCALE_FACTOR,
@@ -106,34 +168,4 @@ impl EmulatorConfig {
             ConfigError::IoError
         })
     }
-}
-fn deserialize_keycode_map<'de, D>( deserializer: D) -> Result<HashMap<String, Keycode>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let string_map: HashMap<String, String> = HashMap::deserialize(deserializer)?;
-
-    string_map
-        .into_iter()
-        .map(|(key, value)| {
-            Keycode::from_name(&value)
-                .map(|keycode| (key, keycode))
-                .ok_or_else(|| serde::de::Error::custom(format!("Invalid keycode: {}", value)))
-        })
-        .collect()
-}
-
-fn serialize_keycode_map<S>(
-    map: &HashMap<String, Keycode>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    use serde::ser::SerializeMap;
-    let mut map_ser = serializer.serialize_map(Some(map.len()))?;
-    for (k, v) in map {
-        map_ser.serialize_entry(k, &v.name())?;
-    }
-    map_ser.end()
 }

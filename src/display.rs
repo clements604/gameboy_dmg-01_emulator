@@ -3,6 +3,7 @@ use log::error;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
+use sdl2::rect::Point;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
@@ -26,6 +27,9 @@ pub struct MainDisplay {
     current_keys: Vec<Keycode>,
     key_state_changed: bool,
     tracked_keys: Vec<Keycode>,
+    // Reused every frame to group pixels by colour so they can be drawn with a
+    // single `draw_points` call per colour instead of one `draw_point` call per pixel.
+    points_by_colour: HashMap<u32, Vec<Point>>,
 }
 
 impl MainDisplay {
@@ -51,7 +55,13 @@ impl MainDisplay {
         let video_subsystem = sdl_context.video().unwrap_or_else(|e| {
             panic!("Video subsystem initialization failed: {}", e);
         });
-        
+
+        // On macOS, a plain (non app-bundled) executable has no Info.plist, so
+        // without this it launches with NSApplicationActivationPolicyProhibited:
+        // no Dock icon, and the window is created but never becomes key/frontmost
+        // (it stays behind whatever launched it, e.g. a terminal or editor).
+        macos_activate_app();
+
         let window = video_subsystem
             .window(
                 DEFAULT_WINDOW_TITLE,
@@ -75,9 +85,14 @@ impl MainDisplay {
                 panic!("Setting logical size failed: {}", e);
             });
 
-        let event_pump = sdl_context.event_pump().unwrap_or_else(|e| {
+        let mut event_pump = sdl_context.event_pump().unwrap_or_else(|e| {
             panic!("Event pump creation failed: {}", e);
         });
+
+        // Pump once so Cocoa finishes processing the activation request above
+        // before we ask the window to raise itself.
+        event_pump.pump_events();
+        canvas.window_mut().raise();
 
         MainDisplay {
             canvas,
@@ -85,6 +100,7 @@ impl MainDisplay {
             current_keys: Vec::new(),
             key_state_changed: false,
             tracked_keys,
+            points_by_colour: HashMap::new(),
         }
     }
 
@@ -93,20 +109,37 @@ impl MainDisplay {
         self.canvas.set_draw_color(BLACK);
         self.canvas.clear();
 
-        // Render tiles
+        // Group pixels by colour (the DMG palette only has 4 shades) so each
+        // colour can be drawn with a single `draw_points` call instead of one
+        // `draw_point` call per pixel. SDL2's hardware-accelerated renderers
+        // (notably macOS's Metal backend) have very high per-call overhead,
+        // so drawing 23,040 individual points tanks the frame rate.
+        for bucket in self.points_by_colour.values_mut() {
+            bucket.clear();
+        }
+
         for y in 0..SCREEN_HEIGHT {
             for x in 0..SCREEN_WIDTH {
                 let index = y * SCREEN_WIDTH + x;
                 if index < tiles.len() {
-                    let colour = get_sdl_colour(tiles[index]);
-                    self.canvas.set_draw_color(colour);
-                    self.canvas.draw_point((x as i32, y as i32)).unwrap_or_else(|e| {
-                        error!("Failed to draw point: {}", e);
-                    });
+                    self.points_by_colour
+                        .entry(tiles[index])
+                        .or_insert_with(Vec::new)
+                        .push(Point::new(x as i32, y as i32));
                 }
             }
         }
-        
+
+        for (&colour_value, points) in self.points_by_colour.iter() {
+            if points.is_empty() {
+                continue;
+            }
+            self.canvas.set_draw_color(get_sdl_colour(colour_value));
+            self.canvas.draw_points(points.as_slice()).unwrap_or_else(|e| {
+                error!("Failed to draw points: {}", e);
+            });
+        }
+
         self.canvas.present();
     }
 
@@ -159,3 +192,19 @@ pub fn get_sdl_colour(colour_u32: u32) -> Color {
 
     Color::RGB(r, g, b)
 }
+
+#[cfg(target_os = "macos")]
+fn macos_activate_app() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    app.activate();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_activate_app() {}

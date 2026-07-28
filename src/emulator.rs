@@ -9,9 +9,6 @@ use crate::rom::ROM;
 use crate::interrupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
 
-const INPUT_CHECK_INTERVAL: u32 = 16;
-const INPUT_PROCESS_INTERVAL: u32 = 2;
-const COUNTER_WRAP: u32 = 32;
 const FPS_60_MICROS: u64 = 16742;
 const AUTOSAVE_INTERVAL_SECS: u64 = 5;
 const BOOT_ROM_START: u16 = 0x0000;
@@ -28,7 +25,6 @@ pub struct Emulator {
 
     last_time: Instant, // Used for FPS calculation
     frame_count: u32, // Used for FPS calculation
-    input_check_counter: u32, // Counter for input checking
 
     // Frame rate cap variables
     target_frame_time: Duration,
@@ -53,7 +49,6 @@ impl Emulator {
             previous_frame: 0,
             last_time: Instant::now(),
             frame_count: 0,
-            input_check_counter: 0,
             // Set target frame time to ~16.67ms (60 FPS)
             target_frame_time: Duration::from_micros(FPS_60_MICROS),
             last_frame_time: Instant::now(),
@@ -65,83 +60,6 @@ impl Emulator {
     }
 
     pub fn cycle(&mut self) {
-        if self.input_check_counter % INPUT_CHECK_INTERVAL == 0 {
-            if !self.main_display.process_events() {
-                match self.memory_bus.mbc.as_mut() {
-                    Some(mbc) => {
-                        if ! mbc.dirty_sram() {
-                            self.running = false;
-                            std::process::exit(0);
-                        }
-                        else {
-                            error!("Emulator requested to stop but save SRAM is dirty, not stopping to prevent data loss");
-                        }
-                    },
-                    None => {},
-                }
-
-            }
-        }
-
-        // Process inputs every 2 cycles for responsiveness
-        if self.input_check_counter % INPUT_PROCESS_INTERVAL == 0 {
-            let current_keys = self.main_display.get_pressed_keys();
-            let mut joypad = self.memory_bus.dmg_io.joypad;
-
-            // Store the selection bits before modifying the joypad
-            let select_buttons = joypad.select_buttons;
-            let select_dpad = joypad.select_dpad;
-
-            // Reset all buttons to released state
-            for button in [
-                Button::A,
-                Button::B,
-                Button::Start,
-                Button::Select,
-                Button::Up,
-                Button::Down,
-                Button::Left,
-                Button::Right,
-            ] {
-                joypad.button_released(button);
-            }
-
-            let mut pressed = false;
-
-            let button_mappings = [
-                ("up", Button::Up),
-                ("down", Button::Down),
-                ("left", Button::Left),
-                ("right", Button::Right),
-                ("a", Button::A),
-                ("b", Button::B),
-                ("start", Button::Start),
-                ("select", Button::Select),
-            ];
-
-            for key in current_keys {
-                for (binding_name, button) in &button_mappings {
-                    if Some(key) == self.key_bindings.get(*binding_name) {
-                        joypad.button_pressed(*button);
-                        pressed = true;
-                    }
-                }
-            }
-
-            // Restore the selection bits after updating button states
-            joypad.select_buttons = select_buttons;
-            joypad.select_dpad = select_dpad;
-
-            // Trigger interrupt if state changed
-            if pressed {
-                self.memory_bus.trigger_interrupt(JOYPAD);
-            }
-
-            self.memory_bus.dmg_io.joypad = joypad;
-        }
-
-        self.input_check_counter = (self.input_check_counter + 1) % COUNTER_WRAP;
-
         let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);
 
         if self.memory_bus.enabling_ime {
@@ -159,6 +77,12 @@ impl Emulator {
         self.cpu.check_interrupts(&mut self.memory_bus);
 
         if self.previous_frame != self.memory_bus.dmg_io.ppu.current_frame {
+            // Poll window/input events once per rendered frame (~60Hz) rather than
+            // every CPU cycle. Polling hundreds of thousands of times per second
+            // added no responsiveness and is expensive on macOS, where SDL's event
+            // pump goes through the Cocoa run loop.
+            self.process_input();
+
             // Update display with the new frame buffer
             self.main_display.update(self.memory_bus.dmg_io.ppu.framebuffer.clone());
 
@@ -194,6 +118,77 @@ impl Emulator {
             }
             self.last_save_time = Instant::now();
         }
+    }
+
+    fn process_input(&mut self) {
+        if !self.main_display.process_events() {
+            match self.memory_bus.mbc.as_mut() {
+                Some(mbc) => {
+                    if !mbc.dirty_sram() {
+                        self.running = false;
+                        std::process::exit(0);
+                    } else {
+                        error!("Emulator requested to stop but save SRAM is dirty, not stopping to prevent data loss");
+                    }
+                },
+                None => {},
+            }
+            return;
+        }
+
+        let current_keys = self.main_display.get_pressed_keys();
+        let mut joypad = self.memory_bus.dmg_io.joypad;
+
+        // Store the selection bits before modifying the joypad
+        let select_buttons = joypad.select_buttons;
+        let select_dpad = joypad.select_dpad;
+
+        // Reset all buttons to released state
+        for button in [
+            Button::A,
+            Button::B,
+            Button::Start,
+            Button::Select,
+            Button::Up,
+            Button::Down,
+            Button::Left,
+            Button::Right,
+        ] {
+            joypad.button_released(button);
+        }
+
+        let mut pressed = false;
+
+        let button_mappings = [
+            ("up", Button::Up),
+            ("down", Button::Down),
+            ("left", Button::Left),
+            ("right", Button::Right),
+            ("a", Button::A),
+            ("b", Button::B),
+            ("start", Button::Start),
+            ("select", Button::Select),
+        ];
+
+        for key in current_keys {
+            for (binding_name, button) in &button_mappings {
+                if Some(key) == self.key_bindings.get(*binding_name) {
+                    joypad.button_pressed(*button);
+                    pressed = true;
+                }
+            }
+        }
+
+        // Restore the selection bits after updating button states
+        joypad.select_buttons = select_buttons;
+        joypad.select_dpad = select_dpad;
+
+        // Trigger interrupt if state changed
+        if pressed {
+            self.memory_bus.trigger_interrupt(JOYPAD);
+        }
+
+        self.memory_bus.dmg_io.joypad = joypad;
     }
 
 }

@@ -25,6 +25,7 @@ pub struct Timer {
     tima_reload_cycles: u8,
     tima_reload_value: u8,
     tma_write_window: u8,
+    tima_just_reloaded: bool,
 }
 
 impl Timer {
@@ -39,6 +40,7 @@ impl Timer {
             tima_reload_cycles: 0,
             tima_reload_value: 0,
             tma_write_window: 0,
+            tima_just_reloaded: false,
         }
     }
 
@@ -46,7 +48,7 @@ impl Timer {
         if self.enabled {
             let bit_position = self.get_tima_bit_position();
             let old_bit = (self.internal_div_counter >> bit_position) & 1 != 0;
-            
+
             if old_bit {
                 self.increment_tima();
             }
@@ -138,11 +140,14 @@ impl Timer {
         let mut interrupt = false;
 
         for _ in 0..cycles {
+            self.tima_just_reloaded = false;
+
             // Handle delayed TIMA reload first
             if self.tima_reload_cycles > 0 {
                 self.tima_reload_cycles -= 1;
                 if self.tima_reload_cycles == 0 {
                     self.tima = self.tima_reload_value;
+                    self.tima_just_reloaded = true;
                 }
             }
 
@@ -177,6 +182,12 @@ impl Timer {
         interrupt
     }
     pub fn write_tima(&mut self, value: u8) {
+        if self.tima_just_reloaded {
+            // A write landing on the exact tick TMA was reloaded into TIMA
+            // loses the bus conflict; the reload wins and the write is dropped.
+            return;
+        }
+
         if self.tima_reload_cycles > 0 {
 
             if self.tima_reload_cycles == CRITICAL_RELOAD_CYCLE {

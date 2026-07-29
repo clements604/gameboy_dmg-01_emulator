@@ -104,6 +104,7 @@ pub struct Ppu {
     pub framebuffer: Vec<u32>,
     interrupts: Vec<Interrupt>,
     prev_stat_line: bool,
+    mode3_length: u16,
 }
 
 impl fmt::Display for Ppu {
@@ -220,7 +221,32 @@ impl Ppu {
             framebuffer: vec![LIGHTEST_GREEN; X_RES * Y_RES],
             interrupts: Vec::new(),
             prev_stat_line: false,
+            mode3_length: VRAM_MODE_TICKS,
         }
+    }
+
+    // Approximates real hardware's variable Mode 3 length via the SCX % 8
+    // fine-scroll penalty, taken back out of HBLANK so the 456-dot line total
+    // stays fixed. This is a commonly-used approximation, not a
+    // hardware-verified bit-exact model (that would require ticking the PPU
+    // continuously within each CPU instruction rather than once per
+    // instruction as this emulator does).
+    //
+    // A per-sprite penalty term was tried here too, but reverted: it made
+    // Mode 3's length swing by dozens of dots based on exactly which sprites
+    // are active on a scanline, which is fine on real hardware (the HBLANK
+    // STAT interrupt games use for split-scroll effects always waits for the
+    // actual mode transition) but interacts badly with this emulator's
+    // instruction-atomic execution model, where a STAT-polling loop only
+    // observes PPU state at instruction-boundary granularity. Combined with
+    // moving HUD sprites sitting right at a split-scroll boundary (as in
+    // Super Mario Land's status bar), that was enough added jitter to
+    // sometimes land the split on the wrong scanline once real scrolling
+    // made the two sides of the split actually differ, producing continuous
+    // tearing. SCX % 8 alone doesn't have this problem: it's constant on the
+    // status-bar side of that split (SCX is reset to 0 there every frame).
+    fn mode3_extra_dots(&self) -> u16 {
+        (self.scroll_x % 8) as u16
     }
 
     pub fn lcd_ppu_enabled(&self) -> bool {
@@ -306,17 +332,20 @@ impl Ppu {
                         self.stat &= !STAT_COINCIDENCE_FLAG;
                     }
                     self.line_ticks -= OAM_MODE_TICKS;
+                    self.mode3_length = VRAM_MODE_TICKS + self.mode3_extra_dots();
                     self.change_mode(VRAM_MODE);
                 }
             }
             VRAM_MODE => {
-                if self.line_ticks >= VRAM_MODE_TICKS {
-                    self.line_ticks -= VRAM_MODE_TICKS;
-                    self.change_mode(HBLANK_MODE);
-                }
-            }
-            HBLANK_MODE => {
-                if self.line_ticks >= HBLANK_MODE_TICKS {
+                if self.line_ticks >= self.mode3_length {
+                    self.line_ticks -= self.mode3_length;
+
+                    // Render using scroll/window state as it stood through this line's
+                    // Mode 3 fetch window. Games commonly change SCX/SCY from a HBLANK
+                    // STAT interrupt for split-scroll effects, intending the new value
+                    // to apply starting next line; rendering here (at the Mode 3 -> 0
+                    // boundary) instead of at the end of HBLANK keeps that write from
+                    // being pulled forward onto the line that's still finishing.
                     self.render_scanline();
 
                     if self.window_enabled()
@@ -326,6 +355,14 @@ impl Ppu {
                         self.window_line_counter = self.window_line_counter.wrapping_add(1);
                     }
 
+                    self.change_mode(HBLANK_MODE);
+                }
+            }
+            HBLANK_MODE => {
+                // HBLANK absorbs whatever Mode 3 didn't use, so the line stays a
+                // fixed 456 dots even though Mode 3's own length varies per scanline.
+                let hblank_length = VRAM_MODE_TICKS + HBLANK_MODE_TICKS - self.mode3_length;
+                if self.line_ticks >= hblank_length {
                     if self.ly == LAST_VISIBLE_SCANLINE {
                         self.change_mode(VBLANK_MODE);
                     } else {
@@ -333,7 +370,7 @@ impl Ppu {
                     }
 
                     self.increment_ly();
-                    self.line_ticks -= HBLANK_MODE_TICKS;
+                    self.line_ticks -= hblank_length;
                 }
             }
             VBLANK_MODE => {

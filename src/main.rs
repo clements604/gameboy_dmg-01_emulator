@@ -1,28 +1,12 @@
-mod cpu;
-mod rom;
-mod memory_bus;
-mod ppu;
-mod rom_debug;
-mod io;
-mod interrupts;
-mod dma;
-mod lcd;
-mod timer;
-mod joypad;
-mod display;
-mod mbc;
-mod emulator_config;
-mod emulator;
-
 use std::fs::File;
 use std::io::Read;
 
 use log::{debug, error, info};
 use rfd::FileDialog;
 
-use crate::rom::ROM;
-use crate::emulator_config::{EmulatorConfig, LoggingLevel};
-use crate::emulator::Emulator;
+use gameboy_emulator::rom::ROM;
+use gameboy_emulator::emulator_config::{EmulatorConfig, LoggingLevel};
+use gameboy_emulator::emulator::Emulator;
 
 const KILOBYTES_CONVERSION: usize = 1024;
 const BOOT_ROM_SIZE: usize = 256;

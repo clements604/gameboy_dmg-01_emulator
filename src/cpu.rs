@@ -66,6 +66,9 @@ pub struct CPU {
     sp: u16,     // Stack pointer
     halted: bool,
     stopped: bool,
+    // Interrupt types currently dispatched but not yet returned from (via
+    // RETI), innermost last. See is_handler_still_running.
+    active_interrupt_stack: Vec<Interrupt>,
 }
 
 impl Registers {
@@ -179,15 +182,40 @@ impl CPU {
             sp: INITIAL_SP,
             halted: false,
             stopped: false,
+            active_interrupt_stack: Vec::new(),
         }
+    }
+
+    /// Returns (b, c, d, e, h, l) — used by test harnesses to read the
+    /// Fibonacci pass/fail signature reported by mooneye test ROMs.
+    pub fn debug_bcdehl(&self) -> (u8, u8, u8, u8, u8, u8) {
+        (
+            self.registers.b,
+            self.registers.c,
+            self.registers.d,
+            self.registers.e,
+            self.registers.h,
+            self.registers.l,
+        )
     }
 
     /*
      *   CPU cycle - fetch, decode, execute
      */
     pub fn cycle(&mut self, memory_bus: &mut MemoryBus) -> u8 {
+        // EI takes effect only after the instruction following it has fully
+        // executed. Promoting here (before that instruction runs) but leaving
+        // check_interrupts (which runs after it) to do the actual dispatch
+        // gives EI's real one-instruction delay: interrupts can't be serviced
+        // until the instruction after EI has completed.
+        if memory_bus.enabling_ime {
+            memory_bus.interrupt_master_enable = true;
+            memory_bus.enabling_ime = false;
+        }
 
-        if !self.halted {
+        let mut timer_ticked_manually = false;
+
+        let cycles = if !self.halted {
 
             let opcode = memory_bus.read_byte(self.pc);
             self.pc = self.pc.wrapping_add(1);
@@ -372,9 +400,10 @@ impl CPU {
                     let offset = self.read_immediate_byte(memory_bus) as i8;
                     if !self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_jr_e(offset);
-                        return 12;
+                        12
+                    } else {
+                        8
                     }
-                    8
                 }
                 0x21 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -411,9 +440,10 @@ impl CPU {
                     let offset = self.read_immediate_byte(memory_bus) as i8;
                     if self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_jr_e(offset);
-                        return 12;
+                        12
+                    } else {
+                        8
                     }
-                    8
                 }
                 0x29 => {
                     let hl = self.registers.get_hl();
@@ -453,9 +483,10 @@ impl CPU {
                     let offset = self.read_immediate_byte(memory_bus) as i8;
                     if !self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_jr_e(offset);
-                        return 12;
+                        12
+                    } else {
+                        8
                     }
-                    8
                 }
                 0x31 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -493,9 +524,10 @@ impl CPU {
                     let offset = self.read_immediate_byte(memory_bus) as i8;
                     if self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_jr_e(offset);
-                        return 12;
+                        12
+                    } else {
+                        8
                     }
-                    8
                 }
                 0x39 => {
                     let hl = self.registers.get_hl();
@@ -1054,9 +1086,10 @@ impl CPU {
                 0xC0 => {
                     if !self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_ret(memory_bus);
-                        return 20;
+                        20
+                    } else {
+                        8
                     }
-                    8
                 }
                 0xC1 => {
                     let value = self.op_pop_stack(memory_bus);
@@ -1067,9 +1100,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if !self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_jp_nn(nn);
-                        return 16;
+                        16
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xC3 => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -1080,9 +1114,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if !self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_call_nn(memory_bus, nn);
-                        return 24;
+                        24
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xC5 => {
                     self.op_push_stack(memory_bus, self.registers.get_bc());
@@ -1099,9 +1134,10 @@ impl CPU {
                 0xC8 => {
                     if self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_ret(memory_bus);
-                        return 20;
+                        20
+                    } else {
+                        8
                     }
-                    8
                 }
                 0xC9 => {
                     self.op_ret(memory_bus);
@@ -1111,9 +1147,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_jp_nn(nn);
-                        return 16;
+                        16
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xCB => {
                     // Get the next byte and use it as the extended opcode
@@ -2335,9 +2372,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if self.registers.f.contains(FlagsRegister::ZERO) {
                         self.op_call_nn(memory_bus, nn);
-                        return 24;
+                        24
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xCD => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
@@ -2356,9 +2394,10 @@ impl CPU {
                 0xD0 => {
                     if !self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_ret(memory_bus);
-                        return 20;
+                        20
+                    } else {
+                        8
                     }
-                    8
                 }
                 0xD1 => {
                     let value = self.op_pop_stack(memory_bus);
@@ -2369,9 +2408,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if !self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_jp_nn(nn);
-                        return 16;
+                        16
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xD3 => {
                     error!("Unsupported opcode: 0xD3");
@@ -2381,9 +2421,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if !self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_call_nn(memory_bus, nn);
-                        return 24;
+                        24
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xD5 => {
                     self.op_push_stack(memory_bus, self.registers.get_de());
@@ -2400,22 +2441,29 @@ impl CPU {
                 0xD8 => {
                     if self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_ret(memory_bus);
-                        return 20;
+                        20
+                    } else {
+                        8
                     }
-                    8
                 }
                 0xD9 => {
                     self.op_ret(memory_bus);
                     self.op_ei(memory_bus);
+                    // RETI completes whichever dispatched interrupt is
+                    // currently innermost. Some ROMs use RETI as a generic
+                    // "return + EI" outside of an actual interrupt handler,
+                    // so guard against popping an already-empty stack.
+                    self.active_interrupt_stack.pop();
                     16
                 }
                 0xDA => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_jp_nn(nn);
-                        return 16;
+                        16
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xDB => {
                     error!("Unsupported opcode: 0xDB");
@@ -2425,9 +2473,10 @@ impl CPU {
                     let nn: u16 = self.read_immediate_short(memory_bus);
                     if self.registers.f.contains(FlagsRegister::CARRY) {
                         self.op_call_nn(memory_bus, nn);
-                        return 24;
+                        24
+                    } else {
+                        12
                     }
-                    12
                 }
                 0xDD => {
                     error!("Unsupported opcode: 0xDD");
@@ -2445,7 +2494,10 @@ impl CPU {
                 0xE0 => {
                     let offset = self.read_immediate_byte(memory_bus) as u16;
                     let address = 0xFF00 + offset;
+                    memory_bus.tick_timer(8);
                     memory_bus.write_byte(address, self.registers.a);
+                    memory_bus.tick_timer(4);
+                    timer_ticked_manually = true;
                     12
                 }
                 0xE1 => {
@@ -2455,7 +2507,10 @@ impl CPU {
                 }
                 0xE2 => {
                     let address = 0xFF00 | self.registers.c as u16;
+                    memory_bus.tick_timer(4);
                     memory_bus.write_byte(address, self.registers.a);
+                    memory_bus.tick_timer(4);
+                    timer_ticked_manually = true;
                     8
                 }
                 0xE3 => {
@@ -2488,7 +2543,10 @@ impl CPU {
                 }
                 0xEA => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
+                    memory_bus.tick_timer(12);
                     memory_bus.write_byte(nn, self.registers.a);
+                    memory_bus.tick_timer(4);
+                    timer_ticked_manually = true;
                     16
                 }
                 0xEB => {
@@ -2515,7 +2573,10 @@ impl CPU {
                 0xF0 => {
                     let value = self.read_immediate_byte(memory_bus);
                     let address = 0xFF00 + value as u16;
+                    memory_bus.tick_timer(8);
                     self.registers.a = memory_bus.read_byte(address);
+                    memory_bus.tick_timer(4);
+                    timer_ticked_manually = true;
                     12
                 }
                 0xF1 => {
@@ -2525,7 +2586,10 @@ impl CPU {
                 }
                 0xF2 => {
                     let address = 0xFF00 | self.registers.c as u16;
+                    memory_bus.tick_timer(4);
                     self.registers.a = memory_bus.read_byte(address);
+                    memory_bus.tick_timer(4);
+                    timer_ticked_manually = true;
                     8
                 }
                 0xF3 => {
@@ -2565,7 +2629,10 @@ impl CPU {
                 }
                 0xFA => {
                     let nn: u16 = self.read_immediate_short(memory_bus);
+                    memory_bus.tick_timer(12);
                     self.registers.a = memory_bus.read_byte(nn);
+                    memory_bus.tick_timer(4);
+                    timer_ticked_manually = true;
                     16
                 }
                 0xFB => {
@@ -2592,12 +2659,19 @@ impl CPU {
             }
         }
         else {
-            if u8::from(memory_bus.interrupt_flags) != 0 {
+            // HALT wakes on any pending, IE-enabled interrupt, regardless of IME
+            // (dispatch itself is separately gated by IME in check_interrupts).
+            let pending = u8::from(memory_bus.interrupt_flags) & memory_bus.interrupt_enable_register & 0x1F;
+            if pending != 0 {
                 self.halted = false;
             }
             4
-        }
+        };
 
+        if !timer_ticked_manually {
+            memory_bus.tick_timer(cycles);
+        }
+        cycles
     }
 
     /*
@@ -2986,35 +3060,69 @@ impl CPU {
     * Checks and services interrupts if they are enabled and requested.
     */
     pub fn check_interrupts(&mut self, memory_bus: &mut MemoryBus) {
-        // Check if interrupts are scheduled to be enabled
-        if memory_bus.enabling_ime {
-            memory_bus.interrupt_master_enable = true;
-            memory_bus.enabling_ime = false;
-        }
-
         if memory_bus.interrupt_master_enable {
             let interrupt_flags: InterruptFlags = memory_bus.interrupt_flags.into();
             let interrupt_enable_register = memory_bus.interrupt_enable_register;
 
-            // Check if the interrupt is both flagged and enabled
-            if interrupt_flags.vblank && (interrupt_enable_register & VBLANK_MASK) != 0 {
+            // Check if the interrupt is both flagged and enabled. A handler
+            // that's still running (its own dispatch hasn't unwound yet) is
+            // skipped in favor of the next-lower-priority interrupt: real
+            // hardware relies on each handler completing well within one
+            // period of its own interrupt, so it never has to cope with an
+            // interrupt re-entering itself. Our timing doesn't guarantee that
+            // margin as tightly, so this mirrors the invariant games assume.
+            if interrupt_flags.vblank && (interrupt_enable_register & VBLANK_MASK) != 0
+                && !self.is_handler_still_running(&Interrupt::VBLANK) {
                 self.service_interrupt(memory_bus, Interrupt::VBLANK);
-            } else if interrupt_flags.lcd_stat && (interrupt_enable_register & LCDSTAT_MASK) != 0 {
+            } else if interrupt_flags.lcd_stat && (interrupt_enable_register & LCDSTAT_MASK) != 0
+                && !self.is_handler_still_running(&Interrupt::LCDSTAT) {
                 self.service_interrupt(memory_bus, Interrupt::LCDSTAT);
-            } else if interrupt_flags.timer && (interrupt_enable_register & TIMER_MASK) != 0 {
+            } else if interrupt_flags.timer && (interrupt_enable_register & TIMER_MASK) != 0
+                && !self.is_handler_still_running(&Interrupt::TIMER) {
                 self.service_interrupt(memory_bus, Interrupt::TIMER);
-            } else if interrupt_flags.serial && (interrupt_enable_register & SERIAL_MASK) != 0 {
+            } else if interrupt_flags.serial && (interrupt_enable_register & SERIAL_MASK) != 0
+                && !self.is_handler_still_running(&Interrupt::SERIAL) {
                 self.service_interrupt(memory_bus, Interrupt::SERIAL);
-            } else if interrupt_flags.joypad && (interrupt_enable_register & JOYPAD_MASK) != 0 {
+            } else if interrupt_flags.joypad && (interrupt_enable_register & JOYPAD_MASK) != 0
+                && !self.is_handler_still_running(&Interrupt::JOYPAD) {
                 self.service_interrupt(memory_bus, Interrupt::JOYPAD);
             }
         }
+    }
+
+    /// An interrupt type's handler is considered "still running" from the
+    /// moment it's dispatched until the stack unwinds back past the point
+    /// where its return address was pushed (i.e. its own PUSH/CALL/RET
+    /// nesting has fully resolved) — regardless of how many RET/RETI
+    /// instructions execute in between for the handler's own subroutine
+    /// calls. Tracked via an explicit dispatch stack (pushed in
+    /// service_interrupt, popped on RETI) rather than by comparing SP against
+    /// a saved value: SP alone can't tell a still-running handler apart from
+    /// the main program simply being deep in its own unrelated call stack
+    /// when the interrupt fires again, which caused false-positive
+    /// suppression (e.g. LCDSTAT permanently "stuck" active) in practice.
+    fn is_handler_still_running(&self, interrupt: &Interrupt) -> bool {
+        self.active_interrupt_stack.contains(interrupt)
     }
 
     /*
     * Services the specified interrupt by pushing the current PC to the stack,
     */
     fn service_interrupt(&mut self, memory_bus: &mut MemoryBus, interrupt: Interrupt) {
+        // Dispatching means the CPU is no longer halted: real hardware exits
+        // HALT the moment an interrupt is serviced. Without this, a handler
+        // dispatched while halted has its PC jumped to the vector but the
+        // *next* cpu.cycle() call still takes the halted branch (self.halted
+        // was never cleared), which is a cycle-consuming no-op that doesn't
+        // execute the vector's instruction. The CPU then sits stuck at the
+        // vector address until some unrelated later interrupt happens to
+        // satisfy the halted branch's own wake check — potentially tens of
+        // thousands of T-states later, which was silently corrupting any
+        // time-sensitive handler (e.g. Super Mario Land's HBLANK-driven
+        // split-scroll status bar) dispatched while the CPU was halted.
+        self.halted = false;
+        self.active_interrupt_stack.push(interrupt.clone());
+
         let mut interrupts: InterruptFlags = memory_bus.interrupt_flags.into();
         memory_bus.interrupt_master_enable = false;
         let vector_address = match interrupt {
@@ -3042,6 +3150,20 @@ impl CPU {
 
         // Update interrupt flags in memory
         memory_bus.interrupt_flags = interrupts.into();
+
+        // Real hardware spends 5 M-cycles (20T) dispatching an interrupt
+        // (2 wait states + 2 for the PC push + 1 to load the vector). That
+        // time must be accounted for on every peripheral that advances with
+        // real time, not just the timer: interrupts fire at least twice a
+        // frame (VBLANK + LCDSTAT), so a PPU that doesn't also see these 20T
+        // steadily drifts out of sync with the CPU/timer clock the longer a
+        // session runs, throwing off any STAT/LY-polling timing (e.g. split
+        // scroll effects) more and more over time.
+        memory_bus.tick_timer(20);
+        let dispatch_ppu_interrupts = memory_bus.dmg_io.ppu.tick(20);
+        for interrupt in dispatch_ppu_interrupts {
+            memory_bus.trigger_interrupt(interrupt);
+        }
     }
 
     

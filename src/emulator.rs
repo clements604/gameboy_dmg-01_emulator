@@ -29,7 +29,7 @@ pub struct Emulator {
     // Frame rate cap variables
     target_frame_time: Duration,
     last_frame_time: Instant,
-    pub(crate) running: bool,
+    pub running: bool,
     last_save_time: Instant,
 
     key_bindings: std::collections::HashMap<String, Keycode>,
@@ -61,11 +61,6 @@ impl Emulator {
 
     pub fn cycle(&mut self) {
         let cpu_cycles = self.cpu.cycle(&mut self.memory_bus);
-
-        if self.memory_bus.enabling_ime {
-            self.memory_bus.interrupt_master_enable = true;
-            self.memory_bus.enabling_ime = false;
-        }
 
         let ppu_interrupts = self.memory_bus.dmg_io.ppu.tick(cpu_cycles);
         for interrupt in ppu_interrupts {

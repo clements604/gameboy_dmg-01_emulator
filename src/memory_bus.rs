@@ -102,12 +102,14 @@ impl MemoryBus {
         memory_bus
     }
 
-    pub fn cycle(&mut self, cpu_cycles: u8) {
-        // Timer
-        if self.dmg_io.timer.cycle(1) {
+    pub fn tick_timer(&mut self, cycles: u8) {
+        if self.dmg_io.timer.cycle(cycles) {
             // If timer overflows, trigger a Timer interrupt
             self.trigger_interrupt(Interrupt::TIMER);
         }
+    }
+
+    pub fn cycle(&mut self, cpu_cycles: u8) {
         // OAM
         for _ in 0..cpu_cycles {
             if let Some((src_addr, dest_addr)) = self.dma.dma_tick() {

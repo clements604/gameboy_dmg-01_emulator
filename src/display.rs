@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use log::error;
-use sdl2::event::Event;
+use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{Keycode, Scancode};
 use sdl2::pixels::Color;
 use sdl2::rect::Point;
@@ -33,7 +33,7 @@ pub struct MainDisplay {
 }
 
 impl MainDisplay {
-    pub fn new(scale_factor: u32, key_bindings: &HashMap<String, Keycode>) -> MainDisplay {
+    pub fn new(sdl_context: &sdl2::Sdl, scale_factor: u32, key_bindings: &HashMap<String, Keycode>) -> MainDisplay {
 
         let mut current_key_states = HashMap::new();
         let tracked_keys: Vec<Keycode> = key_bindings.values().copied().collect();
@@ -47,10 +47,6 @@ impl MainDisplay {
         current_key_states.insert(Keycode::B, false);
         current_key_states.insert(Keycode::Return, false);
         current_key_states.insert(Keycode::Backspace, false);
-        
-        let sdl_context = sdl2::init().unwrap_or_else(|e| {
-            panic!("SDL initialization failed: {}", e);
-        });
 
         let video_subsystem = sdl_context.video().unwrap_or_else(|e| {
             panic!("Video subsystem initialization failed: {}", e);
@@ -147,11 +143,21 @@ impl MainDisplay {
         false;
         let mut running = true;
 
+        let main_window_id = self.canvas.window().id();
+
         // Process window events (quit, etc.)
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => running = false,
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => running = false,
+                // SDL only fires Quit when the *last* open window closes. With the
+                // debug window also open, closing the main window alone no longer
+                // triggers Quit, so its close button needs handling explicitly.
+                Event::Window { win_event: WindowEvent::Close, window_id, .. }
+                    if window_id == main_window_id =>
+                {
+                    running = false;
+                }
                 _ => {}
             }
         }

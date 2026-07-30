@@ -1,3 +1,4 @@
+use crate::apu::Apu;
 use crate::joypad;
 use crate::interrupts::Interrupt;
 use crate::memory_bus::{IO_REGISTERS_START, IO_REGISTERS_SIZE};
@@ -11,6 +12,10 @@ const DIV_REGISTER: u16 = 0xFF04;
 const TIMA_REGISTER: u16 = 0xFF05;
 const TMA_REGISTER: u16 = 0xFF06;
 const TAC_REGISTER: u16 = 0xFF07;
+const APU_START: u16 = 0xFF10;
+const WAVE_PATTERN_START: u16 = 0xFF30;
+const WAVE_PATTERN_END: u16 = 0xFF3F;
+const APU_END: u16 = 0xFF26;
 const PPU_START: u16 = 0xFF40;
 const PPU_END: u16 = 0xFF46;
 const PPU_PALETTE_START: u16 = 0xFF47;
@@ -25,6 +30,7 @@ pub struct IO {
     pub ppu: Ppu,
     pub joypad: joypad::Joypad,
     pub timer: Timer,
+    pub apu: Apu,
 }
 
 impl IO {
@@ -36,6 +42,7 @@ impl IO {
             ppu: Ppu::new(),
             joypad: joypad::Joypad::new(),
             timer: Timer::new(),
+            apu: Apu::new(),
         }
     }
 
@@ -54,6 +61,8 @@ impl IO {
                 }
                 value
             },
+            APU_START..=APU_END => self.apu.read(address),
+            WAVE_PATTERN_START..=WAVE_PATTERN_END => self.apu.read(address),
             PPU_START..=PPU_END => self.ppu.read(address),
             PPU_PALETTE_START..=PPU_PALETTE_END => self.ppu.read(address),
             _ => {
@@ -88,6 +97,8 @@ impl IO {
                     return Some(Interrupt::TIMER)
                 }
             },
+            APU_START..=APU_END => self.apu.write(address, value),
+            WAVE_PATTERN_START..=WAVE_PATTERN_END => self.apu.write(address, value),
             PPU_START..=PPU_END => {
                 self.ppu.write(address, value);
             },

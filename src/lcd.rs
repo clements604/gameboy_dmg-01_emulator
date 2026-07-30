@@ -91,49 +91,32 @@ impl LCD {
         }
     }
     pub fn update_palette(&mut self, palette_data: u8, palette: u8) {
+        // Indexed by raw tile pixel value (0-3): palette_colours[pixel] is the
+        // final display colour for that pixel value under the current palette byte.
         let mut palette_colours = [0; 4];
-        match palette {
-            0 => palette_colours = self.bg_colours,
-            1 => palette_colours = self.sp1_colours,
-            2 => palette_colours = self.sp2_colours,
-            _ => {error!("Invalid palette: {}", palette);}
-        }
         palette_colours[0] = DEFAULT_COLOURS[(palette_data & PALETTE_MASK) as usize];
         palette_colours[1] = DEFAULT_COLOURS[((palette_data >> PALETTE_SHIFT_2) & PALETTE_MASK) as usize];
         palette_colours[2] = DEFAULT_COLOURS[((palette_data >> PALETTE_SHIFT_4) & PALETTE_MASK) as usize];
         palette_colours[3] = DEFAULT_COLOURS[((palette_data >> PALETTE_SHIFT_6) & PALETTE_MASK) as usize];
+
+        match palette {
+            0 => self.bg_colours = palette_colours,
+            1 => self.sp1_colours = palette_colours,
+            2 => self.sp2_colours = palette_colours,
+            _ => error!("Invalid palette: {}", palette),
+        }
     }
 
     pub fn get_bg_colour(&self, pixel: u8) -> u32 {
-        let colour_index = match pixel {
-            0 => self.bg_palette & PALETTE_MASK,
-            1 => (self.bg_palette >> PALETTE_SHIFT_2) & PALETTE_MASK,
-            2 => (self.bg_palette >> PALETTE_SHIFT_4) & PALETTE_MASK,
-            3 => (self.bg_palette >> PALETTE_SHIFT_6) & PALETTE_MASK,
-            _ => unreachable!(),
-        };
-
-        // Ensure we're using the correct index based on the palette bits
-        self.bg_colours[colour_index as usize]
+        self.bg_colours[pixel as usize]
     }
 
     /// Converts a sprite pixel value to a colour based on its palette index (0 or 1).
     pub fn get_sprite_colour(&self, palette_index: u8, pixel: u8) -> u32 {
-
-        let palette = if palette_index == 0 { self.obj_palette[0] } else { self.obj_palette[1] };
-        let colour_index = match pixel {
-            0 => palette & PALETTE_MASK,
-            1 => (palette >> PALETTE_SHIFT_2) & PALETTE_MASK,
-            2 => (palette >> PALETTE_SHIFT_4) & PALETTE_MASK,
-            3 => (palette >> PALETTE_SHIFT_6) & PALETTE_MASK,
-            _ => unreachable!(),
-        };
-
-        // Use the correct colour array based on palette index
         if palette_index == 0 {
-            self.sp1_colours[colour_index as usize]
+            self.sp1_colours[pixel as usize]
         } else {
-            self.sp2_colours[colour_index as usize]
+            self.sp2_colours[pixel as usize]
         }
     }
 }

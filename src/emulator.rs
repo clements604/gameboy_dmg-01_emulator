@@ -4,10 +4,13 @@ use sdl2::keyboard::Keycode;
 use crate::cpu;
 use crate::emulator_config::EmulatorConfig;
 use crate::display::MainDisplay;
+use crate::audio::AudioOutput;
 use crate::memory_bus::MemoryBus;
 use crate::rom::ROM;
 use crate::interrupts::Interrupt::JOYPAD;
 use crate::joypad::Button;
+#[cfg(debug_assertions)]
+use crate::debug_display::DebugDisplay;
 
 const FPS_60_MICROS: u64 = 16742;
 const AUTOSAVE_INTERVAL_SECS: u64 = 5;
@@ -20,6 +23,9 @@ pub struct Emulator {
     memory_bus: MemoryBus,
 
     main_display: MainDisplay,
+    #[cfg(debug_assertions)]
+    debug_display: DebugDisplay,
+    audio_output: Option<AudioOutput>,
 
     previous_frame: u32,
 
@@ -40,12 +46,29 @@ impl Emulator {
 
         let mut cpu = cpu::CPU::new();
         cpu.pc = if boot_rom.is_some() { BOOT_ROM_START } else { CART_ROM_START };
-        let main_display = MainDisplay::new(emulator_config.scale_factor, &emulator_config.key_bindings);
+
+        let sdl_context = sdl2::init().unwrap_or_else(|e| {
+            panic!("SDL initialization failed: {}", e);
+        });
+        let main_display = MainDisplay::new(&sdl_context, emulator_config.scale_factor, &emulator_config.key_bindings);
+        #[cfg(debug_assertions)]
+        let debug_display = DebugDisplay::new(&sdl_context, main_display.canvas.window());
+
+        let audio_output = match AudioOutput::new(&sdl_context) {
+            Ok(output) => Some(output),
+            Err(e) => {
+                error!("Failed to initialize audio output, continuing without sound: {}", e);
+                None
+            }
+        };
 
         Emulator {
             cpu,
             memory_bus: MemoryBus::new(boot_rom, &rom),
             main_display,
+            #[cfg(debug_assertions)]
+            debug_display,
+            audio_output,
             previous_frame: 0,
             last_time: Instant::now(),
             frame_count: 0,
@@ -67,6 +90,8 @@ impl Emulator {
             self.memory_bus.trigger_interrupt(interrupt);
         }
 
+        self.memory_bus.dmg_io.apu.cycle(cpu_cycles);
+
         self.memory_bus.cycle(cpu_cycles);
 
         self.cpu.check_interrupts(&mut self.memory_bus);
@@ -80,6 +105,16 @@ impl Emulator {
 
             // Update display with the new frame buffer
             self.main_display.update(self.memory_bus.dmg_io.ppu.framebuffer.clone());
+
+            #[cfg(debug_assertions)]
+            self.debug_display.update(self.memory_bus.dmg_io.apu.channel_amplitudes());
+
+            // Always drain, even with no audio device, so the buffer can't grow unbounded.
+            let samples: Vec<(i16, i16)> =
+                self.memory_bus.dmg_io.apu.sample_buffer.drain(..).collect();
+            if let Some(audio_output) = self.audio_output.as_mut() {
+                audio_output.queue_samples(&samples);
+            }
 
             self.frame_count += 1;  // Increment frame count
 

@@ -564,7 +564,6 @@ impl CPU {
                     4
                 }
                 0x40 => {
-                    self.registers.b = self.registers.b;
                     4
                 }
                 0x41 => {
@@ -600,7 +599,6 @@ impl CPU {
                     4
                 }
                 0x49 => {
-                    self.registers.c = self.registers.c;
                     4
                 }
                 0x4A => {
@@ -636,7 +634,6 @@ impl CPU {
                     4
                 }
                 0x52 => {
-                    self.registers.d = self.registers.d;
                     4
                 }
                 0x53 => {
@@ -672,7 +669,6 @@ impl CPU {
                     4
                 }
                 0x5B => {
-                    self.registers.e = self.registers.e;
                     4
                 }
                 0x5C => {
@@ -708,7 +704,6 @@ impl CPU {
                     4
                 }
                 0x64 => {
-                    self.registers.h = self.registers.h;
                     4
                 }
                 0x65 => {
@@ -744,7 +739,6 @@ impl CPU {
                     4
                 }
                 0x6D => {
-                    self.registers.l = self.registers.l;
                     4
                 }
                 0x6E => {
@@ -816,7 +810,6 @@ impl CPU {
                     8
                 }
                 0x7F => {
-                    self.registers.a = self.registers.a;
                     4
                 }
                 0x80 => {

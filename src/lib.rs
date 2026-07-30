@@ -13,3 +13,7 @@ pub mod display;
 pub mod mbc;
 pub mod emulator_config;
 pub mod emulator;
+pub mod apu;
+pub mod audio;
+#[cfg(debug_assertions)]
+pub mod debug_display;
